@@ -150,3 +150,45 @@ def retry_repair_thresholds(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             row["fault"] = fault
             out.append(row)
     return out
+
+
+def failure_streak_quality_posterior(
+    rows: list[dict[str, Any]], low_quality_max: float = 0.40
+) -> list[dict[str, Any]]:
+    """Estimate how repeated validation failures shift latent-quality risk.
+
+    This is descriptive of the balanced synthetic quality mixture. The exact
+    posterior is not assumed to transfer to production; its value is to test
+    whether failure streak length contains useful escalation information.
+    """
+    if not rows:
+        return []
+    out: list[dict[str, Any]] = []
+    eligible = list(rows)
+    for failures in range(4):
+        by_quality: dict[float, int] = defaultdict(int)
+        for row in eligible:
+            by_quality[float(row.get("quality", 0.0))] += 1
+        total = len(eligible)
+        distribution = {
+            str(quality): count / total if total else 0.0
+            for quality, count in sorted(by_quality.items())
+        }
+        low_count = sum(
+            count for quality, count in by_quality.items()
+            if float(quality) <= float(low_quality_max)
+        )
+        out.append({
+            "consecutive_failures": failures,
+            "n": total,
+            "low_quality_max": low_quality_max,
+            "low_quality_probability": low_count / total if total else 0.0,
+            "quality_distribution": distribution,
+        })
+        if failures < 3:
+            next_attempt = failures + 1
+            eligible = [
+                row for row in eligible
+                if not bool(row.get(f"attempt_{next_attempt}_success"))
+            ]
+    return out
