@@ -138,6 +138,9 @@ def harden_evidence_integrity(evidence: dict[str, Any]) -> dict[str, Any]:
         audit["repair_screen_tasks"] = []
 
     audit["primary_repair_tasks"] = sorted(primary_tasks)
+    audit["failed_primary_call_rows"] = sum(
+        1 for row in primary if row.get("call_error_class") or row.get("call_error_message") or row.get("call_timeout")
+    )
     audit["failed_physical_call_rows"] = sum(
         1 for row in physical if row.get("error_class") or row.get("error_message")
     )
