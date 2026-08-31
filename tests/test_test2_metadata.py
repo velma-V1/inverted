@@ -19,7 +19,7 @@ def _evidence():
         ]
     for task_id, seq in {"h1":[False,True,True,True,True],"h2":[True,True,False,True,True]}.items():
         for pipeline, success in zip(("S0_BEST_SINGLE_ALL_ROLES","S1_SPECIALIZE_FORMALIZER","S2_SPECIALIZE_FORMALIZER_EXECUTOR","S3_SPECIALIZE_FORMALIZER_EXECUTOR_REPAIR","S4_FULL_SPECIALIZATION"), seq):
-            trials.append({"phase":"progressive_holdout","role":"pipeline","task_id":task_id,"evaluation_id":f"{task_id}-{pipeline}","pipeline":pipeline,"model":"layered","success":success})
+            trials.append({"phase":"progressive_holdout","role":"pipeline","task_id":task_id,"evaluation_id":f"{task_id}-{pipeline}","pipeline":pipeline,"model":"layered","success":success,"runtime_allowed":success,"hidden_gold_success":success})
     calls = [
         {"call_identity":"c1","model":"m1","role":"formalizer","phase":"formalization","task_id":"f","cache_hit":False,"latency_s":1.2,"input_tokens":10,"output_tokens":5,"total_tokens":15,"load_duration_s":0.4,"prompt_eval_duration_s":0.2,"eval_duration_s":0.5},
         {"call_identity":"c2","model":"m2","role":"executor","phase":"execution","task_id":"e","cache_hit":False,"latency_s":0.8,"input_tokens":12,"output_tokens":4,"total_tokens":16,"load_duration_s":0.1,"prompt_eval_duration_s":0.2,"eval_duration_s":0.4},
