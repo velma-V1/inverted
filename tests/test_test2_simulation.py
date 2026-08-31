@@ -1,6 +1,7 @@
 from inverted.test2_postanalysis import (
     candidate_independence_strata,
     failure_streak_quality_posterior,
+    mutation_boundary_analysis,
     retry_repair_thresholds,
 )
 from inverted.test2_simulation import (
@@ -119,3 +120,19 @@ def test_failure_streak_is_preserved_as_a_quality_escalation_signal():
     assert posterior[1]["low_quality_probability"] <= posterior[2]["low_quality_probability"]
     assert posterior[2]["low_quality_probability"] <= posterior[3]["low_quality_probability"]
     assert all("quality_distribution" in row for row in posterior)
+
+
+def test_revalidation_after_each_retry_preserves_wins_and_removes_catastrophic_escape():
+    atlas = run_model_free_atlas(seed_count=4)
+    rows = {row["stage"]: row for row in mutation_boundary_analysis(atlas["base_cell_records"])}
+    raw2 = rows["RETRY_2_WITHOUT_REVALIDATION"]
+    checked2 = rows["RETRY_2_THEN_REVALIDATE"]
+    raw3 = rows["RETRY_3_WITHOUT_REVALIDATION"]
+    checked3 = rows["RETRY_3_THEN_REVALIDATE"]
+    assert checked2["successes"] == raw2["successes"]
+    assert checked3["successes"] == raw3["successes"]
+    assert checked2["catastrophic_escapes"] == 0
+    assert checked3["catastrophic_escapes"] == 0
+    assert checked2["catastrophic_escapes"] <= raw2["catastrophic_escapes"]
+    assert checked3["catastrophic_escapes"] <= raw3["catastrophic_escapes"]
+    assert rows["ORACLE_REPAIR_THEN_FINAL_AUTHORITY"]["success_rate"] == 1.0
