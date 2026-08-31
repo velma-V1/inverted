@@ -4,7 +4,8 @@ import httpx
 import yaml
 
 import inverted.cli as cli
-from inverted.models import OllamaAdapter
+from inverted.models import CompletionResult, OllamaAdapter
+from inverted.telemetry import ModelCallRecord
 
 
 def _ok_response(content: str) -> httpx.Response:
@@ -18,6 +19,28 @@ def _ok_response(content: str) -> httpx.Response:
             "prompt_eval_count": 10,
             "eval_count": 10,
         },
+    )
+
+
+def _record(model: str, role: str, content: str) -> ModelCallRecord:
+    attempt = {
+        "attempt": 0,
+        "status_code": 200,
+        "content": content,
+        "thinking": None,
+        "prompt_eval_count": 10,
+        "eval_count": 10,
+        "done_reason": "stop",
+    }
+    return ModelCallRecord(
+        call_id=f"{model}-{role}", run_id="preflight", trial_id=f"{model}-{role}", candidate_id=None,
+        role=role, model=model, provider="ollama", start_ts="2026-08-31T00:00:00+00:00",
+        end_ts="2026-08-31T00:00:01+00:00", latency_s=1.0, status_code=200,
+        raw_provider_telemetry={
+            "attempts": [attempt], "content": content, "thinking": None,
+            "prompt_eval_count": 10, "eval_count": 10, "done_reason": "stop",
+        },
+        response=content,
     )
 
 
@@ -39,9 +62,12 @@ def test_ollama_executor_uses_exact_json_schema_not_loose_json_mode(monkeypatch)
     assert schema["additionalProperties"] is False
     actions = schema["properties"]["actions"]
     assert actions["type"] == "array"
+    assert actions["maxItems"] == 64
     item = actions["items"]
     assert set(item["required"]) == {"op", "path"}
     assert item["additionalProperties"] is False
+    assert set(item["properties"]["op"]["enum"]) == {"set", "resolve", "delete"}
+    assert set(item["properties"]["value"]["type"]) == {"string", "number", "boolean", "object", "array", "null"}
 
 
 def test_ollama_auditor_uses_exact_json_schema(monkeypatch):
@@ -59,7 +85,31 @@ def test_ollama_auditor_uses_exact_json_schema(monkeypatch):
     assert isinstance(schema, dict)
     assert set(schema["required"]) == {"accept", "failed_requirements", "reason"}
     assert schema["properties"]["accept"]["type"] == "boolean"
+    assert schema["properties"]["failed_requirements"]["maxItems"] == 64
     assert schema["additionalProperties"] is False
+
+
+def test_preflight_parser_failure_is_model_evidence_not_campaign_abort():
+    class ParserWeakModel:
+        provider = "ollama"
+        model = "parser-weak"
+        context_limit = 8192
+        think = False
+        format_json = True
+
+        def complete(self, messages, *, role, context):
+            content = "{" if role.endswith("executor") else '{"accept":true,"failed_requirements":[],"reason":"ok"}'
+            return CompletionResult(content, _record(self.model, role, content), {})
+
+        def unload(self):
+            return {}
+
+    rows = cli._preflight_models([ParserWeakModel()], cells_per_model=12, max_generation_censored=0)
+    assert len(rows) == 1
+    assert rows[0]["executor_parse_ok"] is False
+    assert rows[0]["executor_parse_failures"] == 6
+    assert rows[0]["auditor_parse_ok"] is True
+    assert rows[0]["auditor_parse_failures"] == 0
 
 
 def test_cli_preflight_failure_returns_dedicated_code_without_traceback(tmp_path, monkeypatch, capsys):
