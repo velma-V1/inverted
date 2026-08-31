@@ -12,6 +12,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Branch = "results/$RunId"
+$LocalBranch = "checkpoint-$RunId"
 $Worktree = Join-Path $RunRoot "$RunId-github"
 $ResultRoot = Join-Path $Worktree "live-results\$RunId"
 $ChunkRoot = Join-Path $ResultRoot "chunks"
@@ -60,9 +61,6 @@ function Ensure-PublishWorktree {
         Remove-Item $Worktree -Recurse -Force
     }
 
-    # Fetch using the clone's normal refspec, then inspect the local
-    # remote-tracking ref. This avoids ls-remote ref-pattern quirks in
-    # Git-for-Windows, and gives resume a concrete commit to start from.
     & git -C $RepoPath fetch origin --prune 2>&1 | ForEach-Object { Log "git fetch: $_" }
     if ($LASTEXITCODE -ne 0) { throw "GIT_FETCH_ORIGIN_FAILED:$LASTEXITCODE" }
 
@@ -70,12 +68,15 @@ function Ensure-PublishWorktree {
     & git -C $RepoPath show-ref --verify --quiet $remoteRef
     $remoteExists = ($LASTEXITCODE -eq 0)
 
+    # Use a slash-free local worktree branch. Git-for-Windows accepts the
+    # results/<run> remote ref on push/fetch, but some versions reject that
+    # slash-containing name when worktree add creates a local branch.
     if ($remoteExists) {
-        & git -C $RepoPath worktree add -B $Branch $Worktree $remoteRef 2>&1 | ForEach-Object { Log "git worktree: $_" }
+        & git -C $RepoPath worktree add -B $LocalBranch $Worktree $remoteRef 2>&1 | ForEach-Object { Log "git worktree: $_" }
     } else {
         & git -C $RepoPath show-ref --verify --quiet refs/remotes/origin/main
         if ($LASTEXITCODE -ne 0) { throw "REMOTE_MAIN_NOT_FETCHED" }
-        & git -C $RepoPath worktree add -b $Branch $Worktree refs/remotes/origin/main 2>&1 | ForEach-Object { Log "git worktree: $_" }
+        & git -C $RepoPath worktree add -B $LocalBranch $Worktree refs/remotes/origin/main 2>&1 | ForEach-Object { Log "git worktree: $_" }
     }
     if ($LASTEXITCODE -ne 0) { throw "GIT_WORKTREE_ADD_FAILED:$LASTEXITCODE" }
 }
