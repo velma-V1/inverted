@@ -7,14 +7,16 @@ def _repair_rows(st_successes: int, rr_successes: int, n: int = 18, st_catastrop
     rows = []
     for i in range(n):
         model = f"m{i % 3}"
-        task = f"t{i}"
+        task = f"t{i // 3}"
         rows.append({
             "model": model, "task_id": task, "feedback_style": "structured", "strategy": "targeted",
             "success": i < st_successes, "catastrophic": i < st_catastrophic,
+            "call_identity": f"st-{i}", "cache_hit": False, "physical_call_number": 2 * i + 1,
         })
         rows.append({
             "model": model, "task_id": task, "feedback_style": "raw", "strategy": "regenerate",
             "success": i < rr_successes, "catastrophic": i < rr_catastrophic,
+            "call_identity": f"rr-{i}", "cache_hit": False, "physical_call_number": 2 * i + 2,
         })
     return rows
 
@@ -25,6 +27,8 @@ def test_preregistration_declares_tier_a_budget_gates_and_evidence_contract():
     assert PREREGISTRATION["stopping_rule"] == "FIXED_BUDGET_NO_SEQUENTIAL_EARLY_STOP"
     assert PREREGISTRATION["primary_hypothesis"]["minimum_effect_pp"] == 10.0
     assert PREREGISTRATION["primary_hypothesis"]["third_retry_break_even"] == 0.3431
+    assert PREREGISTRATION["primary_hypothesis"]["selected_repair_models"] == 3
+    assert PREREGISTRATION["primary_hypothesis"]["primary_failure_candidates"] == 6
     assert PREREGISTRATION["failure_gates"]["catastrophic_increase_pp"] == 2.0
     required = set(PREREGISTRATION["evidence_contract"])
     assert {"events.jsonl", "model_calls.jsonl", "trials.csv", "trials.jsonl", "failures.csv", "summary.json", "summary.csv", "report.txt", "config.json", "provenance.json", "SHA256SUMS.csv", "TEST2-NEXT-STRIDE-REPORT.txt"} <= required
@@ -33,6 +37,8 @@ def test_preregistration_declares_tier_a_budget_gates_and_evidence_contract():
 def test_supported_requires_all_success_gates_and_confidence():
     result = evaluate_primary_verdict(_repair_rows(st_successes=17, rr_successes=6))
     assert result["verdict"] == "SUPPORTED"
+    assert result["models"] == 3 and result["tasks"] == 6
+    assert result["bootstrap_unit"] == "task_cluster"
     assert result["structured_targeted"]["ci95_low"] > 0.3431
     assert result["paired_effect_pp"] >= 10.0
     assert result["paired_effect_ci95_low_pp"] > 0.0
