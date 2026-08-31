@@ -43,6 +43,7 @@ def test_model_free_smoke_writes_complete_evidence(tmp_path):
         "order/candidate-independence.json",
         "order/candidate-independence-strata.csv",
         "order/retry-repair-thresholds.csv",
+        "order/failure-streak-quality-posterior.csv",
         "raw/every-trial.jsonl",
         "raw/every-candidate.jsonl",
         "raw/every-event.jsonl",
