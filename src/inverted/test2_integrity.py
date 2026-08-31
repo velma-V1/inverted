@@ -12,6 +12,55 @@ _SCREEN_CONDITIONS = {
 }
 
 
+def _trial_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(row.get("model") or ""),
+        str(row.get("task_id") or ""),
+        f"repair_{row.get('feedback_style')}_{row.get('strategy')}",
+    )
+
+
+def _validator_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    return (str(row.get("model") or ""), str(row.get("task_id") or ""), str(row.get("stage") or ""))
+
+
+def attach_repair_validator_outcomes(result: dict[str, Any]) -> dict[str, Any]:
+    """Attach catastrophic/final-candidate outcomes by causal lineage key.
+
+    The join is intentionally order-independent. Any missing, duplicated, or
+    extra model×task×condition validator row fails closed instead of silently
+    shifting outcomes between models.
+    """
+    repair_rows = [row for row in result.get("records", []) if row.get("phase") == "repair_factorial"]
+    repair_validators = [
+        row for row in result.get("validator_results", [])
+        if row.get("phase") == "repair_factorial" and str(row.get("stage", "")).startswith("repair_")
+    ]
+    validator_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for validator in repair_validators:
+        key = _validator_key(validator)
+        if not all(key):
+            raise AssertionError(f"repair-factorial validator missing model/task/stage lineage: {validator!r}")
+        if key in validator_by_key:
+            raise AssertionError(f"duplicate repair-factorial validator lineage {key!r}")
+        validator_by_key[key] = validator
+
+    trial_keys = [_trial_key(row) for row in repair_rows]
+    if any(not key[0] or not key[1] for key in trial_keys):
+        raise AssertionError("repair-factorial trial missing model/task lineage")
+    if len(set(trial_keys)) != len(trial_keys) or set(trial_keys) != set(validator_by_key):
+        raise AssertionError(
+            "repair-factorial trial/validator key mismatch: "
+            f"trials_only={sorted(set(trial_keys) - set(validator_by_key))!r} "
+            f"validators_only={sorted(set(validator_by_key) - set(trial_keys))!r}"
+        )
+    for trial in repair_rows:
+        validator = validator_by_key[_trial_key(trial)]
+        trial["candidate_id"] = validator.get("candidate_id")
+        trial["catastrophic"] = bool(validator.get("catastrophic"))
+    return result
+
+
 def harden_evidence_integrity(evidence: dict[str, Any]) -> dict[str, Any]:
     """Recompute decisive integrity invariants from the finished evidence packet.
 
@@ -52,10 +101,9 @@ def harden_evidence_integrity(evidence: dict[str, Any]) -> dict[str, Any]:
     audit["physical_call_number_integrity"] = number_integrity
 
     master_calls = (evidence.get("master_index") or {}).get("physical_model_calls")
-    if master_calls is None:
-        audit["physical_call_count_matches_master"] = False
-    else:
-        audit["physical_call_count_matches_master"] = int(master_calls) == len(physical)
+    audit["physical_call_count_matches_master"] = (
+        master_calls is not None and int(master_calls) == len(physical)
+    )
 
     screen = [row for row in trials if row.get("phase") == "repair_screen"]
     primary = [row for row in trials if row.get("phase") == "repair_factorial"]
