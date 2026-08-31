@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from inverted.cli import _format_progress_line
+from inverted.progress import _format_progress_line
 
 
 def test_collective_progress_line_reports_completion_time_left_and_eta():
