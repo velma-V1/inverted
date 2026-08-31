@@ -24,6 +24,7 @@ class ExperimentConfig:
     minimum_primary_trials: int = 180
     bootstrap_samples: int = 2000
     bootstrap_seed: int = 20260830
+    value_checkpoint_seed_stages: tuple[int, ...] = ()
     sequential_seed_stages: tuple[int, ...] = ()
     sequential_interim_confidence: tuple[float, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -82,9 +83,8 @@ def _build_trial_plan_for_seeds(config: ExperimentConfig, models: list[Any], see
     ))
     canonical_quality = config.qualities[0]
 
-    # Within every sequential stage, controls and real-model arms use exactly
-    # the same seed slice. This prevents interim looks from comparing a partial
-    # model sample against controls from future seeds.
+    # Every evidence stage is balanced: controls and model-dependent arms use
+    # exactly the same seed slice before any checkpoint or interim evaluation.
     for epoch, family, complexity, seed in task_cells:
         for arm_name in config.arms:
             arm = Arm(arm_name)
@@ -93,8 +93,8 @@ def _build_trial_plan_for_seeds(config: ExperimentConfig, models: list[Any], see
             for quality in config.qualities:
                 plan.append(TrialPlan(0, epoch, family, complexity, quality, seed, arm.value))
 
-    # Keep each model contiguous inside a stage to minimize Ollama model-load
-    # churn while ensuring every stage contains every model before evaluation.
+    # Keep each model contiguous inside a stage to reduce Ollama load churn,
+    # while ensuring all models are represented before that stage is evaluated.
     for model_index in range(len(models)):
         for epoch, family, complexity, seed in task_cells:
             for arm_name in config.arms:
@@ -115,28 +115,34 @@ def build_trial_plan(config: ExperimentConfig, models: list[Any]) -> list[TrialP
     return _build_trial_plan_for_seeds(config, models, tuple(config.seeds))
 
 
+def _stage_seed_counts(config: ExperimentConfig) -> tuple[int, ...]:
+    requested = set(int(x) for x in config.value_checkpoint_seed_stages)
+    requested.update(int(x) for x in config.sequential_seed_stages)
+    if not requested:
+        return ()
+    requested.add(len(config.seeds))
+    stages = tuple(sorted(requested))
+    if any(x <= 0 or x > len(config.seeds) for x in stages):
+        raise ValueError("evidence stage seed count must be within configured seeds")
+    return stages
+
+
 def build_trial_stages(config: ExperimentConfig, models: list[Any]) -> list[list[TrialPlan]]:
     if not models:
         raise ValueError("at least one model is required")
     if not config.qualities:
         raise ValueError("at least one executor quality is required")
-    if not config.sequential_seed_stages:
-        return [build_trial_plan(config, models)]
 
-    stages = tuple(int(x) for x in config.sequential_seed_stages)
-    if any(x <= 0 for x in stages) or tuple(sorted(set(stages))) != stages:
-        raise ValueError("sequential_seed_stages must be strictly increasing positive cumulative seed counts")
-    if stages[-1] != len(config.seeds):
-        raise ValueError("final sequential seed stage must include every configured seed")
+    stages = _stage_seed_counts(config)
+    if not stages:
+        return [build_trial_plan(config, models)]
 
     result: list[list[TrialPlan]] = []
     previous = 0
     for cumulative in stages:
-        if cumulative > len(config.seeds):
-            raise ValueError("sequential seed stage exceeds configured seed count")
         stage_seeds = tuple(config.seeds[previous:cumulative])
         if not stage_seeds:
-            raise ValueError("sequential stage cannot be empty")
+            raise ValueError("evidence stage cannot be empty")
         result.append(_build_trial_plan_for_seeds(config, models, stage_seeds))
         previous = cumulative
     return result
@@ -156,6 +162,7 @@ def run_experiment(
     started = datetime.now(timezone.utc).isoformat()
     budget = Budget(config.max_candidates, config.max_tokens_per_trial)
     stages = build_trial_stages(config, models)
+    stage_seed_counts = _stage_seed_counts(config) or (len(config.seeds),)
     plan = [item for stage in stages for item in stage]
     plan_keys = [trial_plan_key(item, models) for item in plan]
     if len(set(plan_keys)) != len(plan_keys):
@@ -202,13 +209,11 @@ def run_experiment(
                 progress_callback(completed, total, item)
 
         flat_offset += len(stage)
-        if config.sequential_seed_stages:
-            completed_seed_count = int(config.sequential_seed_stages[stage_number - 1])
-        else:
-            completed_seed_count = len(config.seeds)
+        completed_seed_count = int(stage_seed_counts[stage_number - 1])
 
-        # Interim evaluation is intentionally disabled for the final stage;
-        # the original full-sample preregistered verdict rule remains authority.
+        # The final stage always uses the normal full-run reporting/verdict path.
+        # Earlier stages may write exploratory value snapshots or evaluate the
+        # preregistered conservative sequential stopping gates.
         if stage_callback is not None and stage_number < len(stages):
             cumulative_trials = [trials_by_key[key] for key in plan_keys[:flat_offset] if key in trials_by_key]
             decision = stage_callback(stage_number, completed_seed_count, len(config.seeds), cumulative_trials) or {"stop": False}
