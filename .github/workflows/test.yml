@@ -57,19 +57,27 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[test]"
       - run: python -m pytest -q
-      - name: Parse PowerShell handoff script
+      - name: Parse all PowerShell handoff scripts
         shell: powershell
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'scripts/wait-for-010-and-run-inverted.ps1'),
-            [ref]$tokens,
-            [ref]$errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | Format-List | Out-String | Write-Host
-            exit 1
+          $scripts = @(
+            'scripts/wait-for-010-and-run-inverted.ps1',
+            'scripts/run-overnight-handoff.ps1',
+            'scripts/publish-inverted-checkpoints.ps1'
+          )
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $script),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              Write-Host "PowerShell parse failure: $script"
+              $errors | Format-List | Out-String | Write-Host
+              exit 1
+            }
           }
       - run: python -m inverted.cli --config configs/smoke.yaml --output-dir ci-runs --run-id ci-smoke > ci-report.txt
       - run: >-
