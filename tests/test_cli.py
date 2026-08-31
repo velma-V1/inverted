@@ -5,10 +5,10 @@ import pytest
 from inverted.cli import load_config, main
 
 
-def test_cli_runs_offline_smoke_and_writes_all_artifacts(tmp_path, capsys):
-    cfg = {
+def smoke_config():
+    return {
         "benchmark": {
-            "families": ["state"], "complexities": [1], "qualities": [0.8], "seeds": [1], "epochs": 1,
+            "families": ["state"], "complexities": [1], "qualities": [0.2, 0.8], "seeds": [1], "epochs": 1,
             "arms": ["A_DIRECT","B_DIRECT_CHECKED","C_SYSTEM","D_INVERTED","E_RANDOM_AUDITOR","F_ORACLE_AUDITOR"],
             "max_candidates": 2, "max_tokens_per_trial": 10000, "decisive": False,
             "minimum_primary_trials": 20, "bootstrap_samples": 50, "bootstrap_seed": 1
@@ -16,8 +16,11 @@ def test_cli_runs_offline_smoke_and_writes_all_artifacts(tmp_path, capsys):
         "models": [{"provider":"mock","model":"mock-ci","seed":1,"executor_accuracy":0.6,"auditor_accuracy":0.9}],
         "report": {"include_raw_rows": True, "capture_content": True}
     }
+
+
+def test_cli_runs_offline_smoke_and_writes_all_artifacts(tmp_path, capsys):
     path = tmp_path / "smoke.yaml"
-    path.write_text(yaml.safe_dump(cfg))
+    path.write_text(yaml.safe_dump(smoke_config()))
     out = tmp_path / "runs"
     code = main(["--config", str(path), "--output-dir", str(out), "--run-id", "cli-smoke"])
     assert code == 0
@@ -27,6 +30,28 @@ def test_cli_runs_offline_smoke_and_writes_all_artifacts(tmp_path, capsys):
     printed = capsys.readouterr().out
     assert "FULL MODEL CALL LEDGER" in printed
     assert "VERDICT: NON-DECISIVE" in printed
+
+
+def test_cli_checkpoint_progress_and_resume(tmp_path, capsys):
+    path = tmp_path / "smoke.yaml"
+    path.write_text(yaml.safe_dump(smoke_config()))
+    out = tmp_path / "runs"
+    checkpoint = tmp_path / "checkpoint.jsonl"
+    args = [
+        "--config", str(path), "--output-dir", str(out), "--run-id", "resume-cli",
+        "--checkpoint", str(checkpoint), "--progress",
+    ]
+
+    assert main(args) == 0
+    first_lines = checkpoint.read_text(encoding="utf-8").strip().splitlines()
+    first_output = capsys.readouterr().out
+    assert first_lines
+    assert "PROGRESS" in first_output
+    assert "%" in first_output
+
+    assert main(args + ["--resume"]) == 0
+    second_lines = checkpoint.read_text(encoding="utf-8").strip().splitlines()
+    assert len(second_lines) == len(first_lines)
 
 
 def test_decisive_config_rejects_mock_models(tmp_path):
