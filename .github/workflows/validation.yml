@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "build/hybrid-validation"
+      - "build/010-failure-hardening"
     paths:
       - "src/**"
       - "tests/**"
@@ -16,6 +17,7 @@ on:
 jobs:
   validate-instrument:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -28,8 +30,10 @@ jobs:
       - name: Full pytest suite
         shell: bash
         run: set -o pipefail; python -m pytest -q 2>&1 | tee validation-output/pytest.txt
-      - name: Known-answer and full-matrix stress validation
+      - name: Known-answer and 21,600-unit full-matrix stress validation
         run: python scripts/run_validation.py --output-dir validation-output
+      - name: Verify heavy campaign size
+        run: python -c "import json; from pathlib import Path; p=json.loads(Path('validation-output/validation-manifest.json').read_text()); assert p['stress']['planned_trial_units'] == 21600, p['stress']['planned_trial_units']; assert p['stress']['observed_trial_units'] == 21600; assert p['all_passed'] is True"
       - name: Print validation manifest
         run: python -c "from pathlib import Path; print(Path('validation-output/validation-manifest.json').read_text(encoding='utf-8'))"
       - name: Upload validation evidence
