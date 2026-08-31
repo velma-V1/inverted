@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import fields
+import json
 import os
 from pathlib import Path
 import re
@@ -11,7 +12,7 @@ import yaml
 
 from .artifacts import ArtifactWriter, collect_provenance
 from .checkpoint import CheckpointStore
-from .models import MockModelAdapter, OllamaAdapter, OpenAICompatibleAdapter
+from .models import ModelCallError, MockModelAdapter, OllamaAdapter, OpenAICompatibleAdapter
 from .runner import ExperimentConfig, TrialPlan, run_experiment
 from .statistics import aggregate_trials
 from .verdict import decide_verdict
@@ -58,6 +59,22 @@ def _validate_decisive(raw: dict[str, Any]) -> None:
         raise ValueError("decisive runs require at least three independent seeds")
     if int(bench.get("epochs", 0)) < 2:
         raise ValueError("decisive runs require at least two epochs")
+    for spec in models:
+        if spec.get("provider") == "ollama":
+            required = {
+                "context_limit": spec.get("context_limit"),
+                "think": spec.get("think"),
+                "format_json": spec.get("format_json"),
+                "max_retries": spec.get("max_retries"),
+            }
+            if required["context_limit"] is None:
+                raise ValueError("decisive Ollama runs require an explicit context_limit")
+            if required["think"] is not False:
+                raise ValueError("decisive Ollama runs require think: false to prevent reasoning-only empty responses")
+            if required["format_json"] is not True:
+                raise ValueError("decisive Ollama runs require format_json: true")
+            if int(required["max_retries"] or 0) < 2:
+                raise ValueError("decisive Ollama runs require at least two transport retries")
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
@@ -101,6 +118,11 @@ def _build_models(raw: dict[str, Any], capture_content: bool) -> list[Any]:
                 timeout_s=float(spec.get("timeout_s", 180.0)),
                 temperature=float(spec.get("temperature", 0.0)),
                 max_tokens=int(spec.get("max_tokens", 1024)),
+                max_retries=int(spec.get("max_retries", 0)),
+                retry_backoff_s=float(spec.get("retry_backoff_s", 1.0)),
+                think=spec.get("think"),
+                format_json=bool(spec.get("format_json", False)),
+                context_limit=int(spec["context_limit"]) if spec.get("context_limit") is not None else None,
             ))
         elif provider == "openai-compatible":
             api_key = None
@@ -121,6 +143,22 @@ def _build_models(raw: dict[str, Any], capture_content: bool) -> list[Any]:
         else:
             raise ValueError(f"unknown model provider: {provider}")
     return out
+
+
+def _preflight_models(models: list[Any]) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
+    for model in models:
+        provider = str(getattr(model, "provider", ""))
+        if provider == "mock":
+            continue
+        if provider != "ollama":
+            continue
+        preflight = getattr(model, "preflight", None)
+        if not callable(preflight):
+            raise ValueError(f"Ollama adapter {getattr(model, 'model', 'unknown')} does not expose preflight")
+        result = preflight()
+        evidence.append(dict(result))
+    return evidence
 
 
 def _sanitized_models(raw: dict[str, Any]) -> list[dict[str, Any]]:
@@ -155,33 +193,50 @@ def main(argv: list[str] | None = None) -> int:
     models = _build_models(raw, capture_content)
     checkpoint = CheckpointStore(args.checkpoint) if args.checkpoint else None
 
+    preflight_evidence = _preflight_models(models)
+    for item in preflight_evidence:
+        print(
+            f"PREFLIGHT OK model={item.get('model')} latency_s={float(item.get('latency_s', 0.0)):.3f} retries={item.get('retry_number', 0)}",
+            flush=True,
+        )
+
     progress_callback = None
     if args.progress:
         def render_progress(completed: int, total: int, item: TrialPlan) -> None:
             pct = (100.0 * completed / total) if total else 100.0
+            width = 30
+            filled = min(width, int(round(width * completed / total))) if total else width
+            bar = "#" * filled + "-" * (width - filled)
             model = getattr(models[item.model_index], "model", "none")
             print(
-                f"PROGRESS {completed}/{total} {pct:6.2f}% "
+                f"PROGRESS [{bar}] {completed}/{total} {pct:6.2f}% "
                 f"model={model} arm={item.arm} family={item.family} complexity={item.complexity} "
                 f"quality={item.quality:.2f} seed={item.seed} epoch={item.epoch}",
                 flush=True,
             )
         progress_callback = render_progress
 
-    result = run_experiment(
-        config,
-        models,
-        run_id=args.run_id,
-        checkpoint_store=checkpoint,
-        resume=bool(args.resume),
-        progress_callback=progress_callback,
-    )
+    try:
+        result = run_experiment(
+            config,
+            models,
+            run_id=args.run_id,
+            checkpoint_store=checkpoint,
+            resume=bool(args.resume),
+            progress_callback=progress_callback,
+        )
+    except ModelCallError as exc:
+        print("INFRASTRUCTURE_FAILURE: model call did not recover; campaign stopped before scoring the affected trial.", flush=True)
+        print(json.dumps(exc.record.to_dict(), sort_keys=True, default=str), flush=True)
+        return 3
+
     summary = aggregate_trials(result.trials, config.bootstrap_samples, config.bootstrap_seed)
     verdict = decide_verdict(summary, config)
     provenance = collect_provenance()
     provenance.update({
         "config_path": str(Path(args.config).resolve()),
         "models": _sanitized_models(raw),
+        "preflight": preflight_evidence,
         "capture_content": capture_content,
         "include_raw_rows": include_raw_rows,
         "checkpoint_path": str(Path(args.checkpoint).resolve()) if args.checkpoint else None,
