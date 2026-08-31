@@ -101,26 +101,40 @@ def _arm_metrics(trials: list[TrialRecord]) -> dict[str, Any]:
     }
 
 
-def _pair_key(t: TrialRecord) -> tuple[Any, ...]:
-    return (t.task_id, t.family, t.complexity, t.model, t.seed, t.epoch, t.configured_executor_quality)
+def _baseline_key(t: TrialRecord) -> tuple[Any, ...]:
+    """Condition identity for quality-independent direct baselines."""
+    return (t.task_id, t.family, t.complexity, t.model, t.seed, t.epoch)
+
+
+def _collapsed_baseline_success(trials: list[TrialRecord], arm: str) -> dict[tuple[Any, ...], float]:
+    grouped: dict[tuple[Any, ...], list[float]] = defaultdict(list)
+    for t in trials:
+        if t.arm == arm:
+            grouped[_baseline_key(t)].append(float(int(t.success)))
+    return {key: _stats.fmean(values) for key, values in grouped.items()}
 
 
 def bootstrap_rate_difference(trials: list[TrialRecord], treatment_arm: str, baseline_arm: str, samples: int = 2000, seed: int = 20260830) -> dict[str, float | int | None]:
-    treatment = {_pair_key(t): t for t in trials if t.arm == treatment_arm}
-    baseline = {_pair_key(t): t for t in trials if t.arm == baseline_arm}
-    keys = sorted(set(treatment) & set(baseline), key=str)
-    if not keys:
+    baseline = _collapsed_baseline_success(trials, baseline_arm)
+    paired: list[tuple[TrialRecord, float]] = []
+    for treatment in trials:
+        if treatment.arm != treatment_arm:
+            continue
+        baseline_success = baseline.get(_baseline_key(treatment))
+        if baseline_success is not None:
+            paired.append((treatment, float(int(treatment.success)) - baseline_success))
+
+    if not paired:
         return {"estimate": None, "lower": None, "upper": None, "n_pairs": 0, "n_clusters": 0, "samples": samples}
 
-    # Model and executor-quality rows are repeated measurements on the same synthetic
-    # task instance. Cluster at task_id so those repeats cannot manufacture statistical
-    # power. Each unique task contributes one mean paired effect to the bootstrap.
+    # A/B are quality-independent and may now be physically executed only once.
+    # Each D quality row is paired to that deduplicated baseline analytically.
+    # Repeated model/quality effects are then collapsed within task_id before
+    # bootstrap resampling so they cannot manufacture independent sample size.
     by_task: dict[str, list[float]] = defaultdict(list)
-    for key in keys:
-        t = treatment[key]
-        b = baseline[key]
-        by_task[t.task_id].append(float(int(t.success) - int(b.success)))
-    cluster_effects = [_stats.fmean(v) for _, v in sorted(by_task.items())]
+    for treatment, diff in paired:
+        by_task[treatment.task_id].append(diff)
+    cluster_effects = [_stats.fmean(values) for _, values in sorted(by_task.items())]
     estimate = _stats.fmean(cluster_effects)
     rng = random.Random(seed)
     boots: list[float] = []
@@ -131,7 +145,7 @@ def bootstrap_rate_difference(trials: list[TrialRecord], treatment_arm: str, bas
         "estimate": estimate,
         "lower": _percentile(boots, 0.025),
         "upper": _percentile(boots, 0.975),
-        "n_pairs": len(keys),
+        "n_pairs": len(paired),
         "n_clusters": n_clusters,
         "samples": samples,
     }
@@ -150,18 +164,23 @@ def _advantage_by(trials: list[TrialRecord], attribute: str) -> dict[str, float]
     return out
 
 
+def _baseline_rate(trials: list[TrialRecord], arm: str) -> float | None:
+    collapsed = _collapsed_baseline_success(trials, arm)
+    return _stats.fmean(collapsed.values()) if collapsed else None
+
+
 def estimate_crossover(trials: list[TrialRecord]) -> dict[str, Any]:
-    by_q: dict[float, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
+    by_q: dict[float, list[int]] = defaultdict(list)
     for t in trials:
-        if t.arm in {"A_DIRECT", "B_DIRECT_CHECKED", "D_INVERTED"}:
-            by_q[t.configured_executor_quality][t.arm].append(int(t.success))
+        if t.arm == "D_INVERTED":
+            by_q[t.configured_executor_quality].append(int(t.success))
+
+    a = _baseline_rate(trials, "A_DIRECT")
+    b = _baseline_rate(trials, "B_DIRECT_CHECKED")
     points = []
     crossover = None
     for quality in sorted(by_q):
-        g = by_q[quality]
-        a = _stats.fmean(g["A_DIRECT"]) if g.get("A_DIRECT") else None
-        b = _stats.fmean(g["B_DIRECT_CHECKED"]) if g.get("B_DIRECT_CHECKED") else None
-        d = _stats.fmean(g["D_INVERTED"]) if g.get("D_INVERTED") else None
+        d = _stats.fmean(by_q[quality]) if by_q[quality] else None
         da = d - a if d is not None and a is not None else None
         db = d - b if d is not None and b is not None else None
         points.append({"quality": quality, "a_success": a, "b_success": b, "d_success": d, "d_minus_a": da, "d_minus_b": db})
@@ -184,8 +203,8 @@ def aggregate_trials(trials: list[TrialRecord], bootstrap_samples: int = 2000, b
     by_arm = {arm: _arm_metrics(group) for arm, group in sorted(by_arm_groups.items())}
     ci = bootstrap_rate_difference(trials, "D_INVERTED", "A_DIRECT", bootstrap_samples, bootstrap_seed)
     d_rate = by_arm.get("D_INVERTED", {}).get("success_rate")
-    a_rate = by_arm.get("A_DIRECT", {}).get("success_rate")
-    b_rate = by_arm.get("B_DIRECT_CHECKED", {}).get("success_rate")
+    a_rate = _baseline_rate(trials, "A_DIRECT")
+    b_rate = _baseline_rate(trials, "B_DIRECT_CHECKED")
     primary_diff = (d_rate - a_rate) if d_rate is not None and a_rate is not None else None
     d_minus_b = (d_rate - b_rate) if d_rate is not None and b_rate is not None else None
     failures = Counter(r for t in trials for r in t.failure_reasons)
