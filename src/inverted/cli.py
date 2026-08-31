@@ -10,8 +10,9 @@ from typing import Any
 import yaml
 
 from .artifacts import ArtifactWriter, collect_provenance
+from .checkpoint import CheckpointStore
 from .models import MockModelAdapter, OllamaAdapter, OpenAICompatibleAdapter
-from .runner import ExperimentConfig, run_experiment
+from .runner import ExperimentConfig, TrialPlan, run_experiment
 from .statistics import aggregate_trials
 from .verdict import decide_verdict
 
@@ -135,18 +136,46 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", required=True, help="YAML configuration path")
     p.add_argument("--output-dir", default=None, help="Root directory for run artifacts")
     p.add_argument("--run-id", default=None, help="Optional deterministic run ID")
+    p.add_argument("--checkpoint", default=None, help="Append-only JSONL checkpoint path")
+    p.add_argument("--resume", action="store_true", help="Resume completed trial units from --checkpoint")
+    p.add_argument("--progress", action="store_true", help="Print exact completed/total trial-unit progress")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.resume and not args.checkpoint:
+        raise ValueError("--resume requires --checkpoint")
+
     raw = load_config(args.config)
     config = _experiment_config(raw)
     report_cfg = raw.get("report") or {}
     capture_content = bool(report_cfg.get("capture_content", True))
     include_raw_rows = bool(report_cfg.get("include_raw_rows", True))
     models = _build_models(raw, capture_content)
-    result = run_experiment(config, models, run_id=args.run_id)
+    checkpoint = CheckpointStore(args.checkpoint) if args.checkpoint else None
+
+    progress_callback = None
+    if args.progress:
+        def render_progress(completed: int, total: int, item: TrialPlan) -> None:
+            pct = (100.0 * completed / total) if total else 100.0
+            model = getattr(models[item.model_index], "model", "none")
+            print(
+                f"PROGRESS {completed}/{total} {pct:6.2f}% "
+                f"model={model} arm={item.arm} family={item.family} complexity={item.complexity} "
+                f"quality={item.quality:.2f} seed={item.seed} epoch={item.epoch}",
+                flush=True,
+            )
+        progress_callback = render_progress
+
+    result = run_experiment(
+        config,
+        models,
+        run_id=args.run_id,
+        checkpoint_store=checkpoint,
+        resume=bool(args.resume),
+        progress_callback=progress_callback,
+    )
     summary = aggregate_trials(result.trials, config.bootstrap_samples, config.bootstrap_seed)
     verdict = decide_verdict(summary, config)
     provenance = collect_provenance()
@@ -155,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
         "models": _sanitized_models(raw),
         "capture_content": capture_content,
         "include_raw_rows": include_raw_rows,
+        "checkpoint_path": str(Path(args.checkpoint).resolve()) if args.checkpoint else None,
+        "resumed": bool(args.resume),
         "run_started_at": result.started_at,
         "run_ended_at": result.ended_at,
     })
