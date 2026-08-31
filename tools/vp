@@ -1,0 +1,1358 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+MODE="${1:-deep}"
+shift || true
+
+REPO=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --repo)
+            REPO="${2:-}"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+HOME_ROOT="$HOME/.velma-preflight"
+VENV="$HOME_ROOT/venv"
+RESULTS="$HOME_ROOT/results"
+WORKROOT="$HOME_ROOT/work"
+
+PY="$VENV/bin/python"
+PYTEST="$VENV/bin/pytest"
+RUFF="$VENV/bin/ruff"
+PYRIGHT="$VENV/bin/pyright"
+CROSSHAIR="$VENV/bin/crosshair"
+MUTMUT="$VENV/bin/mutmut"
+PIPAUDIT="$VENV/bin/pip-audit"
+
+mkdir -p "$RESULTS" "$WORKROOT"
+
+# ============================================================
+# STATUS
+# ============================================================
+
+if [[ "$MODE" == "status" ]]; then
+    if [[ -L "$HOME_ROOT/latest" && -f "$HOME_ROOT/latest/SUMMARY.txt" ]]; then
+        cat "$HOME_ROOT/latest/SUMMARY.txt"
+        exit 0
+    fi
+
+    echo "No VELMA preflight run has been recorded yet."
+    exit 1
+fi
+
+# ============================================================
+# DOCTOR
+# ============================================================
+
+if [[ "$MODE" == "doctor" ]]; then
+
+    FAIL=0
+
+    check_tool() {
+        local label="$1"
+        local path="$2"
+
+        if [[ -x "$path" ]]; then
+            echo "PASS  $label"
+        else
+            echo "FAIL  $label"
+            FAIL=1
+        fi
+    }
+
+    echo
+    echo "VELMA TEST-2 PREFLIGHT DOCTOR"
+    echo "========================================"
+
+    check_tool Python "$PY"
+    check_tool pytest "$PYTEST"
+    check_tool Ruff "$RUFF"
+    check_tool Pyright "$PYRIGHT"
+    check_tool CrossHair "$CROSSHAIR"
+    check_tool mutmut "$MUTMUT"
+    check_tool pip-audit "$PIPAUDIT"
+
+    command -v git >/dev/null 2>&1 \
+        && echo "PASS  git" \
+        || { echo "FAIL  git"; FAIL=1; }
+
+    command -v curl >/dev/null 2>&1 \
+        && echo "PASS  curl" \
+        || { echo "FAIL  curl"; FAIL=1; }
+
+    command -v jq >/dev/null 2>&1 \
+        && echo "PASS  jq" \
+        || { echo "FAIL  jq"; FAIL=1; }
+
+    command -v rustc >/dev/null 2>&1 \
+        && echo "PASS  rustc" \
+        || { echo "FAIL  rustc"; FAIL=1; }
+
+    command -v cargo >/dev/null 2>&1 \
+        && echo "PASS  cargo" \
+        || { echo "FAIL  cargo"; FAIL=1; }
+
+    echo
+
+    if [[ "$FAIL" -eq 0 ]]; then
+        echo "VP DOCTOR: PASS"
+        exit 0
+    else
+        echo "VP DOCTOR: BLOCKED"
+        exit 1
+    fi
+fi
+
+if [[ "$MODE" != "fast" && "$MODE" != "deep" ]]; then
+    echo "Usage:"
+    echo "  vp doctor"
+    echo "  vp fast"
+    echo "  vp deep"
+    echo "  vp status"
+    exit 2
+fi
+
+# ============================================================
+# FIND SOURCE REPOSITORY
+# ============================================================
+
+if [[ -z "$REPO" ]]; then
+    REPO="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+fi
+
+if [[ -z "$REPO" || ! -d "$REPO/.git" ]]; then
+    echo "TIER-A PREFLIGHT: BLOCKED"
+    echo "Reason: run vp from inside the inverted repository."
+    exit 2
+fi
+
+SHA="$(git -C "$REPO" rev-parse HEAD)"
+SHORT="${SHA:0:12}"
+BRANCH="$(git -C "$REPO" branch --show-current)"
+DIRTY="$(git -C "$REPO" status --porcelain=v1)"
+ORIGIN="$(git -C "$REPO" remote get-url origin 2>/dev/null || true)"
+
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+OUT="$RESULTS/${STAMP}-${SHORT}"
+WORK="$WORKROOT/${STAMP}-${SHORT}"
+CLONE="$WORK/repo"
+
+mkdir -p "$OUT" "$WORK"
+
+BLOCKED=0
+WARNINGS=0
+BLOCKERS_FILE="$OUT/BLOCKERS.txt"
+WARNINGS_FILE="$OUT/WARNINGS.txt"
+
+: > "$BLOCKERS_FILE"
+: > "$WARNINGS_FILE"
+
+block() {
+    local reason="$1"
+    echo "$reason" >> "$BLOCKERS_FILE"
+    echo "BLOCK  $reason"
+    BLOCKED=1
+}
+
+warn() {
+    local reason="$1"
+    echo "$reason" >> "$WARNINGS_FILE"
+    echo "WARN   $reason"
+    WARNINGS=$((WARNINGS + 1))
+}
+
+run_gate() {
+    local name="$1"
+    shift
+
+    echo
+    echo "============================================================"
+    echo "$name"
+    echo "============================================================"
+
+    set +e
+    "$@" 2>&1 | tee "$OUT/${name}.log"
+    local rc=${PIPESTATUS[0]}
+    set -e 2>/dev/null || true
+    set +e
+
+    echo "$rc" > "$OUT/${name}.exit"
+
+    if [[ "$rc" -ne 0 ]]; then
+        block "$name"
+    else
+        echo "PASS  $name"
+    fi
+
+    return 0
+}
+
+run_advisory() {
+    local name="$1"
+    shift
+
+    echo
+    echo "------------------------------------------------------------"
+    echo "$name"
+    echo "------------------------------------------------------------"
+
+    set +e
+    "$@" 2>&1 | tee "$OUT/${name}.log"
+    local rc=${PIPESTATUS[0]}
+    set +e
+
+    echo "$rc" > "$OUT/${name}.exit"
+
+    if [[ "$rc" -ne 0 ]]; then
+        warn "$name"
+    else
+        echo "PASS  $name"
+    fi
+
+    return 0
+}
+
+# ============================================================
+# RECORD SOURCE STATE
+# ============================================================
+
+cat > "$OUT/source.txt" <<EOF
+mode=$MODE
+sha=$SHA
+branch=$BRANCH
+origin=$ORIGIN
+source_repo=$REPO
+utc_start=$STAMP
+EOF
+
+# ============================================================
+# WINDOWS-SOURCE WORKTREE AUTHORITY
+# ============================================================
+#
+# REPO is a Windows checkout mounted through /mnt/c.
+# Windows Git is authoritative for its worktree semantics.
+# WSL Git must NOT classify CRLF-normalized Windows files as dirty.
+
+git -C "$REPO" log -1 --format=fuller > "$OUT/commit.txt"
+
+WIN_REPO="$(wslpath -w "$REPO")"
+export VP_WIN_REPO="$WIN_REPO"
+
+# Explicitly propagate this WSL variable into Windows processes.
+if [[ -n "${WSLENV:-}" ]]; then
+    export WSLENV="${WSLENV}:VP_WIN_REPO"
+else
+    export WSLENV="VP_WIN_REPO"
+fi
+
+powershell.exe -NoProfile -Command '
+$ErrorActionPreference = "Stop"
+$r = $env:VP_WIN_REPO
+
+& git -C $r status --porcelain=v1
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+' 2>&1 | tr -d '
+' > "$OUT/source-dirty.txt"
+
+ps_status=${PIPESTATUS[0]}
+
+if [[ "$ps_status" -ne 0 ]]; then
+    cat "$OUT/source-dirty.txt"
+    block "source_git_status_unavailable"
+else
+    powershell.exe -NoProfile -Command '
+    $ErrorActionPreference = "Stop"
+    $r = $env:VP_WIN_REPO
+    $paths = New-Object System.Collections.Generic.List[string]
+
+    foreach ($line in (& git -C $r diff --name-only)) {
+        [void]$paths.Add($line)
+    }
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    foreach ($line in (& git -C $r diff --cached --name-only)) {
+        [void]$paths.Add($line)
+    }
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    foreach ($line in (& git -C $r ls-files --others --exclude-standard)) {
+        [void]$paths.Add($line)
+    }
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    $paths | Sort-Object -Unique
+    ' 2>&1 | tr -d '
+' > "$OUT/source-dirty-paths.txt"
+
+    path_status=${PIPESTATUS[0]}
+
+    if [[ "$path_status" -ne 0 ]]; then
+        cat "$OUT/source-dirty-paths.txt"
+        block "source_git_status_unavailable"
+    else
+        "$PY" - "$OUT/source-dirty-paths.txt" > "$OUT/source-dirty-relevance.txt" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+
+dirty = {
+    line.strip()
+    for line in source.read_text(
+        encoding="utf-8",
+        errors="replace",
+    ).splitlines()
+    if line.strip()
+}
+
+# Explicitly preserved local work unrelated to the frozen Test-2 SHA.
+allowed_exact = {
+    "scripts/wait-for-010-and-run-inverted.ps1",
+    "scripts/wait-for-010-and-run-inverted.ps1.backup",
+}
+
+
+def generated(path: str) -> bool:
+    parts = Path(path).parts
+
+    return (
+        "__pycache__" in parts
+        or path.endswith((".pyc", ".pyo"))
+        or path.startswith("src/inverted_ai_benchmark.egg-info/")
+        or path.startswith("build/")
+        or path.startswith(".pytest_cache/")
+        or path.startswith(".hypothesis/")
+        or path.startswith(".ruff_cache/")
+        or path.startswith("htmlcov/")
+        or path == ".coverage"
+        or path.startswith(".coverage.")
+    )
+
+
+ignored = sorted(
+    path
+    for path in dirty
+    if path in allowed_exact or generated(path)
+)
+
+relevant = sorted(
+    path
+    for path in dirty
+    if path not in allowed_exact and not generated(path)
+)
+
+print("WINDOWS GIT DIRTY CLASSIFICATION")
+print("=" * 48)
+
+print("
+IGNORED / NON-TEST2:")
+for path in ignored:
+    print(path)
+
+print("
+TIER-A RELEVANT:")
+for path in relevant:
+    print(path)
+
+if relevant:
+    raise SystemExit(1)
+
+print("
+SOURCE EXACT-SHA SAFETY: PASS")
+PY
+
+        if [[ $? -ne 0 ]]; then
+            cat "$OUT/source-dirty-relevance.txt"
+            block "source_git_tree_dirty"
+        else
+            cat "$OUT/source-dirty-relevance.txt"
+        fi
+    fi
+fi
+
+# ============================================================
+# HOST / WSL SNAPSHOT
+# ============================================================
+
+uname -a > "$OUT/wsl-kernel.txt"
+df -h > "$OUT/wsl-disk.txt"
+free -h > "$OUT/wsl-memory.txt"
+
+"$PY" --version > "$OUT/python-version.txt" 2>&1
+git --version > "$OUT/git-version.txt" 2>&1
+
+if command -v powershell.exe >/dev/null 2>&1; then
+
+    powershell.exe -NoProfile -Command '
+        Get-CimInstance Win32_OperatingSystem |
+        Select-Object Caption,Version,BuildNumber,TotalVisibleMemorySize,FreePhysicalMemory |
+        Format-List
+    ' 2>&1 | tr -d '\r' > "$OUT/windows-os.txt"
+
+    powershell.exe -NoProfile -Command '
+        Get-CimInstance Win32_VideoController |
+        Select-Object Name,DriverVersion,AdapterRAM |
+        Format-List
+    ' 2>&1 | tr -d '\r' > "$OUT/windows-gpu.txt"
+fi
+
+# ============================================================
+# EXACT IMMUTABLE EXT4 CLONE
+# ============================================================
+
+echo
+echo "Creating disposable exact-SHA WSL/ext4 clone..."
+
+if ! git clone --no-hardlinks --quiet "$REPO" "$CLONE"; then
+    block "cannot_clone_source_into_wsl_ext4"
+else
+    if ! git -C "$CLONE" checkout --detach --quiet "$SHA"; then
+        block "cannot_checkout_exact_sha"
+    fi
+fi
+
+if [[ ! -d "$CLONE/.git" ]]; then
+    block "scratch_clone_missing"
+fi
+
+if [[ "$BLOCKED" -eq 0 || -d "$CLONE/.git" ]]; then
+
+    CLONE_SHA="$(git -C "$CLONE" rev-parse HEAD 2>/dev/null || true)"
+
+    if [[ "$CLONE_SHA" != "$SHA" ]]; then
+        block "scratch_clone_sha_mismatch"
+    fi
+
+    if [[ -n "$(git -C "$CLONE" status --porcelain=v1 2>/dev/null)" ]]; then
+        block "scratch_clone_not_clean_before_audit"
+    fi
+fi
+
+# ============================================================
+# INSTALL EXACT PROJECT INTO AUDIT ENV
+# ============================================================
+
+if [[ -d "$CLONE" ]]; then
+
+    "$PY" -m pip install -q "${CLONE}[test]" \
+        > "$OUT/project-install.log" 2>&1
+
+    if [[ $? -ne 0 ]]; then
+        block "project_dependency_install"
+    fi
+fi
+
+cd "$CLONE" || exit 2
+
+# ============================================================
+# SCIENTIFIC CONSTITUTION / CONFIG GATE
+# ============================================================
+
+"$PY" - <<'PY' > "$OUT/scientific-contract.txt" 2>&1
+from pathlib import Path
+import sys
+import yaml
+
+cfg = yaml.safe_load(Path("configs/test2-local.yaml").read_text())
+local = cfg["local"]
+
+expected_models = [
+    "qwen3.5:9b-q8_0",
+    "llama3.1:8b",
+    "ministral-3:3b-instruct-2512-q8_0",
+    "cogito:3b-v1-preview-llama-q8_0",
+    "granite4:7b-a1b-h",
+]
+
+assert local["models"] == expected_models
+assert local["hard_call_limit"] == 480
+assert local["early_stop"] is False
+assert local["ollama"]["transport_retries"] == 0
+assert local["ollama"]["retry_backoff_s"] == 0
+assert local["ollama"]["temperature"] == 0
+assert local["ollama"]["think"] is False
+assert local["ollama"]["context_limit"] == 8192
+
+assert sum(local["phase_limits"].values()) == 480
+
+from inverted.test2_preregistration import PREREGISTRATION
+
+p = PREREGISTRATION["primary_hypothesis"]
+
+assert p["minimum_effect_pp"] == 10.0
+assert p["third_retry_break_even"] == 0.3431
+assert p["matched_factorial_cells_per_condition"] == 18
+assert p["selected_repair_models"] == 3
+assert p["primary_failure_candidates"] == 6
+
+assert PREREGISTRATION["hard_physical_call_ceiling"] == 480
+assert PREREGISTRATION["stopping_rule"] == "FIXED_BUDGET_NO_SEQUENTIAL_EARLY_STOP"
+
+print("SCIENTIFIC CONSTITUTION: PASS")
+PY
+
+if [[ $? -ne 0 ]]; then
+    cat "$OUT/scientific-contract.txt"
+    block "scientific_constitution_changed"
+else
+    cat "$OUT/scientific-contract.txt"
+fi
+
+# ============================================================
+# GITHUB EXACT-SHA WORKFLOW GATE
+# ============================================================
+
+"$PY" - "$ORIGIN" "$SHA" <<'PY' > "$OUT/github-ci.txt" 2>&1
+import json
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+origin, sha = sys.argv[1], sys.argv[2]
+
+m = re.search(
+    r"github\.com[:/](?P<repo>[^/\]]+/[^/\]\)]+?)(?:\.git)?(?:\]|\)|$)",
+    origin,
+)
+
+if not m:
+    raise SystemExit(
+        f"Could not derive GitHub repository from origin: {origin!r}"
+    )
+
+repo = m.group("repo").removesuffix(".git")
+
+
+def windows_github_token() -> str:
+    ps = r"""
+$ErrorActionPreference = "Stop"
+$inputText = "protocol=https`nhost=github.com`n`n"
+$cred = $inputText | git credential fill
+$line = $cred |
+    Where-Object { $_ -like "password=*" } |
+    Select-Object -First 1
+
+if (-not $line) {
+    exit 3
+}
+
+$line.Substring(9)
+"""
+
+    proc = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", ps],
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "Windows Git credential lookup failed."
+        )
+
+    token = proc.stdout.strip()
+
+    if not token:
+        raise RuntimeError(
+            "Windows Git credential contained no password/token."
+        )
+
+    return token
+
+
+token = windows_github_token()
+
+url = (
+    f"https://api.github.com/repos/{repo}/actions/runs"
+    f"?head_sha={sha}&per_page=100"
+)
+
+req = urllib.request.Request(
+    url,
+    headers={
+        "User-Agent": "velma-test2-preflight",
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    },
+)
+
+try:
+    with urllib.request.urlopen(req, timeout=20) as response:
+        data = json.load(response)
+except urllib.error.HTTPError as exc:
+    raise SystemExit(
+        f"GitHub Actions API HTTP {exc.code} for {repo} at {sha}"
+    ) from exc
+
+required = {
+    ".github/workflows/test.yml",
+    ".github/workflows/test2-validation.yml",
+}
+
+latest = {}
+
+for run in data.get("workflow_runs", []):
+    path = run.get("path")
+
+    if path not in required:
+        continue
+
+    current = latest.get(path)
+
+    if (
+        current is None
+        or int(run.get("run_attempt") or 0)
+        > int(current.get("run_attempt") or 0)
+        or int(run.get("id") or 0)
+        > int(current.get("id") or 0)
+    ):
+        latest[path] = {
+            "status": run.get("status"),
+            "conclusion": run.get("conclusion"),
+            "id": run.get("id"),
+            "run_attempt": run.get("run_attempt"),
+            "html_url": run.get("html_url"),
+        }
+
+print(json.dumps(latest, indent=2))
+
+missing = required - set(latest)
+
+if missing:
+    raise SystemExit(
+        f"Missing exact-SHA workflow runs: {sorted(missing)}"
+    )
+
+bad = {
+    path: value
+    for path, value in latest.items()
+    if value["status"] != "completed"
+    or value["conclusion"] != "success"
+}
+
+if bad:
+    raise SystemExit(
+        f"Exact-SHA workflows not green: {bad}"
+    )
+
+print("EXACT-SHA GITHUB WORKFLOWS: PASS")
+PY
+
+if [[ $? -ne 0 ]]; then
+    cat "$OUT/github-ci.txt"
+    block "github_exact_sha_not_green"
+else
+    cat "$OUT/github-ci.txt"
+fi
+
+# ============================================================
+# OLLAMA ZERO-INFERENCE PROVENANCE
+# ============================================================
+
+echo
+echo "Checking Ollama identity without inference..."
+
+OLLAMA_OK=1
+
+get_windows_json() {
+    local ps="$1"
+    powershell.exe -NoProfile -Command "$ps" 2>/dev/null | tr -d '\r'
+}
+
+if curl -fsS --max-time 5 \
+    "http://127.0.0.1:11434/api/version" \
+    > "$OUT/ollama-version.json" 2>/dev/null; then
+
+    curl -fsS --max-time 10 \
+        "http://127.0.0.1:11434/api/tags" \
+        > "$OUT/ollama-tags.json" 2>/dev/null || OLLAMA_OK=0
+
+    OLLAMA_ACCESS="wsl-localhost"
+
+elif command -v powershell.exe >/dev/null 2>&1; then
+
+    get_windows_json '
+        $ProgressPreference="SilentlyContinue";
+        Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/version" -TimeoutSec 5 |
+        ConvertTo-Json -Depth 20 -Compress
+    ' > "$OUT/ollama-version.json"
+
+    if [[ $? -ne 0 || ! -s "$OUT/ollama-version.json" ]]; then
+        OLLAMA_OK=0
+    fi
+
+    get_windows_json '
+        $ProgressPreference="SilentlyContinue";
+        Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 10 |
+        ConvertTo-Json -Depth 20 -Compress
+    ' > "$OUT/ollama-tags.json"
+
+    if [[ $? -ne 0 || ! -s "$OUT/ollama-tags.json" ]]; then
+        OLLAMA_OK=0
+    fi
+
+    OLLAMA_ACCESS="windows-powershell"
+
+else
+    OLLAMA_OK=0
+    OLLAMA_ACCESS="unavailable"
+fi
+
+echo "$OLLAMA_ACCESS" > "$OUT/ollama-access.txt"
+
+if [[ "$OLLAMA_OK" -ne 1 ]]; then
+    block "ollama_metadata_endpoint_unavailable"
+else
+
+    mapfile -t REQUIRED_MODELS < <(
+        "$PY" - <<'PY'
+import yaml
+from pathlib import Path
+
+cfg = yaml.safe_load(Path("configs/test2-local.yaml").read_text())
+
+for model in cfg["local"]["models"]:
+    print(model)
+PY
+    )
+
+    : > "$OUT/ollama-show-manifest.txt"
+
+    INDEX=0
+
+    for MODEL in "${REQUIRED_MODELS[@]}"; do
+
+        FILE="$OUT/ollama-show-${INDEX}.json"
+
+        if [[ "$OLLAMA_ACCESS" == "wsl-localhost" ]]; then
+
+            curl -fsS --max-time 15 \
+                -H "Content-Type: application/json" \
+                -d "{\"model\":\"${MODEL}\"}" \
+                "http://127.0.0.1:11434/api/show" \
+                > "$FILE" 2>/dev/null
+
+        else
+
+            PSCMD="\$ProgressPreference='SilentlyContinue'; \$body=@{model='${MODEL}'} | ConvertTo-Json -Compress; Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/show' -Method Post -ContentType 'application/json' -Body \$body -TimeoutSec 15 | ConvertTo-Json -Depth 50 -Compress"
+
+            powershell.exe -NoProfile -Command "$PSCMD" \
+                2>/dev/null | tr -d '\r' > "$FILE"
+        fi
+
+        if [[ $? -ne 0 || ! -s "$FILE" ]]; then
+            block "ollama_show_failed_${MODEL}"
+        fi
+
+        printf '%s\t%s\n' "$MODEL" "$FILE" \
+            >> "$OUT/ollama-show-manifest.txt"
+
+        INDEX=$((INDEX + 1))
+    done
+
+    "$PY" - "$OUT" <<'PY' > "$OUT/ollama-identity-check.txt" 2>&1
+import hashlib
+import json
+from pathlib import Path
+import sys
+import yaml
+
+out = Path(sys.argv[1])
+
+cfg = yaml.safe_load(Path("configs/test2-local.yaml").read_text())
+expected = cfg["local"]["models"]
+
+tags = json.loads((out / "ollama-tags.json").read_text())
+
+models = tags.get("models", [])
+
+seen = {}
+
+for row in models:
+    name = row.get("name") or row.get("model")
+    if name:
+        seen[name] = row
+
+missing = [m for m in expected if m not in seen]
+
+if missing:
+    raise SystemExit(f"Missing exact configured Ollama models: {missing}")
+
+for model in expected:
+    digest = seen[model].get("digest")
+    if not digest:
+        raise SystemExit(f"Missing digest for {model}")
+
+manifest = []
+
+for index, model in enumerate(expected):
+
+    path = out / f"ollama-show-{index}.json"
+
+    if not path.exists() or path.stat().st_size == 0:
+        raise SystemExit(f"Missing /api/show response for {model}")
+
+    raw = path.read_bytes()
+
+    try:
+        show = json.loads(raw)
+    except Exception as exc:
+        raise SystemExit(f"Invalid /api/show JSON for {model}: {exc}")
+
+    details = show.get("details") or {}
+
+    if not details:
+        raise SystemExit(f"Missing model details for {model}")
+
+    manifest.append({
+        "model": model,
+        "tag_digest": seen[model].get("digest"),
+        "show_sha256": hashlib.sha256(raw).hexdigest(),
+        "parameter_size": details.get("parameter_size"),
+        "quantization_level": details.get("quantization_level"),
+        "family": details.get("family"),
+    })
+
+(out / "ollama-identity-manifest.json").write_text(
+    json.dumps(manifest, indent=2)
+)
+
+print(json.dumps(manifest, indent=2))
+print("OLLAMA EXACT MODEL IDENTITY: PASS")
+PY
+
+    if [[ $? -ne 0 ]]; then
+        cat "$OUT/ollama-identity-check.txt"
+        block "ollama_exact_model_identity"
+    else
+        cat "$OUT/ollama-identity-check.txt"
+    fi
+fi
+
+# ============================================================
+# BASELINE TESTS — SAME FOUNDATION AS CI
+# ============================================================
+
+run_gate \
+    "01-baseline-pytest" \
+    "$PYTEST" -q
+
+# ============================================================
+# KNOWN HOSTILE-AUDIT COUNTERBALANCING CONTRACTS
+# ============================================================
+
+run_gate \
+    "02-counterbalancing-contracts" \
+    "$PYTEST" -q \
+    -k "repair_screen_is_condition_balanced_disjoint_and_task_spread or primary_factorial_counterbalances_condition_ordinal_position"
+
+# ============================================================
+# READINESS / INTEGRITY CONTRACT
+# ============================================================
+
+if [[ -f "tests/test_test2_readiness_contract.py" ]]; then
+
+    run_gate \
+        "03-readiness-contract" \
+        "$PYTEST" -q \
+        tests/test_test2_readiness_contract.py
+
+else
+    block "missing_test2_readiness_contract"
+fi
+
+# ============================================================
+# EXTRA PROPERTY TESTS GENERATED ONLY IN SCRATCH CLONE
+# ============================================================
+
+cat > "$WORK/vp_property_tests.py" <<'PY'
+from copy import deepcopy
+import random
+
+from hypothesis import given, settings, strategies as st
+
+from inverted.test2_preregistration import evaluate_primary_verdict
+
+
+MODELS = ["m1", "m2", "m3"]
+TASKS = [f"task-{i}" for i in range(6)]
+
+
+def rows():
+    result = []
+    n = 1
+
+    for task_index, task in enumerate(TASKS):
+        for model_index, model in enumerate(MODELS):
+
+            result.append({
+                "feedback_style": "structured",
+                "strategy": "targeted",
+                "model": model,
+                "task_id": task,
+                "success": not (
+                    task_index == 5 and model_index == 2
+                ),
+                "catastrophic": False,
+                "cache_hit": False,
+                "physical_call_number": n,
+                "call_identity": f"T:{model}:{task}",
+            })
+            n += 1
+
+            result.append({
+                "feedback_style": "raw",
+                "strategy": "regenerate",
+                "model": model,
+                "task_id": task,
+                "success": model_index == 0,
+                "catastrophic": False,
+                "cache_hit": False,
+                "physical_call_number": n,
+                "call_identity": f"C:{model}:{task}",
+            })
+            n += 1
+
+    return result
+
+
+def test_exact_grid_is_accepted_as_decidable_structure():
+    verdict = evaluate_primary_verdict(rows())
+
+    assert verdict["verdict"] in {
+        "SUPPORTED",
+        "REFUTED",
+        "INCONCLUSIVE",
+    }
+
+    assert verdict["models"] == 3
+    assert verdict["tasks"] == 6
+    assert verdict["n_matched"] == 18
+    assert verdict["bootstrap_unit"] == "task_cluster"
+    assert verdict["task_clusters"] == 6
+
+
+def test_one_model_pseudogrid_is_non_decisive():
+    data = rows()
+
+    for row in data:
+        row["model"] = "only-one-model"
+
+    assert (
+        evaluate_primary_verdict(data)["verdict"]
+        == "NON-DECISIVE"
+    )
+
+
+def test_cache_hit_cannot_satisfy_primary_budget():
+    data = rows()
+
+    data[0]["cache_hit"] = True
+    data[0]["physical_call_number"] = None
+
+    assert (
+        evaluate_primary_verdict(data)["verdict"]
+        == "NON-DECISIVE"
+    )
+
+
+def test_duplicate_physical_identity_is_non_decisive():
+    data = rows()
+
+    data[1]["physical_call_number"] = data[0]["physical_call_number"]
+
+    assert (
+        evaluate_primary_verdict(data)["verdict"]
+        == "NON-DECISIVE"
+    )
+
+
+def test_duplicate_call_identity_is_non_decisive():
+    data = rows()
+
+    data[1]["call_identity"] = data[0]["call_identity"]
+
+    assert (
+        evaluate_primary_verdict(data)["verdict"]
+        == "NON-DECISIVE"
+    )
+
+
+@settings(max_examples=150, deadline=None)
+@given(st.permutations(list(range(36))))
+def test_verdict_is_invariant_to_evidence_row_order(order):
+    original = rows()
+
+    baseline = evaluate_primary_verdict(original)
+
+    permuted = [original[i] for i in order]
+
+    observed = evaluate_primary_verdict(permuted)
+
+    assert observed["verdict"] == baseline["verdict"]
+    assert observed.get("paired_effect_pp") == baseline.get("paired_effect_pp")
+    assert (
+        observed.get("paired_effect_ci95_low_pp")
+        == baseline.get("paired_effect_ci95_low_pp")
+    )
+    assert (
+        observed.get("paired_effect_ci95_high_pp")
+        == baseline.get("paired_effect_ci95_high_pp")
+    )
+
+
+@settings(max_examples=100, deadline=None)
+@given(st.integers(min_value=0, max_value=35))
+def test_any_primary_cache_hit_invalidates_equal_budget(index):
+    data = rows()
+
+    data[index]["cache_hit"] = True
+    data[index]["physical_call_number"] = None
+
+    assert (
+        evaluate_primary_verdict(data)["verdict"]
+        == "NON-DECISIVE"
+    )
+PY
+
+run_gate \
+    "04-hypothesis-truthfulness-properties" \
+    "$PYTEST" -q "$WORK/vp_property_tests.py"
+
+# ============================================================
+# SYMBOLIC CHECKS — PURE DECISION MATHEMATICS
+# ============================================================
+
+cat > "$WORK/vp_crosshair_contracts.py" <<'PY'
+from inverted.test2_preregistration import _wilson
+
+
+def wilson_contract(successes: int, n: int) -> tuple[float, float]:
+    """
+    pre: n > 0
+    pre: successes >= 0
+    pre: successes <= n
+    post: 0.0 <= __return__[0]
+    post: __return__[0] <= __return__[1]
+    post: __return__[1] <= 1.0
+    """
+    return _wilson(successes, n)
+PY
+
+run_gate \
+    "05-crosshair-decision-math" \
+    "$CROSSHAIR" check \
+    --per_condition_timeout 20 \
+    "$WORK/vp_crosshair_contracts.py"
+
+# ============================================================
+# FAST ENDS AFTER STRONG CORE
+# ============================================================
+
+if [[ "$MODE" == "deep" ]]; then
+
+    # --------------------------------------------------------
+    # RANDOMIZED ORDER — STATE CONTAMINATION
+    # --------------------------------------------------------
+
+    for SEED in 11 101 211 503 20260831; do
+
+        run_gate \
+            "10-random-order-${SEED}" \
+            "$PYTEST" -q \
+            --randomly-seed="$SEED"
+    done
+
+    # --------------------------------------------------------
+    # PARALLEL EXECUTION
+    # --------------------------------------------------------
+
+    run_gate \
+        "11-parallel-suite" \
+        "$PYTEST" -q \
+        -n auto \
+        --dist loadscope
+
+    # --------------------------------------------------------
+    # REPEATED READINESS / INTEGRITY
+    # --------------------------------------------------------
+
+    if [[ -f "tests/test_test2_readiness_contract.py" ]]; then
+
+        run_gate \
+            "12-repeat-readiness" \
+            "$PYTEST" -q \
+            tests/test_test2_readiness_contract.py \
+            --count=20
+    fi
+
+    # --------------------------------------------------------
+    # TARGETED SCIENTIFIC TEST SEARCH / REPEAT
+    # --------------------------------------------------------
+
+    run_gate \
+        "13-adversarial-contract-repeat" \
+        "$PYTEST" -q \
+        -k "integrity or readiness or provenance or transport or cache or contamination or leakage or catastrophic or counterbalanc" \
+        --count=10
+
+    # --------------------------------------------------------
+    # STATIC ANALYSIS
+    # --------------------------------------------------------
+
+    run_advisory \
+        "14-ruff-static" \
+        "$RUFF" check \
+        src/inverted \
+        tests
+
+    run_advisory \
+        "15-pyright-critical" \
+        "$PYRIGHT" \
+        src/inverted/test2_preregistration.py \
+        src/inverted/test2_readiness.py \
+        src/inverted/test2_integrity.py \
+        src/inverted/test2_local_analysis.py \
+        src/inverted/test2_local_hardened.py \
+        src/inverted/test2_artifacts.py
+
+    # --------------------------------------------------------
+    # DEPENDENCY AUDIT — REPORT, NOT SCIENCE VERDICT
+    # --------------------------------------------------------
+
+    run_advisory \
+        "16-pip-audit" \
+        "$PIPAUDIT"
+
+    # --------------------------------------------------------
+    # MUTATION TESTING
+    #
+    # Only spend this time if all stronger prerequisite gates
+    # are already clean.
+    # --------------------------------------------------------
+
+    if [[ "$BLOCKED" -eq 0 ]]; then
+
+        cat >> pyproject.toml <<'EOF'
+
+[tool.mutmut]
+source_paths = [
+    "src/inverted/test2_preregistration.py",
+    "src/inverted/test2_readiness.py",
+    "src/inverted/test2_integrity.py",
+    "src/inverted/test2_types.py",
+    "src/inverted/test2_gold.py",
+    "src/inverted/test2_local_analysis.py",
+    "src/inverted/test2_local_hardened.py",
+    "src/inverted/test2_artifacts.py",
+]
+pytest_add_cli_args_test_selection = ["tests/"]
+EOF
+
+        run_gate \
+            "20-targeted-mutation-run" \
+            "$MUTMUT" run
+
+        set +e
+        "$MUTMUT" results \
+            > "$OUT/mutmut-results.txt" 2>&1
+        MUT_RESULTS_RC=$?
+        set +e
+
+        echo "$MUT_RESULTS_RC" \
+            > "$OUT/mutmut-results.exit"
+
+        if [[ "$MUT_RESULTS_RC" -ne 0 ]]; then
+            block "mutmut_results_failed"
+
+        elif [[ -s "$OUT/mutmut-results.txt" ]]; then
+            cat "$OUT/mutmut-results.txt"
+            block "unresolved_decision_mutants"
+
+        else
+            echo "PASS  mutation gate: no unresolved mutants reported"
+        fi
+
+    else
+
+        echo \
+            "Mutation stage skipped because prerequisite scientific gates are already BLOCKED." \
+            > "$OUT/mutation-skipped.txt"
+    fi
+fi
+
+# ============================================================
+# VERIFY SCRATCH EXPERIMENT SOURCE WAS NOT AUTO-REPAIRED
+# ============================================================
+
+# Remove mutation-tool scratch artifacts from consideration.
+rm -rf     mutants     .mutmut-cache     build     .pytest_cache     .hypothesis     .ruff_cache     htmlcov     src/inverted_ai_benchmark.egg-info     2>/dev/null || true
+
+find src tests     -type d     -name __pycache__     -prune     -exec rm -rf {} +     2>/dev/null || true
+
+rm -f .coverage .coverage.* 2>/dev/null || true
+
+# pyproject gets intentionally modified for mutation config only.
+git checkout -- pyproject.toml 2>/dev/null || true
+
+"$PY" - <<'PY' > "$OUT/scratch-post-audit-status.txt" 2>&1
+from pathlib import Path
+import re
+import subprocess
+
+allowed_untracked = [
+    re.compile(r"(^|/)__pycache__/"),
+    re.compile(r"\.py[co]$"),
+    re.compile(r"^\.pytest_cache/"),
+    re.compile(r"^\.hypothesis/"),
+    re.compile(r"^\.ruff_cache/"),
+    re.compile(r"^\.coverage(?:\..*)?$"),
+    re.compile(r"^htmlcov/"),
+    re.compile(r"^src/inverted_ai_benchmark\.egg-info/"),
+]
+
+
+def run(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+tracked = run("git", "diff", "--name-only")
+staged = run("git", "diff", "--cached", "--name-only")
+untracked = run(
+    "git",
+    "ls-files",
+    "--others",
+    "--exclude-standard",
+)
+
+tracked_files = [
+    line for line in tracked.stdout.splitlines()
+    if line.strip()
+]
+
+staged_files = [
+    line for line in staged.stdout.splitlines()
+    if line.strip()
+]
+
+unexpected_untracked = []
+
+for raw in untracked.stdout.splitlines():
+    candidate = raw.strip()
+
+    if not candidate:
+        continue
+
+    if any(pattern.search(candidate) for pattern in allowed_untracked):
+        continue
+
+    unexpected_untracked.append(candidate)
+
+print("TRACKED MODIFICATIONS:")
+for item in tracked_files:
+    print(item)
+
+print("STAGED MODIFICATIONS:")
+for item in staged_files:
+    print(item)
+
+print("UNEXPECTED UNTRACKED FILES:")
+for item in unexpected_untracked:
+    print(item)
+
+if tracked_files or staged_files or unexpected_untracked:
+    raise SystemExit(1)
+
+print("SCRATCH SOURCE IMMUTABILITY: PASS")
+PY
+
+if [[ $? -ne 0 ]]; then
+    cat "$OUT/scratch-post-audit-status.txt"
+    block "audit_unexpectedly_modified_scratch_experiment"
+else
+    cat "$OUT/scratch-post-audit-status.txt"
+fi
+
+# ============================================================
+# FINAL SUMMARY
+# ============================================================
+
+END="$(date -u +%Y%m%dT%H%M%SZ)"
+BLOCKER_COUNT="$(grep -cve '^$' "$BLOCKERS_FILE" 2>/dev/null || true)"
+WARNING_COUNT="$(grep -cve '^$' "$WARNINGS_FILE" 2>/dev/null || true)"
+
+if [[ "$BLOCKED" -eq 0 ]]; then
+    RESULT="TIER-A READY"
+    EXIT=0
+else
+    RESULT="TIER-A BLOCKED"
+    EXIT=1
+fi
+
+cat > "$OUT/SUMMARY.txt" <<EOF
+VELMA TEST-2 LOCAL PREFLIGHT
+
+RESULT: $RESULT
+
+Mode: $MODE
+SHA: $SHA
+Branch: $BRANCH
+UTC start: $STAMP
+UTC end: $END
+
+Critical blockers: $BLOCKER_COUNT
+Advisory findings: $WARNING_COUNT
+
+Evidence:
+$OUT
+EOF
+
+if [[ "$BLOCKER_COUNT" -gt 0 ]]; then
+    {
+        echo
+        echo "BLOCKERS:"
+        cat "$BLOCKERS_FILE"
+    } >> "$OUT/SUMMARY.txt"
+fi
+
+if [[ "$WARNING_COUNT" -gt 0 ]]; then
+    {
+        echo
+        echo "ADVISORIES:"
+        cat "$WARNINGS_FILE"
+    } >> "$OUT/SUMMARY.txt"
+fi
+
+find "$OUT" -type f \
+    ! -name SHA256SUMS.txt \
+    -print0 |
+    sort -z |
+    xargs -0 sha256sum \
+    > "$OUT/SHA256SUMS.txt"
+
+ln -sfn "$OUT" "$HOME_ROOT/latest"
+
+echo
+echo "============================================================"
+cat "$OUT/SUMMARY.txt"
+echo "============================================================"
+
+exit "$EXIT"
