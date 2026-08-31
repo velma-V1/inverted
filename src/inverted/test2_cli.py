@@ -13,7 +13,7 @@ from .artifacts import collect_provenance
 from .models import OllamaAdapter
 from .test2_analysis import residual_bottlenecks, threshold_analysis
 from .test2_artifacts import Test2ArtifactWriter
-from .test2_local import LOCAL_MODELS, PROGRESSIVE_PIPELINES, build_local_plan, run_local_campaign
+from .test2_local import LOCAL_MODELS, LOCAL_PHASE_LIMITS, PROGRESSIVE_PIPELINES, build_local_plan, run_local_campaign
 from .test2_simulation import run_model_free_atlas
 
 
@@ -23,6 +23,32 @@ def load_test2_config(path: str | Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Test-2 config must be a mapping")
     return value
+
+
+def _validate_local_config(local_cfg: dict[str, Any]) -> int:
+    configured_models = tuple(local_cfg.get("models") or ())
+    if configured_models != LOCAL_MODELS:
+        raise ValueError(f"local config models must be exactly {LOCAL_MODELS!r}")
+
+    hard_limit = int(local_cfg.get("hard_call_limit", -1))
+    if hard_limit != 480:
+        raise ValueError("Test-2 local hard_call_limit must be exactly 480")
+    if bool(local_cfg.get("early_stop", False)):
+        raise ValueError("Test-2 local early_stop must be false")
+
+    configured_phase_limits = {
+        str(phase): int(limit)
+        for phase, limit in dict(local_cfg.get("phase_limits") or {}).items()
+    }
+    if configured_phase_limits != LOCAL_PHASE_LIMITS:
+        raise ValueError(f"Test-2 local phase_limits must be exactly {LOCAL_PHASE_LIMITS!r}")
+
+    settings = dict(local_cfg.get("ollama") or {})
+    if int(settings.get("transport_retries", -1)) != 0:
+        raise ValueError("Test-2 local ollama.transport_retries must be exactly 0")
+    if float(settings.get("retry_backoff_s", -1)) != 0.0:
+        raise ValueError("Test-2 local ollama.retry_backoff_s must be exactly 0")
+    return hard_limit
 
 
 def _run_id(prefix: str) -> str:
@@ -428,27 +454,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     local_cfg = cfg.get("local", {})
-    configured_models = tuple(local_cfg.get("models") or ())
-    if configured_models != LOCAL_MODELS:
-        raise ValueError(f"local config models must be exactly {LOCAL_MODELS!r}")
-    hard_limit = int(local_cfg.get("hard_call_limit", 480))
-    if hard_limit != 480:
-        raise ValueError("Test-2 local hard_call_limit must be exactly 480")
-    if bool(local_cfg.get("early_stop", False)):
-        raise ValueError("Test-2 local early_stop must be false")
+    hard_limit = _validate_local_config(local_cfg)
 
     plan = build_local_plan()
     if args.dry_plan:
         print("TEST2_LOCAL_DRY_PLAN")
         for model in plan.models:
             print(model)
-        for phase, limit in cfg.get("local", {}).get("phase_limits", {}).items():
+        for phase, limit in local_cfg.get("phase_limits", {}).items():
             print(f"PHASE {phase} MAX_CALLS={limit}")
         print(f"PLANNED_MAX_PHYSICAL_CALLS={plan.planned_max_physical_calls}")
         return 0
 
     run_id = args.run_id or _run_id("test2-local")
     settings = local_cfg.get("ollama", {})
+    configured_models = tuple(local_cfg.get("models") or ())
     models = [
         OllamaAdapter(
             model=name,
@@ -457,8 +477,8 @@ def main(argv: list[str] | None = None) -> int:
             capture_content=True,
             temperature=float(settings.get("temperature", 0)),
             max_tokens=int(settings.get("max_tokens", 1024)),
-            max_retries=int(settings.get("transport_retries", 2)),
-            retry_backoff_s=float(settings.get("retry_backoff_s", 5)),
+            max_retries=int(settings.get("transport_retries", 0)),
+            retry_backoff_s=float(settings.get("retry_backoff_s", 0)),
             think=settings.get("think", False),
             format_json=True,
             context_limit=int(settings.get("context_limit", 8192)),
