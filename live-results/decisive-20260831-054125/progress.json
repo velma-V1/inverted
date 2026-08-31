@@ -9,7 +9,7 @@
     "value_checkpoint_files":  2,
     "failed_call_records":  0,
     "failed_call_log_sha256":  null,
-    "updated_utc":  "2026-08-31T10:51:52.8243499Z",
-    "final_signal_seen":  true,
+    "updated_utc":  "2026-08-31T11:44:39.5652742Z",
+    "final_signal_seen":  false,
     "local_checkpoint":  "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-054125.checkpoint.jsonl"
 }
