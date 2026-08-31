@@ -20,6 +20,8 @@ def test_model_free_atlas_is_deterministic_and_contains_controlled_progressive_a
     assert a["saturation"]
     assert len(a["candidate_saturation"]) == 3
     assert a["candidate_independence"]
+    assert a["candidate_independence_strata"]
+    assert a["retry_repair_thresholds"]
     assert a["base_cell_records"]
     assert a["component_slice_effects"]
     assert a["order_slice_ranking"]
@@ -84,3 +86,22 @@ def test_failure_recovery_and_slice_outputs_preserve_task_specific_information()
     assert any(row["slice_type"] == "family" for row in order_slices)
     assert any(row["slice_type"] == "family_complexity_quality" for row in order_slices)
     assert all("rank_within_slice" in row for row in order_slices)
+
+
+def test_candidate_independence_is_stratified_and_repair_thresholds_match_retry_value():
+    atlas = run_model_free_atlas(seed_count=4)
+    strata = atlas["candidate_independence_strata"]
+    quality_rows = [row for row in strata if row["slice_type"] == "quality"]
+    assert quality_rows
+    assert {row["quality"] for row in quality_rows} == {0.20, 0.40, 0.60, 0.80, 0.95}
+    assert all("observed_to_independent_failure_ratio" in row for row in quality_rows)
+    assert all("success_correlation_attempt_1_2" in row for row in quality_rows)
+
+    thresholds = atlas["retry_repair_thresholds"]
+    overall = [row for row in thresholds if row["slice_type"] == "overall"]
+    assert [row["next_attempt"] for row in overall] == [2, 3]
+    saturation = atlas["candidate_saturation"]
+    assert overall[0]["repair_break_even_recovery_rate"] == saturation[1]["conditional_recovery_rate"]
+    assert overall[1]["repair_break_even_recovery_rate"] == saturation[2]["conditional_recovery_rate"]
+    assert any(row["slice_type"] == "quality" for row in thresholds)
+    assert any(row["slice_type"] == "fault" for row in thresholds)
