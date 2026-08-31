@@ -30,6 +30,24 @@ def test_model_free_smoke_writes_complete_evidence(tmp_path):
     ])
     assert rc == 0
     run_dir = tmp_path / "ci-test2-smoke"
-    assert (run_dir / "TEST2-COMPLETE-EVIDENCE.txt").exists()
-    assert (run_dir / "TEST2-NEXT-STRIDE-REPORT.txt").exists()
-    assert (run_dir / "effects" / "failure-kill-matrix.csv").exists()
+    required = [
+        "TEST2-COMPLETE-EVIDENCE.txt",
+        "TEST2-NEXT-STRIDE-REPORT.txt",
+        "effects/failure-kill-matrix.csv",
+        "effects/failure-recovery-matrix.csv",
+        "effects/component-slice-effects.csv",
+        "order/every-valid-order.csv",
+        "order/order-ranking.csv",
+        "order/order-slice-ranking.csv",
+        "order/candidate-saturation.csv",
+        "order/candidate-independence.json",
+        "raw/every-trial.jsonl",
+        "raw/every-candidate.jsonl",
+        "raw/every-event.jsonl",
+    ]
+    for relative in required:
+        assert (run_dir / relative).exists(), relative
+
+    assert (run_dir / "raw/every-trial.jsonl").stat().st_size > 0
+    assert (run_dir / "raw/every-candidate.jsonl").stat().st_size > 0
+    assert (run_dir / "raw/every-event.jsonl").stat().st_size > 0
