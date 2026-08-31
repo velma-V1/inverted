@@ -1,0 +1,29 @@
+local:
+  models:
+    - qwen3.5:9b-q8_0
+    - llama3.1:8b
+    - ministral-3:3b-instruct-2512-q8_0
+    - cogito:3b-v1-preview-llama-q8_0
+    - granite4:7b-a1b-h
+  hard_call_limit: 480
+  early_stop: false
+  phase_limits:
+    formalization: 60
+    execution: 60
+    auditing: 100
+    atomic_audit: 20
+    repair_factorial: 80
+    progressive_holdout: 110
+    stability: 40
+    reserve: 10
+  ollama:
+    base_url: http://127.0.0.1:11434
+    temperature: 0
+    max_tokens: 1024
+    timeout_s: 600
+    transport_retries: 2
+    retry_backoff_s: 5
+    think: false
+    context_limit: 8192
+model_free:
+  seed_count_for_local: 10
