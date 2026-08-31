@@ -3,9 +3,12 @@ import json
 import httpx
 import pytest
 
-from inverted.cli import _build_models
+from inverted.arms import Arm, Budget, run_arm
+from inverted.cli import _build_models, _preflight_models
 from inverted.models import ModelCallError, OllamaAdapter
 from inverted.runner import ExperimentConfig, build_trial_plan
+from inverted.tasks import generate_task
+from inverted.telemetry import ModelCallRecord
 
 
 class _Response:
@@ -25,6 +28,16 @@ class _Response:
 
 def _ctx():
     return {"run_id": "r", "trial_id": "t", "call_id": "c"}
+
+
+def _error_record():
+    return ModelCallRecord(
+        call_id="c", run_id="r", trial_id="t", candidate_id=None,
+        role="executor", model="broken", provider="ollama",
+        start_ts="2026-08-31T00:00:00+00:00", end_ts="2026-08-31T00:00:01+00:00",
+        latency_s=1.0, error_class="ReadTimeout", error_message="stalled", timeout=True,
+        retry_number=2, retry_reason="ReadTimeout: stalled",
+    )
 
 
 def test_ollama_retries_transient_no_response_and_records_recovery(monkeypatch):
@@ -90,6 +103,38 @@ def test_ollama_exhausted_transport_failure_aborts_instead_of_returning_scored_f
         model.complete([{"role": "user", "content": "x"}], role="executor", context=_ctx())
     assert excinfo.value.record.retry_number == 2
     assert excinfo.value.record.timeout is True
+
+
+def test_exhausted_model_call_error_aborts_trial_instead_of_becoming_scientific_failure():
+    class BrokenModel:
+        provider = "ollama"
+        model = "broken"
+
+        def complete(self, messages, *, role, context):
+            raise ModelCallError("stalled", _error_record())
+
+    task = generate_task("state", 1, 123)
+    with pytest.raises(ModelCallError):
+        run_arm(Arm.A_DIRECT, task, BrokenModel(), 0.2, 1, "r", Budget(), epoch=0)
+
+
+def test_preflight_requires_valid_json_response_from_every_real_model():
+    class Good:
+        provider = "ollama"
+        model = "good"
+
+        def preflight(self):
+            return {"model": self.model, "provider": self.provider, "response": {"ok": True}}
+
+    class Bad:
+        provider = "ollama"
+        model = "bad"
+
+        def preflight(self):
+            raise ModelCallError("empty response", _error_record())
+
+    with pytest.raises(ModelCallError):
+        _preflight_models([Good(), Bad()])
 
 
 def test_decisive_ollama_models_have_frozen_reliability_contract():
