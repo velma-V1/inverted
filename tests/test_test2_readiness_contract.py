@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from inverted.models import MockModelAdapter
+from inverted.test2_artifacts import Test2ArtifactWriter
+from inverted.test2_cli import _local_evidence
+from inverted.test2_local_impl import LOCAL_MODELS, run_local_campaign
+from inverted.test2_metadata import enrich_test2_evidence
+from inverted.test2_preregistration import PREREGISTRATION
+
+
+def _empty_evidence(trials: list[dict]):
+    return {
+        "master_index": {"mode": "local", "run_id": "readiness", "physical_model_calls": 0, "hard_call_limit": 480},
+        "raw": {
+            "trials": trials,
+            "model_calls": [],
+            "prompts": [],
+            "responses": [],
+            "candidates": [],
+            "events": [],
+            "validator_results": [],
+            "repairs": [],
+        },
+        "effects": {},
+        "order": {},
+        "models": {},
+        "thresholds": {},
+        "provenance": {"config": {"local": {"models": list(LOCAL_MODELS)}}, "environment": {}, "git": {}, "models": {}},
+    }
+
+
+def _primary_rows(st_successes: int = 17, rr_successes: int = 6):
+    rows = []
+    for i in range(18):
+        model = f"m{i % 3}"
+        task_id = f"t{i}"
+        rows.append({
+            "phase": "repair_factorial",
+            "role": "repairer",
+            "model": model,
+            "task_id": task_id,
+            "evaluation_id": f"st-{task_id}",
+            "feedback_style": "structured",
+            "strategy": "targeted",
+            "success": i < st_successes,
+            "catastrophic": False,
+        })
+        rows.append({
+            "phase": "repair_factorial",
+            "role": "repairer",
+            "model": model,
+            "task_id": task_id,
+            "evaluation_id": f"rr-{task_id}",
+            "feedback_style": "raw",
+            "strategy": "regenerate",
+            "success": i < rr_successes,
+            "catastrophic": False,
+        })
+    return rows
+
+
+def test_campaign_repair_factorial_rows_carry_boolean_catastrophic_telemetry():
+    models = [MockModelAdapter(model=name) for name in LOCAL_MODELS]
+    result = run_local_campaign(models, run_id="readiness-catastrophic", hard_limit=480)
+    repair_rows = [row for row in result["records"] if row.get("phase") == "repair_factorial"]
+    assert repair_rows
+    assert all(isinstance(row.get("catastrophic"), bool) for row in repair_rows)
+
+
+def test_contamination_audit_reports_duplicate_evaluation_model_even_when_last_row_is_progressive():
+    duplicate = {
+        "phase": "formalization",
+        "role": "formalizer",
+        "task_id": "f",
+        "evaluation_id": "formalization|formalizer|f",
+        "model": LOCAL_MODELS[0],
+        "success": True,
+    }
+    trials = [dict(duplicate), dict(duplicate), {
+        "phase": "progressive_holdout",
+        "role": "pipeline",
+        "task_id": "h",
+        "evaluation_id": "progressive_holdout|pipeline|h|pipeline=S0",
+        "pipeline": "S0",
+        "model": "layered",
+        "success": True,
+        "runtime_allowed": True,
+        "hidden_gold_success": True,
+    }]
+    evidence = _empty_evidence(trials)
+    enrich_test2_evidence(evidence)
+    collisions = evidence["diagnostics"]["contamination_audit"]["duplicate_evaluation_model_rows"]
+    assert any(row["evaluation_id"] == duplicate["evaluation_id"] and row["model"] == duplicate["model"] for row in collisions)
+
+
+def test_repair_factorial_matrix_coverage_uses_selected_three_model_cohort_not_all_five():
+    selected = LOCAL_MODELS[:3]
+    trials = []
+    for evaluation_id in ("repair_factorial|r1", "repair_factorial|r2"):
+        for model in selected:
+            trials.append({
+                "phase": "repair_factorial",
+                "role": "repairer",
+                "task_id": evaluation_id,
+                "evaluation_id": evaluation_id,
+                "model": model,
+                "feedback_style": "structured",
+                "strategy": "targeted",
+                "success": True,
+            })
+    evidence = _empty_evidence(trials)
+    enrich_test2_evidence(evidence)
+    rows = [row for row in evidence["diagnostics"]["matrix_coverage"] if row["phase"] == "repair_factorial"]
+    assert rows
+    assert all(row["expected_models"] == list(selected) for row in rows)
+    assert all(row["missing_models"] == [] and row["matched_complete"] is True for row in rows)
+
+
+def test_local_evidence_embeds_frozen_preregistration_and_primary_verdict():
+    local = {
+        "records": _primary_rows(),
+        "raw_calls": [],
+        "physical_model_calls": 36,
+        "cache_hits": 0,
+        "hard_call_limit": 480,
+        "models": list(LOCAL_MODELS),
+        "phase_limits": {},
+        "candidates": [],
+        "events": [],
+        "validator_results": [],
+        "repairs": [],
+    }
+    evidence = _local_evidence(local, {}, {"local": {"models": list(LOCAL_MODELS)}}, "readiness-verdict")
+    assert evidence["preregistration"] == PREREGISTRATION
+    assert evidence["verdict"]["verdict"] == "SUPPORTED"
+    assert evidence["diagnostics"]["contamination_audit"]
+
+
+def test_artifact_writer_emits_conventional_completion_proof_files(tmp_path):
+    evidence = _empty_evidence(_primary_rows())
+    evidence["preregistration"] = PREREGISTRATION
+    evidence["verdict"] = {"verdict": "INCONCLUSIVE", "reason": "fixture"}
+    run_dir = tmp_path / "proof"
+    paths = Test2ArtifactWriter(run_dir).write_all(evidence)
+    written = {str(Path(path).relative_to(run_dir)).replace("\\", "/") for path in paths.values()}
+    required = {
+        "events.jsonl",
+        "model_calls.jsonl",
+        "trials.csv",
+        "trials.jsonl",
+        "failures.csv",
+        "summary.json",
+        "summary.csv",
+        "report.txt",
+        "config.json",
+        "provenance.json",
+        "preregistration.json",
+        "verdict.json",
+        "SHA256SUMS.csv",
+        "TEST2-NEXT-STRIDE-REPORT.txt",
+        "TEST2-COMPLETE-EVIDENCE.txt",
+    }
+    assert required <= written
+    master = (run_dir / "TEST2-COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
+    assert "preregistration.json" in master
+    assert "verdict.json" in master
