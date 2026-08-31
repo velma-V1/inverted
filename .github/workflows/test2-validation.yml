@@ -24,12 +24,22 @@ jobs:
           --run-id test2-model-free
       - name: Verify Test2 evidence contract
         run: >-
-          python -c "from pathlib import Path; p=Path('test2-ci/test2-model-free');
-          required=['00-MASTER-INDEX.json','TEST2-COMPLETE-EVIDENCE.txt','TEST2-NEXT-STRIDE-REPORT.txt','SHA256SUMS.csv','effects/failure-kill-matrix.csv','effects/pairwise-interactions.csv','order/saturation.csv'];
+          python -c "import json; from pathlib import Path;
+          p=Path('test2-ci/test2-model-free');
+          prereg=json.loads((p/'preregistration.json').read_text(encoding='utf-8'));
+          verdict=json.loads((p/'verdict.json').read_text(encoding='utf-8'));
+          required=list(prereg['evidence_contract'])+['00-MASTER-INDEX.json','effects/failure-kill-matrix.csv','effects/pairwise-interactions.csv','order/saturation.csv'];
           missing=[x for x in required if not (p/x).exists()];
           assert not missing, missing;
-          text=(p/'TEST2-COMPLETE-EVIDENCE.txt').read_text(encoding='utf-8');
-          assert 'MODEL_FREE_DETERMINISTIC_ATLAS_NOT_LOCAL_MODEL_EVIDENCE' in text"
+          assert prereg['hard_physical_call_ceiling']==480;
+          assert verdict['verdict']=='NON-DECISIVE', verdict;
+          assert 'INSTRUMENT VALIDATION' in verdict['reason'], verdict;
+          master=(p/'TEST2-COMPLETE-EVIDENCE.txt').read_text(encoding='utf-8');
+          assert 'MODEL_FREE_DETERMINISTIC_ATLAS_NOT_LOCAL_MODEL_EVIDENCE' in master;
+          assert '===== BEGIN FILE: preregistration.json =====' in master;
+          assert '===== BEGIN FILE: verdict.json =====' in master;
+          hashes=(p/'SHA256SUMS.csv').read_text(encoding='utf-8');
+          assert 'preregistration.json' in hashes and 'verdict.json' in hashes and 'TEST2-COMPLETE-EVIDENCE.txt' in hashes"
       - name: Upload Test2 validation evidence
         uses: actions/upload-artifact@v4
         with:
