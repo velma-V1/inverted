@@ -7,9 +7,9 @@
     "last_chunk":  null,
     "last_chunk_sha256":  null,
     "value_checkpoint_files":  0,
-    "failed_call_records":  0,
-    "failed_call_log_sha256":  null,
-    "updated_utc":  "2026-08-31T09:12:06.6981111Z",
-    "final_signal_seen":  false,
+    "failed_call_records":  1,
+    "failed_call_log_sha256":  "44B6FEBA0C377522EF5B7561D33FBCFCD9406217D304EFFEA75EDC936B17CDD8",
+    "updated_utc":  "2026-08-31T09:13:38.6694851Z",
+    "final_signal_seen":  true,
     "local_checkpoint":  "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-051202.checkpoint.jsonl"
 }
