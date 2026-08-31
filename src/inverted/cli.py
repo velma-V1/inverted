@@ -15,11 +15,11 @@ from .artifacts import ArtifactWriter, collect_provenance
 from .checkpoint import CheckpointStore
 from .models import GenerationCensored, ModelCallError, MockModelAdapter, OllamaAdapter, OpenAICompatibleAdapter
 from .runner import ExperimentConfig, TrialPlan, run_experiment
-from .statistics import aggregate_trials
+from .statistics import aggregate_trials, bootstrap_rate_difference
 from .system_executor import generate_candidate
 from .tasks import generate_task
 from .telemetry import ModelCallRecord
-from .verdict import decide_verdict
+from .verdict import decide_interim_stop, decide_verdict
 
 _ENV_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 _MODEL_DEPENDENT_ARMS = {"A_DIRECT", "B_DIRECT_CHECKED", "D_INVERTED"}
@@ -48,7 +48,23 @@ def _validate_decisive(raw: dict[str, Any]) -> None:
     if len(models) < 3 or len({(m.get("provider"), m.get("model")) for m in models}) < 3: raise ValueError("decisive runs require three distinct model configurations")
     if not {"state", "policy", "reconciliation"}.issubset(set(bench.get("families", []))): raise ValueError("decisive runs require all three task families")
     if len(set(bench.get("complexities", []))) < 4 or len(set(bench.get("qualities", []))) < 5: raise ValueError("decisive runs require four complexity and five executor-quality levels")
-    if len(set(bench.get("seeds", []))) < 3 or int(bench.get("epochs", 0)) < 2: raise ValueError("decisive runs require at least three seeds and two epochs")
+    seeds = tuple(bench.get("seeds", []))
+    if len(set(seeds)) < 3 or int(bench.get("epochs", 0)) < 2: raise ValueError("decisive runs require at least three seeds and two epochs")
+
+    stages = tuple(int(x) for x in bench.get("sequential_seed_stages", []) or [])
+    confidences = tuple(float(x) for x in bench.get("sequential_interim_confidence", []) or [])
+    if stages:
+        if tuple(sorted(set(stages))) != stages or any(x <= 0 for x in stages):
+            raise ValueError("sequential_seed_stages must be strictly increasing positive cumulative seed counts")
+        if stages[-1] != len(seeds):
+            raise ValueError("final sequential seed stage must include every configured seed")
+        if len(confidences) != len(stages) - 1:
+            raise ValueError("sequential_interim_confidence must define one confidence level for each interim stage")
+        if any(c <= 0.95 or c >= 1.0 for c in confidences):
+            raise ValueError("sequential interim confidence levels must be stricter than 95% and below 100%")
+    elif confidences:
+        raise ValueError("sequential_interim_confidence requires sequential_seed_stages")
+
     preflight = raw.get("preflight") or {}
     cells = int(preflight.get("cells_per_model", 0))
     if cells < 10 or cells > 20 or cells % 2: raise ValueError("decisive preflight requires an even 10-20 cells per model")
@@ -73,7 +89,7 @@ def load_config(path: str | Path) -> dict[str, Any]:
 
 def _experiment_config(raw: dict[str, Any]) -> ExperimentConfig:
     bench = dict(raw.get("benchmark") or {})
-    for key in {"families", "complexities", "qualities", "seeds", "arms"}:
+    for key in {"families", "complexities", "qualities", "seeds", "arms", "sequential_seed_stages", "sequential_interim_confidence"}:
         if key in bench: bench[key] = tuple(bench[key])
     allowed = {f.name for f in fields(ExperimentConfig)}
     unknown = set(bench) - allowed
@@ -207,14 +223,69 @@ def main(argv: list[str] | None = None) -> int:
             model = getattr(models[item.model_index], "model", "none") if item.arm in _MODEL_DEPENDENT_ARMS else "CONTROL"
             print(f"PROGRESS [{'#' * filled}{'-' * (width - filled)}] {completed}/{total} {pct:6.2f}% model={model} arm={item.arm} family={item.family} complexity={item.complexity} quality={item.quality:.2f} seed={item.seed} epoch={item.epoch}", flush=True)
         progress_callback = render_progress
+
+    stage_callback = None
+    if config.sequential_seed_stages:
+        def evaluate_stage(stage_number: int, completed_seed_count: int, total_seed_count: int, trials: list[Any]) -> dict[str, Any]:
+            confidence = float(config.sequential_interim_confidence[stage_number - 1])
+            interim_summary = aggregate_trials(trials, config.bootstrap_samples, config.bootstrap_seed)
+            interval = bootstrap_rate_difference(
+                trials, "D_INVERTED", "A_DIRECT",
+                config.bootstrap_samples, config.bootstrap_seed + stage_number,
+                confidence=confidence,
+            )
+            decision = decide_interim_stop(
+                interim_summary, config,
+                stage_number=stage_number,
+                completed_seed_count=completed_seed_count,
+                confidence=confidence,
+                primary_interval=interval,
+            )
+            pct = 100.0 * completed_seed_count / total_seed_count
+            print(
+                f"SEQUENTIAL STAGE {stage_number}: seeds={completed_seed_count}/{total_seed_count} ({pct:.0f}%) "
+                f"confidence={confidence:.3f} decision={decision.get('verdict')} stop={decision.get('stop')}",
+                flush=True,
+            )
+            if decision.get("stop"):
+                print(f"SEQUENTIAL STOP: {decision.get('reason')}", flush=True)
+            return decision
+        stage_callback = evaluate_stage
+
     try:
-        result = run_experiment(config, models, run_id=args.run_id, checkpoint_store=checkpoint, resume=bool(args.resume), progress_callback=progress_callback)
+        result = run_experiment(
+            config, models, run_id=args.run_id,
+            checkpoint_store=checkpoint, resume=bool(args.resume),
+            progress_callback=progress_callback, stage_callback=stage_callback,
+        )
     except GenerationCensored as exc:
         persist_failure(exc.record); print("GENERATION_CENSORED: output budget exhausted with empty final content; affected trial was NOT scored.", flush=True); print(json.dumps(exc.record.to_dict(), sort_keys=True, default=str), flush=True); return 4
     except ModelCallError as exc:
         persist_failure(exc.record); print("INFRASTRUCTURE_FAILURE: model call did not recover; affected trial was NOT scored.", flush=True); print(json.dumps(exc.record.to_dict(), sort_keys=True, default=str), flush=True); return 3
-    summary = aggregate_trials(result.trials, config.bootstrap_samples, config.bootstrap_seed); verdict = decide_verdict(summary, config); provenance = collect_provenance()
-    provenance.update({"config_path": str(Path(args.config).resolve()), "models": _sanitized_models(raw), "preflight": preflight_evidence, "preflight_call_log": str(preflight_log.resolve()), "failure_log": str(failure_log.resolve()), "capture_content": bool(report_cfg.get("capture_content", True)), "include_raw_rows": bool(report_cfg.get("include_raw_rows", True)), "checkpoint_path": str(Path(args.checkpoint).resolve()) if args.checkpoint else None, "resumed": bool(args.resume), "run_started_at": result.started_at, "run_ended_at": result.ended_at})
+
+    summary = aggregate_trials(result.trials, config.bootstrap_samples, config.bootstrap_seed)
+    verdict = result.sequential_decision if result.stopped_early and result.sequential_decision else decide_verdict(summary, config)
+    provenance = collect_provenance()
+    provenance.update({
+        "config_path": str(Path(args.config).resolve()),
+        "models": _sanitized_models(raw),
+        "preflight": preflight_evidence,
+        "preflight_call_log": str(preflight_log.resolve()),
+        "failure_log": str(failure_log.resolve()),
+        "capture_content": bool(report_cfg.get("capture_content", True)),
+        "include_raw_rows": bool(report_cfg.get("include_raw_rows", True)),
+        "checkpoint_path": str(Path(args.checkpoint).resolve()) if args.checkpoint else None,
+        "resumed": bool(args.resume),
+        "run_started_at": result.started_at,
+        "run_ended_at": result.ended_at,
+        "sequential_seed_stages": list(config.sequential_seed_stages),
+        "sequential_interim_confidence": list(config.sequential_interim_confidence),
+        "stopped_early": result.stopped_early,
+        "completed_seed_count": result.completed_seed_count,
+        "planned_trial_units": result.planned_trial_units,
+        "completed_trial_units": len(result.trials),
+        "sequential_decision": result.sequential_decision,
+    })
     paths = ArtifactWriter(root / result.run_id).write_all(result, summary, verdict, provenance, include_raw_rows=bool(report_cfg.get("include_raw_rows", True))); print(Path(paths["report"]).read_text(encoding="utf-8"), end=""); return 0
 
 
