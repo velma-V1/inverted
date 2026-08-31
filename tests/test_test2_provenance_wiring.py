@@ -11,18 +11,20 @@ def _primary_rows():
     rows = []
     for i in range(18):
         model = LOCAL_MODELS[i % 3]
-        task_id = f"t{i}"
+        task_id = f"t{i // 3}"
         rows.append({
             "phase": "repair_factorial", "role": "repairer", "model": model,
             "task_id": task_id, "evaluation_id": f"st-{task_id}",
             "feedback_style": "structured", "strategy": "targeted",
             "success": i < 17, "catastrophic": False,
+            "call_identity": f"st-{i}", "cache_hit": False, "physical_call_number": 2 * i + 1,
         })
         rows.append({
             "phase": "repair_factorial", "role": "repairer", "model": model,
             "task_id": task_id, "evaluation_id": f"rr-{task_id}",
             "feedback_style": "raw", "strategy": "regenerate",
             "success": i < 6, "catastrophic": False,
+            "call_identity": f"rr-{i}", "cache_hit": False, "physical_call_number": 2 * i + 2,
         })
     return rows
 
@@ -58,7 +60,15 @@ def test_real_campaign_wrapper_snapshots_ollama_identity_before_and_after(monkey
         snapshots.append((base_url, tuple(models)))
         return {
             "server_version": "1.0",
-            "models": {model: {"tag_digest": f"digest-{model}", "show_payload_sha256": f"show-{model}"} for model in models},
+            "models": {
+                model: {
+                    "requested_name": model,
+                    "tag_name": model,
+                    "tag_digest": f"digest-{model}",
+                    "show_payload_sha256": f"show-{model}",
+                }
+                for model in models
+            },
         }
 
     monkeypatch.setattr(local_impl, "collect_ollama_provenance", fake_collect, raising=False)
