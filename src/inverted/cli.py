@@ -23,6 +23,7 @@ from .verdict import decide_verdict
 
 _ENV_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 _MODEL_DEPENDENT_ARMS = {"A_DIRECT", "B_DIRECT_CHECKED", "D_INVERTED"}
+_REQUIRED_OLLAMA_TELEMETRY = {"thinking", "content", "prompt_eval_count", "eval_count", "done_reason"}
 
 
 def _expand_env(value: Any) -> Any:
@@ -49,9 +50,12 @@ def _validate_decisive(raw: dict[str, Any]) -> None:
     if len(set(bench.get("complexities", []))) < 4 or len(set(bench.get("qualities", []))) < 5: raise ValueError("decisive runs require four complexity and five executor-quality levels")
     if len(set(bench.get("seeds", []))) < 3 or int(bench.get("epochs", 0)) < 2: raise ValueError("decisive runs require at least three seeds and two epochs")
     preflight = raw.get("preflight") or {}
-    cells = int(preflight.get("cells_per_model", 0)); threshold = float(preflight.get("censorship_threshold", 1.0))
+    cells = int(preflight.get("cells_per_model", 0))
     if cells < 10 or cells > 20 or cells % 2: raise ValueError("decisive preflight requires an even 10-20 cells per model")
-    if not (0.0 <= threshold <= 0.05): raise ValueError("decisive preflight censorship_threshold must be <= 0.05")
+    if "censorship_threshold" in preflight:
+        raise ValueError("decisive preflight must use a zero-censorship count gate, not a percentage threshold")
+    if int(preflight.get("max_generation_censored", -1)) != 0:
+        raise ValueError("decisive preflight requires max_generation_censored: 0")
     for spec in models:
         if spec.get("provider") != "ollama": continue
         if spec.get("context_limit") is None: raise ValueError("decisive Ollama runs require an explicit context_limit")
@@ -93,15 +97,41 @@ def _build_models(raw: dict[str, Any], capture_content: bool) -> list[Any]:
     return out
 
 
-def _write_failed_call(path: Path, record: ModelCallRecord) -> None:
+def _append_call_record(path: Path, record: ModelCallRecord) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(record.to_dict(), sort_keys=True, default=str) + "\n")
         handle.flush(); os.fsync(handle.fileno())
 
 
-def _preflight_models(models: list[Any], *, cells_per_model: int = 12, censorship_threshold: float = 0.05, failure_callback: Callable[[ModelCallRecord], None] | None = None) -> list[dict[str, Any]]:
+def _validate_ollama_telemetry_record(record: ModelCallRecord) -> None:
+    telemetry = record.raw_provider_telemetry
+    if not isinstance(telemetry, dict):
+        raise ValueError(f"preflight telemetry missing raw_provider_telemetry for {record.model}/{record.role}")
+    missing = _REQUIRED_OLLAMA_TELEMETRY - set(telemetry)
+    if missing:
+        raise ValueError(f"preflight telemetry missing fields for {record.model}/{record.role}: {sorted(missing)}")
+    attempts = telemetry.get("attempts")
+    if not isinstance(attempts, list) or not attempts:
+        raise ValueError(f"preflight telemetry missing attempt ledger for {record.model}/{record.role}")
+    for index, attempt in enumerate(attempts):
+        if not isinstance(attempt, dict):
+            raise ValueError(f"preflight telemetry attempt {index} is not a mapping for {record.model}/{record.role}")
+        attempt_missing = _REQUIRED_OLLAMA_TELEMETRY - set(attempt)
+        if attempt_missing:
+            raise ValueError(f"preflight telemetry attempt {index} missing fields for {record.model}/{record.role}: {sorted(attempt_missing)}")
+
+
+def _preflight_models(
+    models: list[Any],
+    *,
+    cells_per_model: int = 12,
+    max_generation_censored: int = 0,
+    telemetry_callback: Callable[[ModelCallRecord], None] | None = None,
+    failure_callback: Callable[[ModelCallRecord], None] | None = None,
+) -> list[dict[str, Any]]:
     if cells_per_model < 10 or cells_per_model > 20 or cells_per_model % 2: raise ValueError("preflight cells_per_model must be an even value from 10 through 20")
+    if int(max_generation_censored) != 0: raise ValueError("preflight max_generation_censored must be 0")
     pairs = cells_per_model // 2
     probes = [(family, complexity) for complexity in (1, 4) for family in ("state", "policy", "reconciliation")][:pairs]
     if len(probes) < pairs: raise ValueError("requested preflight size exceeds representative probe set")
@@ -117,21 +147,30 @@ def _preflight_models(models: list[Any], *, cells_per_model: int = 12, censorshi
                     result = model.complete(messages, role=role, context={"run_id": "preflight", "trial_id": f"preflight-{model_name}-{probe_index}-{role}", "call_id": f"preflight-{model_name}-{probe_index}-{role}", "candidate_id": candidate_id})
                 except GenerationCensored as exc:
                     censored += 1
+                    _validate_ollama_telemetry_record(exc.record)
+                    if telemetry_callback: telemetry_callback(exc.record)
                     if failure_callback: failure_callback(exc.record)
                     continue
                 except ModelCallError as exc:
+                    _validate_ollama_telemetry_record(exc.record)
+                    if telemetry_callback: telemetry_callback(exc.record)
                     if failure_callback: failure_callback(exc.record)
                     raise
-                try: parser(result.text)
+                _validate_ollama_telemetry_record(result.record)
+                try:
+                    parser(result.text)
                 except Exception as exc:
                     result.record.parse_success = False; result.record.parse_error = f"{type(exc).__name__}: {exc}"
+                    if telemetry_callback: telemetry_callback(result.record)
                     if failure_callback: failure_callback(result.record)
                     raise ValueError(f"preflight {role.removeprefix('preflight_')} JSON contract failed for {model_name}: {type(exc).__name__}: {exc}") from exc
-                result.record.parse_success = True; latencies.append(result.record.latency_s); retries += result.record.retry_number
-        rate = censored / attempted if attempted else 0.0
-        row = {"model": model_name, "provider": "ollama", "cells_attempted": attempted, "generation_censored": censored, "censorship_rate": rate, "censorship_threshold": censorship_threshold, "executor_parse_ok": True, "auditor_parse_ok": True, "max_prompt_chars": max_prompt_chars, "total_latency_s": sum(latencies), "total_retries": retries, "context_limit": getattr(model, "context_limit", None), "think": getattr(model, "think", None), "format_json": getattr(model, "format_json", None)}
+                result.record.parse_success = True
+                if telemetry_callback: telemetry_callback(result.record)
+                latencies.append(result.record.latency_s); retries += result.record.retry_number
+        row = {"model": model_name, "provider": "ollama", "cells_attempted": attempted, "generation_censored": censored, "censorship_policy": "ZERO_CENSORSHIP", "max_generation_censored": 0, "executor_parse_ok": True, "auditor_parse_ok": True, "max_prompt_chars": max_prompt_chars, "total_latency_s": sum(latencies), "total_retries": retries, "context_limit": getattr(model, "context_limit", None), "think": getattr(model, "think", None), "format_json": getattr(model, "format_json", None)}
         evidence.append(row)
-        if rate > censorship_threshold: raise RuntimeError(f"preflight censorship threshold exceeded for {model_name}: {censored}/{attempted}={rate:.3%} > {censorship_threshold:.3%}")
+        if censored > max_generation_censored:
+            raise RuntimeError(f"zero-censorship preflight failed for {model_name}: {censored}/{attempted} GENERATION_CENSORED; required 0/{attempted}")
     return evidence
 
 
@@ -150,11 +189,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.resume and not args.checkpoint: raise ValueError("--resume requires --checkpoint")
     raw = load_config(args.config); config = _experiment_config(raw); report_cfg = raw.get("report") or {}; root = Path(args.output_dir or raw.get("output_dir") or "runs")
     models = _build_models(raw, bool(report_cfg.get("capture_content", True))); checkpoint = CheckpointStore(args.checkpoint) if args.checkpoint else None
-    failure_log = (Path(args.checkpoint).parent / f"{args.run_id or 'unassigned'}.call-failures.jsonl") if args.checkpoint else (root / f"{args.run_id or 'unassigned'}.call-failures.jsonl")
-    persist_failure = lambda record: _write_failed_call(failure_log, record)
+    ledger_root = Path(args.checkpoint).parent if args.checkpoint else root
+    run_label = args.run_id or "unassigned"
+    failure_log = ledger_root / f"{run_label}.call-failures.jsonl"
+    preflight_log = ledger_root / f"{run_label}.preflight-model-calls.jsonl"
+    persist_failure = lambda record: _append_call_record(failure_log, record)
+    persist_preflight = lambda record: _append_call_record(preflight_log, record)
     pf = raw.get("preflight") or {}
-    preflight_evidence = _preflight_models(models, cells_per_model=int(pf.get("cells_per_model", 12)), censorship_threshold=float(pf.get("censorship_threshold", 0.05)), failure_callback=persist_failure)
-    for item in preflight_evidence: print(f"PREFLIGHT OK model={item['model']} cells={item['cells_attempted']} censored={item['generation_censored']} rate={item['censorship_rate']:.2%} retries={item['total_retries']}", flush=True)
+    preflight_evidence = _preflight_models(models, cells_per_model=int(pf.get("cells_per_model", 12)), max_generation_censored=int(pf.get("max_generation_censored", 0)), telemetry_callback=persist_preflight, failure_callback=persist_failure)
+    for item in preflight_evidence:
+        print(f"PREFLIGHT PASS model={item['model']} censored={item['generation_censored']}/{item['cells_attempted']} policy={item['censorship_policy']} retries={item['total_retries']}", flush=True)
 
     progress_callback = None
     if args.progress:
@@ -170,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
     except ModelCallError as exc:
         persist_failure(exc.record); print("INFRASTRUCTURE_FAILURE: model call did not recover; affected trial was NOT scored.", flush=True); print(json.dumps(exc.record.to_dict(), sort_keys=True, default=str), flush=True); return 3
     summary = aggregate_trials(result.trials, config.bootstrap_samples, config.bootstrap_seed); verdict = decide_verdict(summary, config); provenance = collect_provenance()
-    provenance.update({"config_path": str(Path(args.config).resolve()), "models": _sanitized_models(raw), "preflight": preflight_evidence, "failure_log": str(failure_log.resolve()), "capture_content": bool(report_cfg.get("capture_content", True)), "include_raw_rows": bool(report_cfg.get("include_raw_rows", True)), "checkpoint_path": str(Path(args.checkpoint).resolve()) if args.checkpoint else None, "resumed": bool(args.resume), "run_started_at": result.started_at, "run_ended_at": result.ended_at})
+    provenance.update({"config_path": str(Path(args.config).resolve()), "models": _sanitized_models(raw), "preflight": preflight_evidence, "preflight_call_log": str(preflight_log.resolve()), "failure_log": str(failure_log.resolve()), "capture_content": bool(report_cfg.get("capture_content", True)), "include_raw_rows": bool(report_cfg.get("include_raw_rows", True)), "checkpoint_path": str(Path(args.checkpoint).resolve()) if args.checkpoint else None, "resumed": bool(args.resume), "run_started_at": result.started_at, "run_ended_at": result.ended_at})
     paths = ArtifactWriter(root / result.run_id).write_all(result, summary, verdict, provenance, include_raw_rows=bool(report_cfg.get("include_raw_rows", True))); print(Path(paths["report"]).read_text(encoding="utf-8"), end=""); return 0
 
 
