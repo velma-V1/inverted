@@ -24,6 +24,8 @@ def _material_contamination_blockers(evidence: dict[str, Any]) -> list[str]:
         blockers.append("physical_call_number_integrity")
     if audit.get("physical_call_count_matches_master") is False:
         blockers.append("physical_call_count_mismatch")
+    if int(audit.get("failed_primary_call_rows") or 0) > 0:
+        blockers.append("primary_inference_transport_failure")
     if audit.get("repair_screen_primary_overlap"):
         blockers.append("repair_screen_primary_overlap")
     if audit.get("repair_screen_condition_balance_ok") is False:
