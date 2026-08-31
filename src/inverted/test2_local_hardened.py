@@ -783,26 +783,38 @@ def run_local_campaign(models: list[Any], run_id: str = "test2-local", hard_limi
     top_repair_models = _rank_simple(repair_screen_rows, "repairer", 3)
 
     factorial_rows: list[dict[str, Any]] = []
+    primary_conditions = (
+        ("raw", "regenerate"),
+        ("raw", "targeted"),
+        ("structured", "regenerate"),
+        ("structured", "targeted"),
+    )
+    primary_group_index = 0
     for model_name in top_repair_models:
         model = model_by_name[model_name]
         for case in repair_candidates[:6]:
             original = evaluate_task(case.task, case.candidate.state, case.candidate.actions); original_passed = set(original.passed_requirement_ids)
-            for feedback_style in ("raw", "structured"):
-                for strategy in ("regenerate", "targeted"):
-                    repaired_candidate, _ = _repair(caller=caller, model=model, task=case.task, candidate=case.candidate, failed_ids=list(original.failed_requirement_ids), run_id=run_id, trial_id=f"{case.case_id}-{feedback_style}-{strategy}", phase="repair_factorial", raw_calls=raw_calls, candidates=candidates, pipeline=None, feedback_style=feedback_style, strategy=strategy)
-                    repaired_oracle = evaluate_task(case.task, repaired_candidate.state, repaired_candidate.actions) if repaired_candidate else None
-                    gold = evaluate_test2_gold(case.task, repaired_candidate) if repaired_candidate else None
-                    new_passed = set(repaired_oracle.passed_requirement_ids) if repaired_oracle else set()
-                    row = {
-                        "phase": "repair_factorial", "role": "repairer", "task_id": case.case_id,
-                        "evaluation_id": _evaluation_id("repair_factorial", "repairer", case.case_id, feedback_style=feedback_style, strategy=strategy),
-                        "family": case.task.family, "complexity": case.task.complexity, "fault": case.candidate.injected_faults[0].split("+")[0], "model": model_name,
-                        "feedback_style": feedback_style, "strategy": strategy, "success": bool(gold and gold.success),
-                        "deterministic_success": bool(repaired_oracle and repaired_oracle.success), "semantic_clean": bool(gold and gold.semantic_clean),
-                        "original_passed": len(original_passed), "preserved_passed": len(original_passed & new_passed), "new_failures_introduced": len(original_passed - new_passed),
-                        "failed_requirements_repaired": len(set(original.failed_requirement_ids) & new_passed), "preservation_rate": len(original_passed & new_passed) / len(original_passed) if original_passed else 1.0,
-                    }
-                    rows.append(row); repairs.append(row); factorial_rows.append(row); validator_results.append(_validator_row(case.task, repaired_candidate, phase="repair_factorial", task_id=case.case_id, stage=f"repair_{feedback_style}_{strategy}")); _event(events, **row)
+            rotation = primary_group_index % len(primary_conditions)
+            condition_order = (
+                primary_conditions[rotation:]
+                + primary_conditions[:rotation]
+            )
+            primary_group_index += 1
+            for feedback_style, strategy in condition_order:
+                repaired_candidate, _ = _repair(caller=caller, model=model, task=case.task, candidate=case.candidate, failed_ids=list(original.failed_requirement_ids), run_id=run_id, trial_id=f"{case.case_id}-{feedback_style}-{strategy}", phase="repair_factorial", raw_calls=raw_calls, candidates=candidates, pipeline=None, feedback_style=feedback_style, strategy=strategy)
+                repaired_oracle = evaluate_task(case.task, repaired_candidate.state, repaired_candidate.actions) if repaired_candidate else None
+                gold = evaluate_test2_gold(case.task, repaired_candidate) if repaired_candidate else None
+                new_passed = set(repaired_oracle.passed_requirement_ids) if repaired_oracle else set()
+                row = {
+                    "phase": "repair_factorial", "role": "repairer", "task_id": case.case_id,
+                    "evaluation_id": _evaluation_id("repair_factorial", "repairer", case.case_id, feedback_style=feedback_style, strategy=strategy),
+                    "family": case.task.family, "complexity": case.task.complexity, "fault": case.candidate.injected_faults[0].split("+")[0], "model": model_name,
+                    "feedback_style": feedback_style, "strategy": strategy, "success": bool(gold and gold.success),
+                    "deterministic_success": bool(repaired_oracle and repaired_oracle.success), "semantic_clean": bool(gold and gold.semantic_clean),
+                    "original_passed": len(original_passed), "preserved_passed": len(original_passed & new_passed), "new_failures_introduced": len(original_passed - new_passed),
+                    "failed_requirements_repaired": len(set(original.failed_requirement_ids) & new_passed), "preservation_rate": len(original_passed & new_passed) / len(original_passed) if original_passed else 1.0,
+                }
+                rows.append(row); repairs.append(row); factorial_rows.append(row); validator_results.append(_validator_row(case.task, repaired_candidate, phase="repair_factorial", task_id=case.case_id, stage=f"repair_{feedback_style}_{strategy}")); _event(events, **row)
     phase_usage["repair_factorial"] = _phase_check(budget, start, "repair_factorial")
 
     repair_effects = repair_factorial_effects(factorial_rows)
