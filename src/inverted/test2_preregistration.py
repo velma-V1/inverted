@@ -17,7 +17,11 @@ PREREGISTRATION: dict[str, Any] = {
         "third_retry_break_even": 0.3431,
         "confidence_level": 0.95,
         "matched_factorial_cells_per_condition": 18,
-        "equal_budget": "18 physical calls per primary condition: same 3 selected repair models × same 6 fixed failing candidates; one call per model/candidate/condition.",
+        "selected_repair_models": 3,
+        "primary_failure_candidates": 6,
+        "repair_model_selection": "Select the top 3 repair models on a disjoint 4-candidate selection-only screen. Every model receives exactly one call in each of the four feedback×strategy cells; selection candidates never appear in the primary factorial.",
+        "equal_budget": "18 distinct physical calls per primary condition: same 3 selected repair models × same 6 fixed failing candidates; one uncached physical call per model/candidate/condition.",
+        "paired_uncertainty": "95% paired bootstrap over the six task clusters after averaging the three matched model-level treatment-control contrasts within each task.",
     },
     "success_gates": {
         "all_required": True,
@@ -26,6 +30,9 @@ PREREGISTRATION: dict[str, Any] = {
         "paired_effect_bootstrap_ci95_lower_gt_pp": 0.0,
         "catastrophic_increase_pp_lt": 2.0,
         "complete_matched_primary_cells": True,
+        "three_model_by_six_task_cartesian_grid": True,
+        "all_primary_cells_are_distinct_physical_calls": True,
+        "repair_selection_screen_disjoint_and_condition_balanced": True,
     },
     "failure_gates": {
         "catastrophic_increase_pp": 2.0,
@@ -101,7 +108,7 @@ def _percentile(values: list[float], q: float) -> float:
     return ordered[lo] * (1 - frac) + ordered[hi] * frac
 
 
-def _paired_bootstrap_ci(differences: list[int], *, iterations: int = 20000, seed: int = 20260831) -> tuple[float, float]:
+def _paired_bootstrap_ci(differences: list[float], *, iterations: int = 20000, seed: int = 20260831) -> tuple[float, float]:
     if not differences:
         return (0.0, 0.0)
     rng = random.Random(seed)
@@ -117,38 +124,116 @@ def _cell(rows: list[dict[str, Any]], feedback_style: str, strategy: str) -> lis
     return [r for r in rows if r.get("feedback_style") == feedback_style and r.get("strategy") == strategy]
 
 
+def _non_decisive(
+    *,
+    reason: str,
+    expected_n: int,
+    treatment: list[dict[str, Any]],
+    control: list[dict[str, Any]],
+    matched_keys: int,
+    models: int,
+    tasks: int,
+    physical_cells: int,
+) -> dict[str, Any]:
+    return {
+        "verdict": "NON-DECISIVE",
+        "reason": reason,
+        "expected_per_condition": expected_n,
+        "treatment_rows": len(treatment),
+        "control_rows": len(control),
+        "matched_keys": matched_keys,
+        "models": models,
+        "tasks": tasks,
+        "physical_cells": physical_cells,
+        "success_reasons": [],
+        "failure_reasons": [],
+    }
+
+
 def evaluate_primary_verdict(repair_rows: list[dict[str, Any]]) -> dict[str, Any]:
     treatment = _cell(repair_rows, "structured", "targeted")
     control = _cell(repair_rows, "raw", "regenerate")
-    expected_n = int(PREREGISTRATION["primary_hypothesis"]["matched_factorial_cells_per_condition"])
+    primary = PREREGISTRATION["primary_hypothesis"]
+    expected_n = int(primary["matched_factorial_cells_per_condition"])
+    expected_models = int(primary["selected_repair_models"])
+    expected_tasks = int(primary["primary_failure_candidates"])
+
     t_by_key = {(str(r.get("model")), str(r.get("task_id"))): r for r in treatment}
     c_by_key = {(str(r.get("model")), str(r.get("task_id"))): r for r in control}
-    complete = len(treatment) == expected_n and len(control) == expected_n and len(t_by_key) == expected_n and set(t_by_key) == set(c_by_key)
-    if not complete:
-        return {
-            "verdict": "NON-DECISIVE",
-            "reason": "Primary matched factorial evidence contract incomplete.",
-            "expected_per_condition": expected_n,
-            "treatment_rows": len(treatment),
-            "control_rows": len(control),
-            "matched_keys": len(set(t_by_key) & set(c_by_key)),
-            "success_reasons": [],
-            "failure_reasons": [],
-        }
+    key_intersection = set(t_by_key) & set(c_by_key)
+    models = sorted({model for model, _ in set(t_by_key) | set(c_by_key)})
+    tasks = sorted({task for _, task in set(t_by_key) | set(c_by_key)})
+    expected_grid = {(model, task) for model in models for task in tasks}
+
+    grid_complete = (
+        len(treatment) == expected_n
+        and len(control) == expected_n
+        and len(t_by_key) == expected_n
+        and len(c_by_key) == expected_n
+        and set(t_by_key) == set(c_by_key)
+        and len(models) == expected_models
+        and len(tasks) == expected_tasks
+        and set(t_by_key) == expected_grid
+    )
+    if not grid_complete:
+        return _non_decisive(
+            reason="Primary matched factorial evidence contract incomplete: expected an exact 3-model × 6-task Cartesian grid in both primary conditions.",
+            expected_n=expected_n,
+            treatment=treatment,
+            control=control,
+            matched_keys=len(key_intersection),
+            models=len(models),
+            tasks=len(tasks),
+            physical_cells=0,
+        )
+
+    primary_rows = treatment + control
+    physical_numbers = [row.get("physical_call_number") for row in primary_rows]
+    call_identities = [str(row.get("call_identity") or "") for row in primary_rows]
+    physical_complete = (
+        all(row.get("cache_hit") is False for row in primary_rows)
+        and all(type(number) is int and number > 0 for number in physical_numbers)
+        and len(set(physical_numbers)) == 2 * expected_n
+        and all(call_identities)
+        and len(set(call_identities)) == 2 * expected_n
+    )
+    if not physical_complete:
+        physical_cells = sum(
+            1
+            for row in primary_rows
+            if row.get("cache_hit") is False and type(row.get("physical_call_number")) is int and row.get("call_identity")
+        )
+        return _non_decisive(
+            reason="Primary equal-budget contract incomplete: every primary cell must be a distinct uncached physical model call with unique call identity and physical call number.",
+            expected_n=expected_n,
+            treatment=treatment,
+            control=control,
+            matched_keys=len(key_intersection),
+            models=len(models),
+            tasks=len(tasks),
+            physical_cells=physical_cells,
+        )
 
     t_success = sum(bool(r.get("success")) for r in treatment)
     c_success = sum(bool(r.get("success")) for r in control)
     t_low, t_high = _wilson(t_success, expected_n)
     c_low, c_high = _wilson(c_success, expected_n)
-    differences = [int(bool(t_by_key[k].get("success"))) - int(bool(c_by_key[k].get("success"))) for k in sorted(t_by_key)]
-    paired_effect = sum(differences) / expected_n
-    effect_low, effect_high = _paired_bootstrap_ci(differences)
+
+    task_differences: list[float] = []
+    for task in tasks:
+        model_differences = [
+            int(bool(t_by_key[(model, task)].get("success"))) - int(bool(c_by_key[(model, task)].get("success")))
+            for model in models
+        ]
+        task_differences.append(sum(model_differences) / len(model_differences))
+    paired_effect = sum(task_differences) / len(task_differences)
+    effect_low, effect_high = _paired_bootstrap_ci(task_differences)
 
     t_cat = sum(bool(r.get("catastrophic")) for r in treatment)
     c_cat = sum(bool(r.get("catastrophic")) for r in control)
     catastrophic_delta = (t_cat - c_cat) / expected_n
-    break_even = float(PREREGISTRATION["primary_hypothesis"]["third_retry_break_even"])
-    min_effect_pp = float(PREREGISTRATION["primary_hypothesis"]["minimum_effect_pp"])
+    break_even = float(primary["third_retry_break_even"])
+    min_effect_pp = float(primary["minimum_effect_pp"])
 
     success_reasons: list[str] = []
     failure_reasons: list[str] = []
@@ -165,7 +250,7 @@ def evaluate_primary_verdict(repair_rows: list[dict[str, Any]]) -> dict[str, Any
     failure_checks = {
         "catastrophic increase reached >=2pp failure gate": catastrophic_delta * 100.0 >= 2.0,
         "structured targeted repair 95% upper CI is <= third-retry break-even": t_high <= break_even,
-        "paired effect 95% upper CI is <=0pp": effect_high * 100.0 <= 0.0,
+        "paired task-cluster effect 95% upper CI is <=0pp": effect_high * 100.0 <= 0.0,
     }
     for reason, failed in failure_checks.items():
         if failed:
@@ -180,8 +265,11 @@ def evaluate_primary_verdict(repair_rows: list[dict[str, Any]]) -> dict[str, Any
 
     return {
         "verdict": verdict,
-        "hypothesis": PREREGISTRATION["primary_hypothesis"]["statement"],
+        "hypothesis": primary["statement"],
         "n_matched": expected_n,
+        "models": len(models),
+        "tasks": len(tasks),
+        "primary_physical_cells": 2 * expected_n,
         "structured_targeted": {
             "successes": t_success,
             "n": expected_n,
@@ -210,6 +298,8 @@ def evaluate_primary_verdict(repair_rows: list[dict[str, Any]]) -> dict[str, Any
         "success_reasons": success_reasons,
         "failure_checks": failure_checks,
         "failure_reasons": failure_reasons,
+        "bootstrap_unit": "task_cluster",
+        "task_clusters": len(task_differences),
         "bootstrap_iterations": 20000,
         "bootstrap_seed": 20260831,
     }
