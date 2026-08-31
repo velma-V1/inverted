@@ -32,34 +32,64 @@ def _empty_evidence(trials: list[dict]):
     }
 
 
-def _primary_rows(st_successes: int = 17, rr_successes: int = 6):
+def _primary_rows(st_successes: int = 17, rr_successes: int = 6, physical_offset: int = 0):
     rows = []
     for i in range(18):
-        model = f"m{i % 3}"
-        task_id = f"t{i}"
+        model = LOCAL_MODELS[i % 3]
+        task_id = f"t{i // 3}"
         rows.append({
-            "phase": "repair_factorial",
-            "role": "repairer",
-            "model": model,
-            "task_id": task_id,
-            "evaluation_id": f"st-{task_id}",
-            "feedback_style": "structured",
-            "strategy": "targeted",
-            "success": i < st_successes,
-            "catastrophic": False,
+            "phase": "repair_factorial", "role": "repairer", "model": model, "task_id": task_id,
+            "evaluation_id": f"repair_factorial|{task_id}|structured|targeted",
+            "feedback_style": "structured", "strategy": "targeted", "success": i < st_successes,
+            "catastrophic": False, "call_identity": f"st-{i}", "cache_hit": False,
+            "physical_call_number": physical_offset + 2 * i + 1,
         })
         rows.append({
-            "phase": "repair_factorial",
-            "role": "repairer",
-            "model": model,
-            "task_id": task_id,
-            "evaluation_id": f"rr-{task_id}",
-            "feedback_style": "raw",
-            "strategy": "regenerate",
-            "success": i < rr_successes,
-            "catastrophic": False,
+            "phase": "repair_factorial", "role": "repairer", "model": model, "task_id": task_id,
+            "evaluation_id": f"repair_factorial|{task_id}|raw|regenerate",
+            "feedback_style": "raw", "strategy": "regenerate", "success": i < rr_successes,
+            "catastrophic": False, "call_identity": f"rr-{i}", "cache_hit": False,
+            "physical_call_number": physical_offset + 2 * i + 2,
         })
     return rows
+
+
+def _screen_rows():
+    conditions = (("raw", "regenerate"), ("raw", "targeted"), ("structured", "regenerate"), ("structured", "targeted"))
+    rows = []
+    for model_index, model in enumerate(LOCAL_MODELS):
+        for case_index, (feedback, strategy) in enumerate(conditions):
+            rows.append({
+                "phase": "repair_screen", "role": "repairer", "model": model,
+                "task_id": f"screen-{case_index}",
+                "evaluation_id": f"repair_screen|screen-{case_index}|{feedback}|{strategy}",
+                "feedback_style": feedback, "strategy": strategy,
+                "success": model_index < 3, "preservation_rate": 1.0 if model_index < 3 else 0.0,
+            })
+    return rows
+
+
+def _raw_calls_for_packet(records: list[dict]):
+    calls = []
+    for index, row in enumerate(records, start=1):
+        if row.get("phase") == "repair_factorial":
+            identity = row["call_identity"]
+            number = row["physical_call_number"]
+        else:
+            identity = f"screen-call-{index}"
+            number = index
+        calls.append({
+            "phase": row.get("phase"), "task_id": row.get("task_id"), "model": row.get("model"),
+            "role": row.get("role"), "call_identity": identity, "cache_hit": False,
+            "logical_call_index": number, "physical_call_number": number,
+            "prompt": [{"role": "user", "content": "fixture"}], "response": "{}",
+            "telemetry": {
+                "model": row.get("model"), "role": row.get("role"), "call_identity": identity,
+                "physical_call_number": number, "logical_call_index": number,
+                "status_code": 200, "error_class": None, "error_message": None,
+            },
+        })
+    return calls
 
 
 def test_campaign_repair_factorial_rows_carry_boolean_catastrophic_telemetry():
@@ -72,23 +102,13 @@ def test_campaign_repair_factorial_rows_carry_boolean_catastrophic_telemetry():
 
 def test_contamination_audit_reports_duplicate_evaluation_model_even_when_last_row_is_progressive():
     duplicate = {
-        "phase": "formalization",
-        "role": "formalizer",
-        "task_id": "f",
-        "evaluation_id": "formalization|formalizer|f",
-        "model": LOCAL_MODELS[0],
-        "success": True,
+        "phase": "formalization", "role": "formalizer", "task_id": "f",
+        "evaluation_id": "formalization|formalizer|f", "model": LOCAL_MODELS[0], "success": True,
     }
     trials = [dict(duplicate), dict(duplicate), {
-        "phase": "progressive_holdout",
-        "role": "pipeline",
-        "task_id": "h",
-        "evaluation_id": "progressive_holdout|pipeline|h|pipeline=S0",
-        "pipeline": "S0",
-        "model": "layered",
-        "success": True,
-        "runtime_allowed": True,
-        "hidden_gold_success": True,
+        "phase": "progressive_holdout", "role": "pipeline", "task_id": "h",
+        "evaluation_id": "progressive_holdout|pipeline|h|pipeline=S0", "pipeline": "S0",
+        "model": "layered", "success": True, "runtime_allowed": True, "hidden_gold_success": True,
     }]
     evidence = _empty_evidence(trials)
     enrich_test2_evidence(evidence)
@@ -102,14 +122,9 @@ def test_repair_factorial_matrix_coverage_uses_selected_three_model_cohort_not_a
     for evaluation_id in ("repair_factorial|r1", "repair_factorial|r2"):
         for model in selected:
             trials.append({
-                "phase": "repair_factorial",
-                "role": "repairer",
-                "task_id": evaluation_id,
-                "evaluation_id": evaluation_id,
-                "model": model,
-                "feedback_style": "structured",
-                "strategy": "targeted",
-                "success": True,
+                "phase": "repair_factorial", "role": "repairer", "task_id": evaluation_id,
+                "evaluation_id": evaluation_id, "model": model,
+                "feedback_style": "structured", "strategy": "targeted", "success": True,
             })
     evidence = _empty_evidence(trials)
     enrich_test2_evidence(evidence)
@@ -125,25 +140,21 @@ def test_packet_finalization_embeds_frozen_preregistration_and_primary_verdict()
         "after": {"server_version": "test", "models": {}},
         "identity_match": True,
     }
+    screen = _screen_rows()
+    primary = _primary_rows(physical_offset=len(screen))
+    records = screen + primary
+    raw_calls = _raw_calls_for_packet(records)
     local = {
-        "records": _primary_rows(),
-        "raw_calls": [],
-        "physical_model_calls": 36,
-        "cache_hits": 0,
-        "hard_call_limit": 480,
-        "models": list(LOCAL_MODELS),
-        "phase_limits": {},
-        "candidates": [],
-        "events": [],
-        "validator_results": [],
-        "repairs": [],
-        "ollama_provenance": stable_snapshot,
+        "records": records, "raw_calls": raw_calls, "physical_model_calls": len(raw_calls), "cache_hits": 0,
+        "hard_call_limit": 480, "models": list(LOCAL_MODELS), "phase_limits": {}, "candidates": [],
+        "events": [], "validator_results": [], "repairs": [], "ollama_provenance": stable_snapshot,
     }
     evidence = _local_evidence(local, {}, {"local": {"models": list(LOCAL_MODELS)}}, "readiness-verdict")
     finalize_test2_evidence(evidence)
     assert evidence["preregistration"] == PREREGISTRATION
     assert evidence["verdict"]["verdict"] == "SUPPORTED"
-    assert evidence["diagnostics"]["contamination_audit"]
+    assert evidence["verdict"]["material_contamination_blockers"] == []
+    assert evidence["diagnostics"]["contamination_audit"]["physical_call_count_matches_master"] is True
 
 
 def test_artifact_writer_emits_conventional_completion_proof_files(tmp_path):
@@ -152,21 +163,10 @@ def test_artifact_writer_emits_conventional_completion_proof_files(tmp_path):
     paths = Test2ArtifactWriter(run_dir).write_all(evidence)
     written = {str(Path(path).relative_to(run_dir)).replace("\\", "/") for path in paths.values()}
     required = {
-        "events.jsonl",
-        "model_calls.jsonl",
-        "trials.csv",
-        "trials.jsonl",
-        "failures.csv",
-        "summary.json",
-        "summary.csv",
-        "report.txt",
-        "config.json",
-        "provenance.json",
-        "preregistration.json",
-        "verdict.json",
-        "SHA256SUMS.csv",
-        "TEST2-NEXT-STRIDE-REPORT.txt",
-        "TEST2-COMPLETE-EVIDENCE.txt",
+        "events.jsonl", "model_calls.jsonl", "trials.csv", "trials.jsonl", "failures.csv",
+        "summary.json", "summary.csv", "report.txt", "config.json", "provenance.json",
+        "preregistration.json", "verdict.json", "SHA256SUMS.csv",
+        "TEST2-NEXT-STRIDE-REPORT.txt", "TEST2-COMPLETE-EVIDENCE.txt",
     }
     assert required <= written
     master = (run_dir / "TEST2-COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
