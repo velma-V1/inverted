@@ -27,8 +27,12 @@ function Log([string]$Message) {
     $line | Tee-Object -FilePath $PublisherLog -Append
 }
 
-function Invoke-Git([string[]]$Args, [string]$Label) {
-    $output = & git @Args 2>&1
+function Invoke-Git {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$GitArgs,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+    $output = & git @GitArgs 2>&1
     $code = $LASTEXITCODE
     foreach ($line in $output) { Log "$Label`: $line" }
     if ($code -ne 0) { throw "$Label`_FAILED:$code" }
@@ -81,29 +85,26 @@ function Ensure-StagingRepo {
     $origin = (& git -C $RepoPath remote get-url origin 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $origin) { throw "GIT_ORIGIN_LOOKUP_FAILED:$LASTEXITCODE" }
 
-    Invoke-Git @("init", $StagingRepo) "GIT_INIT_STAGING"
-    Invoke-Git @("-C", $StagingRepo, "remote", "add", "origin", $origin) "GIT_ADD_REMOTE"
-    Invoke-Git @("-C", $StagingRepo, "fetch", "--depth=1", "origin", "main") "GIT_FETCH_MAIN"
-    Invoke-Git @("-C", $StagingRepo, "checkout", "-B", $LocalBranch, "FETCH_HEAD") "GIT_CHECKOUT_STAGING"
+    Invoke-Git -GitArgs @("init", $StagingRepo) -Label "GIT_INIT_STAGING"
+    Invoke-Git -GitArgs @("-C", $StagingRepo, "remote", "add", "origin", $origin) -Label "GIT_ADD_REMOTE"
+    Invoke-Git -GitArgs @("-C", $StagingRepo, "fetch", "--depth=1", "origin", "main") -Label "GIT_FETCH_MAIN"
+    Invoke-Git -GitArgs @("-C", $StagingRepo, "checkout", "-B", $LocalBranch, "FETCH_HEAD") -Label "GIT_CHECKOUT_STAGING"
     Log "Checkpoint staging repo ready; remote result branch=$Branch"
 }
 
 function Commit-And-Push([string]$Reason) {
-    Invoke-Git @("-C", $StagingRepo, "add", "--", "live-results/$RunId") "GIT_ADD_CHECKPOINT"
+    Invoke-Git -GitArgs @("-C", $StagingRepo, "add", "--", "live-results/$RunId") -Label "GIT_ADD_CHECKPOINT"
 
     & git -C $StagingRepo diff --cached --quiet
     $hasChanges = ($LASTEXITCODE -ne 0)
     if ($hasChanges) {
-        Invoke-Git @("-C", $StagingRepo, "-c", "user.name=inverted-checkpoint", "-c", "user.email=inverted-checkpoint@users.noreply.github.com", "commit", "-m", "results: $RunId $Reason") "GIT_COMMIT_CHECKPOINT"
+        Invoke-Git -GitArgs @("-C", $StagingRepo, "-c", "user.name=inverted-checkpoint", "-c", "user.email=inverted-checkpoint@users.noreply.github.com", "commit", "-m", "results: $RunId $Reason") -Label "GIT_COMMIT_CHECKPOINT"
     }
 
-    # This branch is dedicated to one run and only this publisher writes it.
-    # Force-with-lease makes restart/reconstruction safe without touching main.
     $output = & git -C $StagingRepo push --force-with-lease origin "HEAD:$Branch" 2>&1
     $code = $LASTEXITCODE
     foreach ($line in $output) { Log "git push: $line" }
     if ($code -ne 0) {
-        # A first publish has no lease target yet; normal push is the safe fallback.
         $output = & git -C $StagingRepo push origin "HEAD:$Branch" 2>&1
         $code = $LASTEXITCODE
         foreach ($line in $output) { Log "git push fallback: $line" }
@@ -211,8 +212,6 @@ try {
             try {
                 Publish-Checkpoint -ForceFinal:$stop
             } catch {
-                # GitHub transport is deliberately non-blocking. The benchmark's
-                # local checkpoint and failure ledger remain authoritative.
                 Log "CHECKPOINT PUBLISH FAILED: $($_.Exception.Message)"
             }
             $lastPublish = [DateTime]::UtcNow
