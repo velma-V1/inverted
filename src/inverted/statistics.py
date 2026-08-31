@@ -102,7 +102,6 @@ def _arm_metrics(trials: list[TrialRecord]) -> dict[str, Any]:
 
 
 def _baseline_key(t: TrialRecord) -> tuple[Any, ...]:
-    """Condition identity for quality-independent direct baselines."""
     return (t.task_id, t.family, t.complexity, t.model, t.seed, t.epoch)
 
 
@@ -114,7 +113,16 @@ def _collapsed_baseline_success(trials: list[TrialRecord], arm: str) -> dict[tup
     return {key: _stats.fmean(values) for key, values in grouped.items()}
 
 
-def bootstrap_rate_difference(trials: list[TrialRecord], treatment_arm: str, baseline_arm: str, samples: int = 2000, seed: int = 20260830) -> dict[str, float | int | None]:
+def bootstrap_rate_difference(
+    trials: list[TrialRecord],
+    treatment_arm: str,
+    baseline_arm: str,
+    samples: int = 2000,
+    seed: int = 20260830,
+    confidence: float = 0.95,
+) -> dict[str, float | int | None]:
+    if not (0.0 < confidence < 1.0):
+        raise ValueError("confidence must be between 0 and 1")
     baseline = _collapsed_baseline_success(trials, baseline_arm)
     paired: list[tuple[TrialRecord, float]] = []
     for treatment in trials:
@@ -125,12 +133,8 @@ def bootstrap_rate_difference(trials: list[TrialRecord], treatment_arm: str, bas
             paired.append((treatment, float(int(treatment.success)) - baseline_success))
 
     if not paired:
-        return {"estimate": None, "lower": None, "upper": None, "n_pairs": 0, "n_clusters": 0, "samples": samples}
+        return {"estimate": None, "lower": None, "upper": None, "n_pairs": 0, "n_clusters": 0, "samples": samples, "confidence": confidence}
 
-    # A/B are quality-independent and may now be physically executed only once.
-    # Each D quality row is paired to that deduplicated baseline analytically.
-    # Repeated model/quality effects are then collapsed within task_id before
-    # bootstrap resampling so they cannot manufacture independent sample size.
     by_task: dict[str, list[float]] = defaultdict(list)
     for treatment, diff in paired:
         by_task[treatment.task_id].append(diff)
@@ -141,13 +145,15 @@ def bootstrap_rate_difference(trials: list[TrialRecord], treatment_arm: str, bas
     n_clusters = len(cluster_effects)
     for _ in range(samples):
         boots.append(_stats.fmean(cluster_effects[rng.randrange(n_clusters)] for _ in range(n_clusters)))
+    alpha = 1.0 - confidence
     return {
         "estimate": estimate,
-        "lower": _percentile(boots, 0.025),
-        "upper": _percentile(boots, 0.975),
+        "lower": _percentile(boots, alpha / 2.0),
+        "upper": _percentile(boots, 1.0 - alpha / 2.0),
         "n_pairs": len(paired),
         "n_clusters": n_clusters,
         "samples": samples,
+        "confidence": confidence,
     }
 
 
@@ -214,7 +220,6 @@ def aggregate_trials(trials: list[TrialRecord], bootstrap_samples: int = 2000, b
         "primary": {
             "d_minus_a": primary_diff,
             "ci95": ci,
-            # Every model-using arm is hard-capped by the same configured token budget.
             "equal_budget_diff": primary_diff,
             "d_minus_b": d_minus_b,
             "independent_task_clusters": ci.get("n_clusters", 0),
