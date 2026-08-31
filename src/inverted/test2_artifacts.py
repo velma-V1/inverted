@@ -11,6 +11,7 @@ from .test2_postanalysis import (
     failure_streak_quality_posterior,
     retry_repair_thresholds,
 )
+from .test2_readiness import finalize_test2_evidence
 
 
 _JSONL_FILES = {
@@ -177,6 +178,41 @@ def _augment_postanalysis(evidence: dict[str, Any]) -> None:
     order["failure_streak_quality_posterior"] = failure_streak_quality_posterior(trials)
 
 
+def _summary_rows(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    index = evidence.get("master_index") or {}
+    verdict = evidence.get("verdict") or {}
+    return [
+        {"metric": "run_id", "value": index.get("run_id")},
+        {"metric": "mode", "value": index.get("mode")},
+        {"metric": "physical_model_calls", "value": index.get("physical_model_calls", 0)},
+        {"metric": "hard_call_limit", "value": index.get("hard_call_limit") or index.get("local_call_ceiling")},
+        {"metric": "verdict", "value": verdict.get("verdict")},
+        {"metric": "verdict_reason", "value": verdict.get("reason")},
+        {"metric": "material_contamination_blockers", "value": verdict.get("material_contamination_blockers", [])},
+    ]
+
+
+def _report_text(evidence: dict[str, Any]) -> str:
+    index = evidence.get("master_index") or {}
+    verdict = evidence.get("verdict") or {}
+    lines = [
+        "VELMA TEST 2 — REPORT",
+        "=====================",
+        f"Run ID: {index.get('run_id', 'unknown')}",
+        f"Mode: {index.get('mode', 'unknown')}",
+        f"Physical model calls: {index.get('physical_model_calls', 0)}",
+        f"Hard call limit: {index.get('hard_call_limit') or index.get('local_call_ceiling')}",
+        f"Verdict: {verdict.get('verdict', 'UNKNOWN')}",
+    ]
+    if verdict.get("reason"):
+        lines.append(f"Reason: {verdict['reason']}")
+    blockers = list(verdict.get("material_contamination_blockers") or [])
+    if blockers:
+        lines.append(f"Material contamination blockers: {', '.join(str(item) for item in blockers)}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 class Test2ArtifactWriter:
     def __init__(self, run_dir: str | Path):
         self.run_dir = Path(run_dir)
@@ -184,10 +220,13 @@ class Test2ArtifactWriter:
 
     def write_all(self, evidence: dict[str, Any]) -> dict[str, str]:
         _augment_postanalysis(evidence)
+        finalize_test2_evidence(evidence)
+        index = evidence.setdefault("master_index", {})
+        index["verdict"] = (evidence.get("verdict") or {}).get("verdict")
         written: dict[str, Path] = {}
 
         master_index = self.run_dir / "00-MASTER-INDEX.json"
-        _write_json(master_index, evidence.get("master_index", {}))
+        _write_json(master_index, index)
         written["master_index"] = master_index
 
         raw = evidence.get("raw", {})
@@ -209,6 +248,62 @@ class Test2ArtifactWriter:
                 path = self.run_dir / relative
                 _write_json(path, data.get(key, {}))
                 written[f"{section}_{key}"] = path
+
+        # Conventional completion-proof aliases required by the frozen Test-2
+        # evidence contract. Rich forensic files above remain authoritative and
+        # are preserved in parallel.
+        conventional_jsonl = {
+            "events": list(raw.get("events", []) or []),
+            "model_calls": list(raw.get("model_calls", []) or []),
+            "trials": list(raw.get("trials", []) or []),
+        }
+        for key, rows in conventional_jsonl.items():
+            path = self.run_dir / f"{key}.jsonl"
+            _write_jsonl(path, rows)
+            written[f"conventional_{key}_jsonl"] = path
+
+        trials = list(raw.get("trials", []) or [])
+        trials_csv = self.run_dir / "trials.csv"
+        _write_csv(trials_csv, trials)
+        written["conventional_trials_csv"] = trials_csv
+
+        failures_csv = self.run_dir / "failures.csv"
+        _write_csv(failures_csv, [row for row in trials if row.get("success") is False])
+        written["conventional_failures_csv"] = failures_csv
+
+        summary = {
+            "master_index": index,
+            "verdict": evidence.get("verdict", {}),
+            "diagnostics": evidence.get("diagnostics", {}),
+            "role_champions": (evidence.get("models") or {}).get("role_champions", {}),
+        }
+        summary_json = self.run_dir / "summary.json"
+        _write_json(summary_json, summary)
+        written["conventional_summary_json"] = summary_json
+
+        summary_csv = self.run_dir / "summary.csv"
+        _write_csv(summary_csv, _summary_rows(evidence))
+        written["conventional_summary_csv"] = summary_csv
+
+        report = self.run_dir / "report.txt"
+        report.write_text(_report_text(evidence), encoding="utf-8")
+        written["conventional_report"] = report
+
+        config = self.run_dir / "config.json"
+        _write_json(config, (evidence.get("provenance") or {}).get("config", {}))
+        written["conventional_config"] = config
+
+        provenance = self.run_dir / "provenance.json"
+        _write_json(provenance, evidence.get("provenance", {}))
+        written["conventional_provenance"] = provenance
+
+        preregistration = self.run_dir / "preregistration.json"
+        _write_json(preregistration, evidence.get("preregistration", {}))
+        written["preregistration"] = preregistration
+
+        verdict = self.run_dir / "verdict.json"
+        _write_json(verdict, evidence.get("verdict", {}))
+        written["verdict"] = verdict
 
         next_stride = self.run_dir / "TEST2-NEXT-STRIDE-REPORT.txt"
         next_stride.write_text(build_next_stride_report(evidence), encoding="utf-8")
