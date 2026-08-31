@@ -85,18 +85,23 @@ function Ensure-PublishWorktree {
         Remove-Item $Worktree -Recurse -Force
     }
 
-    & git -C $RepoPath fetch origin main 2>&1 | ForEach-Object { Log "git fetch: $_" }
+    & git -C $RepoPath fetch origin main 2>&1 | ForEach-Object { Log "git fetch main: $_" }
     if ($LASTEXITCODE -ne 0) { throw "GIT_FETCH_MAIN_FAILED:$LASTEXITCODE" }
 
-    $remote = (& git -C $RepoPath ls-remote --heads origin "refs/heads/$Branch" 2>&1 | Out-String).Trim()
+    # With --heads, pass the branch-pattern form (results/<run-id>), not a
+    # fully-qualified refs/heads/... pattern. Git for Windows rejects the
+    # latter in this position on some versions.
+    $remote = (& git -C $RepoPath ls-remote --heads origin $Branch 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) { throw "GIT_LS_REMOTE_FAILED:$LASTEXITCODE" }
 
     if ($remote) {
-        & git -C $RepoPath fetch origin "$Branch`:$Branch" 2>&1 | ForEach-Object { Log "git fetch results: $_" }
+        $remoteRef = "refs/remotes/origin/$Branch"
+        $refspec = "+refs/heads/$Branch`:$remoteRef"
+        & git -C $RepoPath fetch origin $refspec 2>&1 | ForEach-Object { Log "git fetch results: $_" }
         if ($LASTEXITCODE -ne 0) { throw "GIT_FETCH_RESULTS_BRANCH_FAILED:$LASTEXITCODE" }
-        & git -C $RepoPath worktree add -B $Branch $Worktree $Branch 2>&1 | ForEach-Object { Log "git worktree: $_" }
+        & git -C $RepoPath worktree add -B $Branch $Worktree $remoteRef 2>&1 | ForEach-Object { Log "git worktree: $_" }
     } else {
-        & git -C $RepoPath worktree add -b $Branch $Worktree origin/main 2>&1 | ForEach-Object { Log "git worktree: $_" }
+        & git -C $RepoPath worktree add -b $Branch $Worktree refs/remotes/origin/main 2>&1 | ForEach-Object { Log "git worktree: $_" }
     }
     if ($LASTEXITCODE -ne 0) { throw "GIT_WORKTREE_ADD_FAILED:$LASTEXITCODE" }
 }
