@@ -164,38 +164,46 @@ def _preflight_models(
     for model in models:
         if str(getattr(model, "provider", "")) != "ollama": continue
         model_name = str(getattr(model, "model", "unknown")); censored = attempted = retries = 0; latencies = []; max_prompt_chars = 0
-        for probe_index, (family, complexity) in enumerate(probes):
-            task = generate_task(family, complexity, 20260831 + probe_index); candidate = generate_candidate(task, 0.60, 20261831 + probe_index)
-            for role, messages, parser, candidate_id in [("preflight_executor", _executor_messages(task), _parse_actions, None), ("preflight_auditor", _auditor_messages(task, candidate), _parse_audit, candidate.id)]:
-                attempted += 1; max_prompt_chars = max(max_prompt_chars, sum(len(m["content"]) for m in messages))
-                try:
-                    result = model.complete(messages, role=role, context={"run_id": "preflight", "trial_id": f"preflight-{model_name}-{probe_index}-{role}", "call_id": f"preflight-{model_name}-{probe_index}-{role}", "candidate_id": candidate_id})
-                except GenerationCensored as exc:
-                    censored += 1
-                    _validate_ollama_telemetry_record(exc.record)
-                    if telemetry_callback: telemetry_callback(exc.record)
-                    if failure_callback: failure_callback(exc.record)
-                    continue
-                except ModelCallError as exc:
-                    _validate_ollama_telemetry_record(exc.record)
-                    if telemetry_callback: telemetry_callback(exc.record)
-                    if failure_callback: failure_callback(exc.record)
-                    raise
-                _validate_ollama_telemetry_record(result.record)
-                try:
-                    parser(result.text)
-                except Exception as exc:
-                    result.record.parse_success = False; result.record.parse_error = f"{type(exc).__name__}: {exc}"
+        try:
+            for probe_index, (family, complexity) in enumerate(probes):
+                task = generate_task(family, complexity, 20260831 + probe_index); candidate = generate_candidate(task, 0.60, 20261831 + probe_index)
+                for role, messages, parser, candidate_id in [("preflight_executor", _executor_messages(task), _parse_actions, None), ("preflight_auditor", _auditor_messages(task, candidate), _parse_audit, candidate.id)]:
+                    attempted += 1; max_prompt_chars = max(max_prompt_chars, sum(len(m["content"]) for m in messages))
+                    try:
+                        result = model.complete(messages, role=role, context={"run_id": "preflight", "trial_id": f"preflight-{model_name}-{probe_index}-{role}", "call_id": f"preflight-{model_name}-{probe_index}-{role}", "candidate_id": candidate_id})
+                    except GenerationCensored as exc:
+                        censored += 1
+                        _validate_ollama_telemetry_record(exc.record)
+                        if telemetry_callback: telemetry_callback(exc.record)
+                        if failure_callback: failure_callback(exc.record)
+                        continue
+                    except ModelCallError as exc:
+                        _validate_ollama_telemetry_record(exc.record)
+                        if telemetry_callback: telemetry_callback(exc.record)
+                        if failure_callback: failure_callback(exc.record)
+                        raise
+                    _validate_ollama_telemetry_record(result.record)
+                    try:
+                        parser(result.text)
+                    except Exception as exc:
+                        result.record.parse_success = False; result.record.parse_error = f"{type(exc).__name__}: {exc}"
+                        if telemetry_callback: telemetry_callback(result.record)
+                        if failure_callback: failure_callback(result.record)
+                        raise ValueError(f"preflight {role.removeprefix('preflight_')} JSON contract failed for {model_name}: {type(exc).__name__}: {exc}") from exc
+                    result.record.parse_success = True
                     if telemetry_callback: telemetry_callback(result.record)
-                    if failure_callback: failure_callback(result.record)
-                    raise ValueError(f"preflight {role.removeprefix('preflight_')} JSON contract failed for {model_name}: {type(exc).__name__}: {exc}") from exc
-                result.record.parse_success = True
-                if telemetry_callback: telemetry_callback(result.record)
-                latencies.append(result.record.latency_s); retries += result.record.retry_number
-        row = {"model": model_name, "provider": "ollama", "cells_attempted": attempted, "generation_censored": censored, "censorship_policy": "ZERO_CENSORSHIP", "max_generation_censored": 0, "executor_parse_ok": True, "auditor_parse_ok": True, "max_prompt_chars": max_prompt_chars, "total_latency_s": sum(latencies), "total_retries": retries, "context_limit": getattr(model, "context_limit", None), "think": getattr(model, "think", None), "format_json": getattr(model, "format_json", None)}
-        evidence.append(row)
-        if censored > max_generation_censored:
-            raise RuntimeError(f"zero-censorship preflight failed for {model_name}: {censored}/{attempted} GENERATION_CENSORED; required 0/{attempted}")
+                    latencies.append(result.record.latency_s); retries += result.record.retry_number
+            row = {"model": model_name, "provider": "ollama", "cells_attempted": attempted, "generation_censored": censored, "censorship_policy": "ZERO_CENSORSHIP", "max_generation_censored": 0, "executor_parse_ok": True, "auditor_parse_ok": True, "max_prompt_chars": max_prompt_chars, "total_latency_s": sum(latencies), "total_retries": retries, "context_limit": getattr(model, "context_limit", None), "think": getattr(model, "think", None), "format_json": getattr(model, "format_json", None)}
+            evidence.append(row)
+            if censored > max_generation_censored:
+                raise RuntimeError(f"zero-censorship preflight failed for {model_name}: {censored}/{attempted} GENERATION_CENSORED; required 0/{attempted}")
+        finally:
+            unload = getattr(model, "unload", None)
+            if callable(unload):
+                try:
+                    unload()
+                except Exception:
+                    pass
     return evidence
 
 

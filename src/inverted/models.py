@@ -136,6 +136,17 @@ class OllamaAdapter:
     provider = "ollama"
     _RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
     _CENSORED_REASONS = {"length", "max_tokens", "max_token", "token_limit", "token-limit"}
+    _HARD_500_MARKERS = (
+        "requires more system memory",
+        "out of memory",
+        "memory layout cannot be allocated",
+        "model failed to load",
+        "failed to load model",
+        "resource limitations",
+        "runner process has terminated",
+        "cuda error",
+        "rocm error",
+    )
 
     def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", timeout_s: float = 120.0, capture_content: bool = True, temperature: float = 0.0, max_tokens: int = 1024, max_retries: int = 0, retry_backoff_s: float = 1.0, think: bool | str | None = None, format_json: bool = False, context_limit: int | None = None):
         self.model = model
@@ -154,12 +165,47 @@ class OllamaAdapter:
     def _status(exc: Exception) -> int | None:
         return exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
 
+    @staticmethod
+    def _server_body(exc: Exception) -> str:
+        if not isinstance(exc, httpx.HTTPStatusError):
+            return ""
+        try:
+            return exc.response.text.strip()
+        except Exception:
+            return ""
+
+    def _error_message(self, exc: Exception) -> str:
+        body = self._server_body(exc)
+        if body:
+            return f"{exc} | Ollama response: {body}"
+        return str(exc)
+
+    def _hard_server_error(self, exc: Exception) -> bool:
+        if self._status(exc) != 500:
+            return False
+        body = self._server_body(exc).lower()
+        return any(marker in body for marker in self._HARD_500_MARKERS)
+
     def _retryable(self, exc: Exception) -> bool:
         if isinstance(exc, GenerationCensored):
+            return False
+        if self._hard_server_error(exc):
             return False
         if isinstance(exc, (httpx.TransportError, json.JSONDecodeError, EmptyModelResponse)):
             return True
         return self._status(exc) in self._RETRYABLE_STATUS
+
+    def unload(self) -> dict[str, Any]:
+        response = httpx.post(
+            f"{self.base_url}/api/chat",
+            json={"model": self.model, "messages": [], "stream": False, "keep_alive": 0},
+            timeout=min(self.timeout_s, 30.0),
+        )
+        response.raise_for_status()
+        try:
+            return response.json()
+        except json.JSONDecodeError:
+            return {"status_code": response.status_code, "text": response.text}
 
     def _payload(self, messages: list[dict[str, str]]) -> dict[str, Any]:
         options: dict[str, Any] = {"temperature": self.temperature, "num_predict": self.max_tokens}
@@ -222,6 +268,7 @@ class OllamaAdapter:
         context = dict(context)
         context["_prompt"] = messages
         last_exc: Exception | None = None
+        last_error_message: str | None = None
 
         for attempt in range(self.max_retries + 1):
             raw: dict[str, Any] | None = None
@@ -249,16 +296,18 @@ class OllamaAdapter:
                 raise
             except Exception as exc:
                 last_exc = exc
+                last_error_message = self._error_message(exc)
                 if raw is None:
-                    attempts.append({"attempt": attempt, "status_code": self._status(exc), "content": None, "thinking": None, "prompt_eval_count": None, "eval_count": None, "done_reason": None, "error_class": type(exc).__name__, "error_message": str(exc), "timeout": isinstance(exc, httpx.TimeoutException)})
+                    attempts.append({"attempt": attempt, "status_code": self._status(exc), "content": None, "thinking": None, "prompt_eval_count": None, "eval_count": None, "done_reason": None, "error_class": type(exc).__name__, "error_message": last_error_message, "timeout": isinstance(exc, httpx.TimeoutException)})
                 if attempt >= self.max_retries or not self._retryable(exc):
                     break
                 if self.retry_backoff_s:
                     time.sleep(self.retry_backoff_s * (2 ** attempt))
 
         assert last_exc is not None
-        record = self._record(context=context, role=role, start_ts=start_ts, latency=time.perf_counter() - overall_start, attempts=attempts, error_class=type(last_exc).__name__, error_message=str(last_exc), timeout=isinstance(last_exc, httpx.TimeoutException), status_code=self._status(last_exc))
-        raise ModelCallError(str(last_exc), record) from last_exc
+        final_message = last_error_message or str(last_exc)
+        record = self._record(context=context, role=role, start_ts=start_ts, latency=time.perf_counter() - overall_start, attempts=attempts, error_class=type(last_exc).__name__, error_message=final_message, timeout=isinstance(last_exc, httpx.TimeoutException), status_code=self._status(last_exc))
+        raise ModelCallError(final_message, record) from last_exc
 
     def preflight(self) -> dict[str, Any]:
         messages = [{"role": "system", "content": "Return only valid JSON."}, {"role": "user", "content": 'Return exactly {"ok":true}.'}]
