@@ -25,6 +25,13 @@ def _material_contamination_blockers(evidence: dict[str, Any]) -> list[str]:
     ):
         if audit.get(key):
             blockers.append(key)
+
+    model_provenance = ((evidence.get("provenance") or {}).get("models") or {})
+    identity_match = model_provenance.get("identity_match")
+    if identity_match is False:
+        blockers.append("ollama_identity_drift")
+    elif identity_match is not True:
+        blockers.append("ollama_identity_snapshot_missing")
     return blockers
 
 
