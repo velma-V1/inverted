@@ -2,13 +2,11 @@ from collections import Counter
 
 from inverted.arms import Arm, Budget, run_arm
 from inverted.models import MockModelAdapter
-from inverted.runner import ExperimentConfig
+from inverted.runner import ExperimentConfig, build_trial_plan
 from inverted.tasks import generate_task
 
 
 def test_execution_plan_removes_quality_and_model_redundancy():
-    from inverted.runner import build_trial_plan
-
     config = ExperimentConfig(
         families=("state",),
         complexities=(1,),
@@ -31,6 +29,37 @@ def test_execution_plan_removes_quality_and_model_redundancy():
         Arm.F_ORACLE_AUDITOR.value: 2,
     }
     assert len(plan) == 14
+
+
+def test_decisive_three_model_plan_is_exactly_6480_trial_units():
+    config = ExperimentConfig(
+        families=("state", "policy", "reconciliation"),
+        complexities=(1, 2, 3, 4),
+        qualities=(0.20, 0.40, 0.60, 0.80, 0.95),
+        seeds=(101, 211, 307, 401, 503),
+        epochs=3,
+        arms=tuple(a.value for a in Arm),
+        decisive=True,
+        minimum_primary_trials=180,
+    )
+    models = [
+        MockModelAdapter(model="family-a", seed=1),
+        MockModelAdapter(model="family-b", seed=2),
+        MockModelAdapter(model="family-c", seed=3),
+    ]
+
+    plan = build_trial_plan(config, models)
+    counts = Counter(item.arm for item in plan)
+
+    assert len(plan) == 6480
+    assert counts == {
+        Arm.A_DIRECT.value: 540,
+        Arm.B_DIRECT_CHECKED.value: 540,
+        Arm.C_SYSTEM.value: 900,
+        Arm.D_INVERTED.value: 2700,
+        Arm.E_RANDOM_AUDITOR.value: 900,
+        Arm.F_ORACLE_AUDITOR.value: 900,
+    }
 
 
 def test_non_ai_candidate_sequence_is_invariant_to_model_identity():
