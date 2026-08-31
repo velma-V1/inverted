@@ -1,0 +1,5 @@
+model_free:
+  seed_count: 100
+  evidence_scope: MODEL_FREE_DETERMINISTIC_ATLAS_NOT_LOCAL_MODEL_EVIDENCE
+  local_call_ceiling: 480
+  early_stop: false
