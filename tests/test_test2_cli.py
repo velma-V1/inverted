@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from inverted.test2_cli import load_test2_config, main
 from inverted.test2_local import LOCAL_MODELS
 
@@ -18,6 +20,20 @@ def test_local_dry_plan_prints_full_phase_budget_without_running_models(capsys):
     assert "PLANNED_MAX_PHYSICAL_CALLS=480" in out
     for model in LOCAL_MODELS:
         assert model in out
+
+
+def test_local_cli_rejects_transport_retries_and_phase_budget_drift_before_campaign(tmp_path):
+    text = Path("configs/test2-local.yaml").read_text(encoding="utf-8")
+
+    retries = tmp_path / "retries.yaml"
+    retries.write_text(text.replace("transport_retries: 0", "transport_retries: 1"), encoding="utf-8")
+    with pytest.raises(ValueError, match="transport_retries"):
+        main(["local", "--config", str(retries), "--dry-plan"])
+
+    phase = tmp_path / "phase.yaml"
+    phase.write_text(text.replace("formalization: 60", "formalization: 59"), encoding="utf-8")
+    with pytest.raises(ValueError, match="phase_limits"):
+        main(["local", "--config", str(phase), "--dry-plan"])
 
 
 def test_model_free_smoke_writes_complete_evidence(tmp_path):
