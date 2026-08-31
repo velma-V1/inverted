@@ -47,6 +47,14 @@ function Get-LineCount([string]$Path) {
     return $count
 }
 
+function Test-FinalArtifactsReady {
+    if (-not (Test-Path $FinalRunDir)) { return $false }
+    foreach ($name in $RequiredArtifacts) {
+        if (-not (Test-Path (Join-Path $FinalRunDir $name))) { return $false }
+    }
+    return $true
+}
+
 function Write-CheckpointChunk([string]$Source, [int]$StartLine, [int]$EndLine, [string]$Destination) {
     $reader = [System.IO.File]::OpenText($Source)
     $writer = New-Object System.IO.StreamWriter($Destination, $false, (New-Object System.Text.UTF8Encoding($false)))
@@ -161,9 +169,7 @@ function Publish-FinalArtifacts {
         Log "Published all $copied final benchmark artifacts."
     } else {
         Log "Final bundle incomplete ($copied/$($RequiredArtifacts.Count)); not labeling it complete."
-        if ($copied -gt 0) {
-            Commit-And-Push "partial final artifacts"
-        }
+        if ($copied -gt 0) { Commit-And-Push "partial final artifacts" }
     }
 }
 
@@ -185,7 +191,8 @@ try {
 
     $lastPublish = [DateTime]::UtcNow.AddSeconds(-$PublishEverySeconds)
     while ($true) {
-        $stop = Test-Path $StopSignal
+        $finalReady = Test-FinalArtifactsReady
+        $stop = (Test-Path $StopSignal) -or $finalReady
         $elapsed = ([DateTime]::UtcNow - $lastPublish).TotalSeconds
         if ($stop -or $elapsed -ge $PublishEverySeconds) {
             try {
