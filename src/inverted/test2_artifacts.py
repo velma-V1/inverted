@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .test2_postanalysis import candidate_independence_strata, retry_repair_thresholds
+
 
 _JSONL_FILES = {
     "trials": "raw/every-trial.jsonl",
@@ -36,6 +38,8 @@ _CSV_FILES = {
         "order_slice_ranking": "order/order-slice-ranking.csv",
         "saturation": "order/saturation.csv",
         "candidate_saturation": "order/candidate-saturation.csv",
+        "candidate_independence_strata": "order/candidate-independence-strata.csv",
+        "retry_repair_thresholds": "order/retry-repair-thresholds.csv",
     },
     "models": {
         "model_task_capability_matrix": "models/model-task-capability-matrix.csv",
@@ -157,12 +161,23 @@ def build_next_stride_report(evidence: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _augment_postanalysis(evidence: dict[str, Any]) -> None:
+    raw = evidence.get("raw", {})
+    trials = list(raw.get("trials", []) or [])
+    if not trials or "attempt_1_success" not in trials[0]:
+        return
+    order = evidence.setdefault("order", {})
+    order["candidate_independence_strata"] = candidate_independence_strata(trials)
+    order["retry_repair_thresholds"] = retry_repair_thresholds(trials)
+
+
 class Test2ArtifactWriter:
     def __init__(self, run_dir: str | Path):
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
 
     def write_all(self, evidence: dict[str, Any]) -> dict[str, str]:
+        _augment_postanalysis(evidence)
         written: dict[str, Path] = {}
 
         master_index = self.run_dir / "00-MASTER-INDEX.json"
