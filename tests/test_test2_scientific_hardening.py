@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-import json
-
 from inverted.domain import Action, Candidate
 from inverted.models import MockModelAdapter
 from inverted.oracle import apply_actions, evaluate_task
 from inverted.system_executor import generate_candidate
 from inverted.tasks import generate_task
-from inverted.test2_local_impl import (
-    LOCAL_MODELS,
-    build_executor_payload,
-    run_local_campaign,
-)
+from inverted.test2_local_impl import LOCAL_MODELS, build_executor_payload, run_local_campaign
 from inverted.test2_local_analysis import (
     audit_confusion_by_model,
     balanced_role_model_scores,
@@ -34,7 +28,6 @@ def test_progressive_executor_cannot_bypass_formalizer_with_goal_or_oracle_requi
     assert "requirements" not in layered
     assert layered["initial_state"] == task.initial_state.to_dict()
     assert layered["allowed_ops"] == list(task.allowed_ops)
-
     direct = build_executor_payload(task, ir=None, direct=True)
     assert direct["goal"] == task.goal
     assert direct["requirements"] == task.metadata["public_requirements"]
@@ -44,13 +37,7 @@ def test_hidden_gold_detects_pure_unintended_side_effect_without_changing_test1_
     task = generate_task("state", 2, 9992)
     clean = generate_candidate(task, 1.0, 9993)
     extra_actions = tuple(clean.actions) + (Action("set", "guard.unexpected", "side-effect"),)
-    contaminated = Candidate(
-        id="semantic-side-effect",
-        state=apply_actions(task.initial_state, extra_actions),
-        actions=extra_actions,
-        configured_quality=1.0,
-    )
-    # Test-1 oracle semantics remain unchanged and therefore do not see this semantic residual.
+    contaminated = Candidate(id="semantic-side-effect", state=apply_actions(task.initial_state, extra_actions), actions=extra_actions, configured_quality=1.0)
     assert evaluate_task(task, contaminated.state, contaminated.actions).success is True
     gold = evaluate_test2_gold(task, contaminated)
     assert gold.requirement_success is True
@@ -62,15 +49,8 @@ def test_hidden_gold_detects_pure_unintended_side_effect_without_changing_test1_
 def test_structured_feedback_uses_action_evidence_for_policy_requirements_not_state_lookup():
     task = generate_task("policy", 4, 9994)
     clean = generate_candidate(task, 1.0, 9995)
-    actions = list(clean.actions)
-    actions.append(Action("delete", "protected.flag", None))
-    actions = list(reversed(actions))
-    candidate = Candidate(
-        id="policy-bad",
-        state=apply_actions(task.initial_state, tuple(actions)),
-        actions=tuple(actions),
-        configured_quality=0.0,
-    )
+    actions = list(reversed(list(clean.actions) + [Action("delete", "protected.flag", None)]))
+    candidate = Candidate(id="policy-bad", state=apply_actions(task.initial_state, tuple(actions)), actions=tuple(actions), configured_quality=0.0)
     oracle = evaluate_task(task, candidate.state, candidate.actions)
     feedback = structured_failure_feedback(task, candidate, list(oracle.failed_requirement_ids))
     by_kind = {row["kind"]: row for row in feedback["failed_requirements"]}
@@ -99,10 +79,8 @@ def test_auditor_ranking_penalizes_reject_all_and_prioritizes_false_accept_contr
 
 def test_best_single_score_weights_roles_equally_instead_of_row_volume():
     rows = []
-    # Model A dominates a high-volume role but is bad elsewhere.
     rows.extend({"model": "A", "role": "auditor", "success": True} for _ in range(100))
     rows.extend({"model": "A", "role": role, "success": False} for role in ("formalizer", "executor", "repairer"))
-    # Model B is consistently useful in every role.
     for role in ("formalizer", "executor", "repairer", "auditor"):
         rows.extend({"model": "B", "role": role, "success": True} for _ in range(3))
         rows.append({"model": "B", "role": role, "success": False})
@@ -115,13 +93,11 @@ def test_stability_selection_is_decision_sensitive_and_contains_valid_and_invali
     rows = []
     for case_id, truth in [(f"valid-{i}", True) for i in range(6)] + [(f"bad-{i}", False) for i in range(6)]:
         for model_index, model in enumerate(LOCAL_MODELS):
-            # Make early cases highly disagreeing and later cases unanimous.
             accept = (model_index % 2 == 0) if case_id.endswith(("0", "1")) else truth
             rows.append({"task_id": case_id, "model": model, "oracle_success": truth, "accept": accept})
     selected = select_stability_task_ids(rows, max_cases=8)
     assert len(selected) == 8
-    truths = {row["oracle_success"] for row in selected}
-    assert truths == {True, False}
+    assert {row["oracle_success"] for row in selected} == {True, False}
     assert any(row["disagreement_rate"] > 0 for row in selected)
 
 
@@ -131,12 +107,7 @@ def test_repair_factorial_exports_main_effects_interaction_and_preservation():
         for strategy in ("regenerate", "targeted"):
             for i in range(4):
                 success = (feedback == "structured") or (strategy == "targeted" and i < 2)
-                rows.append({
-                    "model": "m", "task_id": f"t{i}", "feedback_style": feedback,
-                    "strategy": strategy, "success": success,
-                    "preservation_rate": 1.0 if strategy == "targeted" else 0.5,
-                    "new_failures_introduced": 0 if strategy == "targeted" else 1,
-                })
+                rows.append({"model": "m", "task_id": f"t{i}", "feedback_style": feedback, "strategy": strategy, "success": success, "preservation_rate": 1.0 if strategy == "targeted" else 0.5, "new_failures_introduced": 0 if strategy == "targeted" else 1})
     result = repair_factorial_effects(rows)
     assert result["condition_rows"]
     assert result["feedback_main_effect_pp"] > 0
@@ -171,14 +142,14 @@ def test_layered_capability_outputs_keep_role_dimension_in_every_router_relevant
     assert all("role" in row for row in outputs["fault"])
 
 
-def test_mock_campaign_uses_unique_evaluation_ids_and_preserves_nonempty_validator_ledger():
+def test_mock_campaign_uses_condition_safe_evaluation_ids_and_preserves_nonempty_validator_ledger():
     models = [MockModelAdapter(model=name) for name in LOCAL_MODELS]
     result = run_local_campaign(models, run_id="hardening-mock", hard_limit=480)
-    evaluation_ids = [row.get("evaluation_id") for row in result["records"]]
-    assert all(evaluation_ids)
-    # Multiple repair conditions for the same task must not overwrite each other in pair/router analysis.
-    repair_ids = [row["evaluation_id"] for row in result["records"] if row.get("phase") == "repair_factorial"]
-    assert len(repair_ids) == len(set(repair_ids))
+    assert all(row.get("evaluation_id") for row in result["records"])
+    repair_rows = [row for row in result["records"] if row.get("phase") == "repair_factorial"]
+    keys = [(row["evaluation_id"], row["model"]) for row in repair_rows]
+    assert len(keys) == len(set(keys))
+    assert len({row["evaluation_id"] for row in repair_rows}) > len({row["task_id"] for row in repair_rows})
     assert result["validator_results"]
     assert any(row.get("stage") == "final_deterministic_authority" for row in result["validator_results"])
 
