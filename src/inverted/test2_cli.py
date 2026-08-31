@@ -386,7 +386,7 @@ def _local_evidence(local: dict[str, Any], atlas: dict[str, Any], config: dict[s
             "config": config,
             "environment": provenance,
             "git": {"commit": provenance.get("git_commit")},
-            "models": {"configured": list(LOCAL_MODELS)},
+            "models": dict(local.get("ollama_provenance") or {"configured": list(LOCAL_MODELS)}),
         },
         "next_stride_report": "\n".join(next_lines),
     }
