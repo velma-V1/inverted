@@ -22,6 +22,9 @@ def render_report(summary: dict[str, Any], verdict: dict[str, Any], result: Any,
     add("=" * 92)
     add("INVERTED ARCHITECTURE BENCHMARK REPORT")
     add("=" * 92)
+    evidence_scope = getattr(getattr(result, "config", None), "metadata", {}).get("evidence_scope")
+    if evidence_scope:
+        add(f"EVIDENCE SCOPE: {evidence_scope}")
     add(f"VERDICT: {verdict.get('verdict')}")
     add(f"REASON: {verdict.get('reason')}")
     add(f"RUN ID: {result.run_id}")
@@ -78,36 +81,37 @@ def render_report(summary: dict[str, Any], verdict: dict[str, Any], result: Any,
 
     add("FAILURE TAXONOMY")
     add("-" * 92)
-    if summary.get("failure_taxonomy"):
-        for reason, count in sorted(summary["failure_taxonomy"].items(), key=lambda x: (-x[1], x[0])):
-            add(f"{reason}: {count}")
+    failures = summary.get("failure_taxonomy", {})
+    if failures:
+        for name, count in sorted(failures.items(), key=lambda item: (-item[1], item[0])):
+            add(f"{name}: {count}")
     else:
-        add("No failures recorded.")
+        add("None")
     add("")
 
-    add("ADVANTAGE REPRODUCIBILITY")
-    add("-" * 92)
-    add("Family D-A: " + json.dumps(summary.get("family_advantage", {}), sort_keys=True))
-    add("Model D-A: " + json.dumps(summary.get("model_advantage", {}), sort_keys=True))
-    add("Seed D-A: " + json.dumps(summary.get("seed_advantage", {}), sort_keys=True))
-    add("Complexity D-A: " + json.dumps(summary.get("complexity_advantage", {}), sort_keys=True))
-    add("")
-
-    for dimension, title in [("model","MODEL SLICES"),("family","FAMILY SLICES"),("complexity","COMPLEXITY SLICES"),("quality","QUALITY SLICES"),("seed","SEED SLICES"),("epoch","EPOCH SLICES")]:
+    for title, key in [
+        ("MODEL SLICES", "model"),
+        ("FAMILY SLICES", "family"),
+        ("COMPLEXITY SLICES", "complexity"),
+        ("QUALITY SLICES", "quality"),
+        ("SEED SLICES", "seed"),
+        ("EPOCH SLICES", "epoch"),
+    ]:
         add(title)
         add("-" * 92)
-        for key, metrics in summary.get("slices", {}).get(dimension, {}).items():
-            add(f"{key}: N={metrics.get('n')} success={_pct(metrics.get('success_rate'))} catastrophic={_pct(metrics.get('catastrophic_rate'))} tokens={metrics.get('total_tokens')} calls={metrics.get('model_call_count')} failures={json.dumps(metrics.get('failure_taxonomy',{}), sort_keys=True)}")
+        for name, metrics in summary.get("slices", {}).get(key, {}).items():
+            add(f"{name}: N={metrics.get('n')} success={_pct(metrics.get('success_rate'))} requirement_accuracy={_pct(metrics.get('mean_requirement_accuracy'))} catastrophic={_pct(metrics.get('catastrophic_rate'))} tokens={metrics.get('total_tokens')} calls={metrics.get('model_call_count')}")
         add("")
 
     add("PROVENANCE")
     add("-" * 92)
     add(json.dumps(provenance, sort_keys=True, indent=2, default=str))
     add("")
+
     add("RAW ARTIFACTS")
     add("-" * 92)
-    for name, path in sorted(artifact_paths.items()):
-        add(f"{name}: {path}")
+    for key, path in artifact_paths.items():
+        add(f"{key}: {path}")
     add("")
 
     if include_raw_rows:
@@ -115,12 +119,6 @@ def render_report(summary: dict[str, Any], verdict: dict[str, Any], result: Any,
         add("-" * 92)
         for trial in result.trials:
             add(json.dumps(trial.to_dict(include_calls=False), sort_keys=True, default=str))
-        add("")
-        add("FULL CANDIDATE / AUDIT LEDGER")
-        add("-" * 92)
-        for trial in result.trials:
-            for event in trial.candidate_events:
-                add(json.dumps({"trial_id": trial.trial_id, "arm": trial.arm, **event}, sort_keys=True, default=str))
         add("")
         add("FULL MODEL CALL LEDGER")
         add("-" * 92)
