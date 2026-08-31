@@ -61,7 +61,7 @@ function Ensure-PublishWorktree {
     }
     & git -C $RepoPath fetch origin main 2>&1 | ForEach-Object { Log "git fetch main: $_" }
     if ($LASTEXITCODE -ne 0) { throw "GIT_FETCH_MAIN_FAILED:$LASTEXITCODE" }
-    $remote = (& git -C $RepoPath ls-remote --heads origin $Branch 2>&1 | Out-String).Trim()
+    $remote = (& git -C $RepoPath ls-remote origin "refs/heads/$Branch" 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) { throw "GIT_LS_REMOTE_FAILED:$LASTEXITCODE" }
     if ($remote) {
         $remoteRef = "refs/remotes/origin/$Branch"; $refspec = "+refs/heads/$Branch`:$remoteRef"
