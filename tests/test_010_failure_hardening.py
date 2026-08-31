@@ -5,7 +5,7 @@ import pytest
 
 from inverted.arms import Arm, Budget, run_arm
 from inverted.cli import _build_models, _preflight_models
-from inverted.models import ModelCallError, OllamaAdapter
+from inverted.models import CompletionResult, ModelCallError, OllamaAdapter
 from inverted.runner import ExperimentConfig, build_trial_plan
 from inverted.tasks import generate_task
 from inverted.telemetry import ModelCallRecord
@@ -30,14 +30,18 @@ def _ctx():
     return {"run_id": "r", "trial_id": "t", "call_id": "c"}
 
 
-def _error_record():
+def _record(role="executor", model="broken", *, error_class=None, error_message=None, timeout=False):
     return ModelCallRecord(
         call_id="c", run_id="r", trial_id="t", candidate_id=None,
-        role="executor", model="broken", provider="ollama",
+        role=role, model=model, provider="ollama",
         start_ts="2026-08-31T00:00:00+00:00", end_ts="2026-08-31T00:00:01+00:00",
-        latency_s=1.0, error_class="ReadTimeout", error_message="stalled", timeout=True,
-        retry_number=2, retry_reason="ReadTimeout: stalled",
+        latency_s=1.0, error_class=error_class, error_message=error_message, timeout=timeout,
+        retry_number=2 if error_class else 0, retry_reason=(f"{error_class}: {error_message}" if error_class else None),
     )
+
+
+def _error_record():
+    return _record(error_class="ReadTimeout", error_message="stalled", timeout=True)
 
 
 def test_ollama_retries_transient_no_response_and_records_recovery(monkeypatch):
@@ -118,23 +122,46 @@ def test_exhausted_model_call_error_aborts_trial_instead_of_becoming_scientific_
         run_arm(Arm.A_DIRECT, task, BrokenModel(), 0.2, 1, "r", Budget(), epoch=0)
 
 
-def test_preflight_requires_valid_json_response_from_every_real_model():
-    class Good:
+def test_preflight_uses_actual_executor_and_auditor_contracts():
+    class ContractModel:
         provider = "ollama"
-        model = "good"
+        model = "contract"
 
-        def preflight(self):
-            return {"model": self.model, "provider": self.provider, "response": {"ok": True}}
+        def __init__(self):
+            self.roles = []
+            self.prompt_sizes = []
 
-    class Bad:
+        def complete(self, messages, *, role, context):
+            self.roles.append(role)
+            self.prompt_sizes.append(sum(len(m["content"]) for m in messages))
+            if role == "preflight_executor":
+                text = '{"actions":[{"op":"set","path":"profile.name","value":"x"}]}'
+            elif role == "preflight_auditor":
+                text = '{"accept":false,"failed_requirements":["probe"],"reason":"probe"}'
+            else:
+                raise AssertionError(role)
+            return CompletionResult(text, _record(role=role, model=self.model), {"fixture": True})
+
+    model = ContractModel()
+    evidence = _preflight_models([model])
+    assert model.roles == ["preflight_executor", "preflight_auditor"]
+    assert all(size > 100 for size in model.prompt_sizes)
+    assert evidence[0]["executor_parse_ok"] is True
+    assert evidence[0]["auditor_parse_ok"] is True
+    assert evidence[0]["max_prompt_chars"] == max(model.prompt_sizes)
+
+
+def test_preflight_rejects_malformed_auditor_contract_before_campaign():
+    class Malformed:
         provider = "ollama"
-        model = "bad"
+        model = "malformed"
 
-        def preflight(self):
-            raise ModelCallError("empty response", _error_record())
+        def complete(self, messages, *, role, context):
+            text = '{"actions":[]}' if role == "preflight_executor" else "NOT JSON"
+            return CompletionResult(text, _record(role=role, model=self.model), {})
 
-    with pytest.raises(ModelCallError):
-        _preflight_models([Good(), Bad()])
+    with pytest.raises(ValueError, match="preflight.*auditor"):
+        _preflight_models([Malformed()])
 
 
 def test_decisive_ollama_models_have_frozen_reliability_contract():
