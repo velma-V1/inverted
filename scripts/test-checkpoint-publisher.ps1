@@ -5,6 +5,7 @@ $Bare = Join-Path $Root "remote.git"
 $Repo = Join-Path $Root "repo"
 $RunRoot = Join-Path $Root "runs"
 $RunId = "publisher-test"
+$ResultBranch = "results-$RunId"
 $Checkpoint = Join-Path $RunRoot "$RunId.checkpoint.jsonl"
 $FailureLog = Join-Path $RunRoot "$RunId.call-failures.jsonl"
 $FinalRunDir = Join-Path $RunRoot $RunId
@@ -33,10 +34,10 @@ try {
 
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Publisher -RepoPath $Repo -RunRoot $RunRoot -RunId $RunId -Checkpoint $Checkpoint -StopSignal $StopSignal -FinalRunDir $FinalRunDir -TotalTrials 2 -PublishEverySeconds 0 -PollSeconds 1
     if ($LASTEXITCODE -ne 0) { throw "publisher process exited $LASTEXITCODE" }
-    & git --git-dir=$Bare show-ref --verify "refs/heads/results/$RunId" | Out-Null
+    & git --git-dir=$Bare show-ref --verify "refs/heads/$ResultBranch" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "results branch was not pushed" }
 
-    $tree = (& git --git-dir=$Bare ls-tree -r --name-only "refs/heads/results/$RunId" | Out-String)
+    $tree = (& git --git-dir=$Bare ls-tree -r --name-only "refs/heads/$ResultBranch" | Out-String)
     $expected = @("live-results/$RunId/chunks/checkpoint-000001-000002.jsonl","live-results/$RunId/progress.json","live-results/$RunId/call-failures.jsonl","live-results/$RunId/final/report.txt","live-results/$RunId/final/provenance.json")
     foreach ($path in $expected) { if ($tree -notmatch [regex]::Escape($path)) { throw "remote branch missing $path" } }
     if (-not (Test-Path $Checkpoint)) { throw "publisher deleted local checkpoint" }
