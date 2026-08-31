@@ -1,8 +1,8 @@
-# Hybrid Validation and Local Handoff Design
+# Hybrid Validation and Local Execution Design
 
 ## Goal
 
-Use GitHub-hosted CI to exhaustively validate the inverted benchmark as a scientific instrument, then run only the irreducibly real-model portion on Matt's Windows/Ollama machine after the 010 live C/D test actually terminates.
+Use GitHub-hosted CI to exhaustively validate the inverted benchmark as a scientific instrument, then run only the irreducibly real-model portion on the local Windows/Ollama machine when Inverted itself is ready.
 
 ## Non-negotiable separation of evidence
 
@@ -13,7 +13,7 @@ GitHub synthetic/mock campaigns validate benchmark correctness, statistical beha
 The system has two layers:
 
 1. **Cloud instrument validation** — GitHub Actions runs unit/regression tests and deterministic known-answer stress campaigns. It uploads a validation evidence bundle containing pytest logs, generated benchmark artifacts, and machine-readable campaign summaries.
-2. **Local real-model evidence collection** — the existing benchmark runs against Ollama after a PowerShell handoff watcher confirms the 010 test process tree has ended. The local runner prints real progress, checkpoints after completed trials, resumes safely after interruption, validates model availability, and writes the normal ten evidence artifacts.
+2. **Local real-model evidence collection** — the existing Inverted benchmark runs directly against Ollama with exact progress, durable checkpoints, safe resume after interruption, model-availability validation, and the normal ten evidence artifacts.
 
 The two layers reuse the same task generator, arms, oracle, statistics, verdict, telemetry, and artifact writer. No parallel benchmark implementation is allowed.
 
@@ -75,20 +75,16 @@ A dedicated workflow uploads one artifact bundle containing:
 
 Raw mock trial/model-call ledgers may be included when size remains practical; otherwise the final validation bundle must retain enough aggregate and manifest data to reproduce the run from the commit/config.
 
-## Local handoff after 010
+## Local real-model execution
 
-The supplied PowerShell handoff script must:
+Local execution must remain self-contained within Inverted and must:
 
-1. identify/wait on the actual 010 process tree rather than one transient parent PID;
-2. refuse to start if it cannot establish that 010 is no longer running;
-3. keep AC sleep disabled for the campaign;
-4. clone or update `velma-V1/inverted` automatically;
-5. install the package with the user's Python;
-6. verify Ollama is reachable and all three configured models exist;
-7. launch the real campaign with checkpoint/resume enabled;
-8. stream progress and terminal output to screen and log;
-9. only print `COMPLETE` after exit code 0 and required final artifacts exist;
-10. preserve the terminal after completion/failure.
+1. verify the intended Inverted commit/config before inference;
+2. verify Ollama is reachable and all configured models exist;
+3. launch the real campaign with checkpoint/resume enabled;
+4. stream exact progress and terminal output;
+5. preserve interrupted runs for safe resume;
+6. only report completion after exit code 0 and required final artifacts exist.
 
 Primary model set for the first real campaign:
 
@@ -107,4 +103,4 @@ The implementation is ready for real inference only when:
 - redundant model/quality-independent rows are absent from the execution plan;
 - checkpoint/resume reproduces uninterrupted deterministic results;
 - a smoke run shows exact progress and final ten artifacts;
-- the local handoff script fails closed when 010 is still running or prerequisites are missing.
+- local real-model execution fails closed when Inverted prerequisites are missing.
