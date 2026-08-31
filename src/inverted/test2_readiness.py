@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from .test2_integrity import harden_evidence_integrity
 from .test2_metadata import enrich_test2_evidence
 from .test2_preregistration import PREREGISTRATION, evaluate_primary_verdict
 
@@ -16,7 +17,17 @@ def _material_contamination_blockers(evidence: dict[str, Any]) -> list[str]:
     if audit.get("duplicate_evaluation_model_rows"):
         blockers.append("duplicate_evaluation_model_rows")
     if audit.get("unique_model_call_identity") is False:
-        blockers.append("non_unique_model_call_identity")
+        blockers.append("non_unique_physical_model_call_identity")
+    if audit.get("cache_identity_reference_integrity") is False:
+        blockers.append("cache_identity_reference_integrity")
+    if audit.get("physical_call_number_integrity") is False:
+        blockers.append("physical_call_number_integrity")
+    if audit.get("physical_call_count_matches_master") is False:
+        blockers.append("physical_call_count_mismatch")
+    if audit.get("repair_screen_primary_overlap"):
+        blockers.append("repair_screen_primary_overlap")
+    if audit.get("repair_screen_condition_balance_ok") is False:
+        blockers.append("repair_screen_condition_imbalance")
     for key in (
         "orphan_prompt_call_ids",
         "orphan_response_call_ids",
@@ -40,9 +51,11 @@ def finalize_test2_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
 
     This is deliberately post-inference: it may derive diagnostics and verdicts,
     but it never calls a model or external service and therefore cannot alter
-    the frozen Tier-A campaign.
+    the frozen Tier-A campaign. Decisive local verdicts pass two independent
+    metadata/integrity derivations before the preregistered statistics run.
     """
     enrich_test2_evidence(evidence)
+    harden_evidence_integrity(evidence)
     evidence["preregistration"] = deepcopy(PREREGISTRATION)
     mode = str((evidence.get("master_index") or {}).get("mode") or "unknown")
 
@@ -65,7 +78,7 @@ def finalize_test2_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         evidence["verdict"] = {
             **primary,
             "verdict": "INCONCLUSIVE",
-            "reason": "Decisive Tier-A run lacks the complete preregistered matched factorial contract.",
+            "reason": "Decisive Tier-A run lacks the complete preregistered matched factorial/physical-call contract.",
             "material_contamination_blockers": blockers,
         }
     elif blockers:
