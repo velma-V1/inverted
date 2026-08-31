@@ -1,0 +1,38 @@
+name: test2-validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test2-model-free:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Full pytest suite
+        run: python -m pytest -q
+      - name: Test2 model-free causal atlas
+        run: >-
+          python -m inverted.test2_cli model-free
+          --config configs/test2-model-free.yaml
+          --output-dir test2-ci
+          --run-id test2-model-free
+      - name: Verify Test2 evidence contract
+        run: >-
+          python -c "from pathlib import Path; p=Path('test2-ci/test2-model-free');
+          required=['00-MASTER-INDEX.json','TEST2-COMPLETE-EVIDENCE.txt','TEST2-NEXT-STRIDE-REPORT.txt','SHA256SUMS.csv','effects/failure-kill-matrix.csv','effects/pairwise-interactions.csv','order/saturation.csv'];
+          missing=[x for x in required if not (p/x).exists()];
+          assert not missing, missing;
+          text=(p/'TEST2-COMPLETE-EVIDENCE.txt').read_text(encoding='utf-8');
+          assert 'MODEL_FREE_DETERMINISTIC_ATLAS_NOT_LOCAL_MODEL_EVIDENCE' in text"
+      - name: Upload Test2 validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: test2-model-free-evidence
+          path: test2-ci/test2-model-free
+          if-no-files-found: error
