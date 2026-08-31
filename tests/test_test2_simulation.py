@@ -1,5 +1,6 @@
 from inverted.test2_postanalysis import (
     candidate_independence_strata,
+    failure_streak_quality_posterior,
     retry_repair_thresholds,
 )
 from inverted.test2_simulation import (
@@ -108,3 +109,13 @@ def test_candidate_independence_is_stratified_and_repair_thresholds_match_retry_
     assert overall[1]["repair_break_even_recovery_rate"] == saturation[2]["conditional_recovery_rate"]
     assert any(row["slice_type"] == "quality" for row in thresholds)
     assert any(row["slice_type"] == "fault" for row in thresholds)
+
+
+def test_failure_streak_is_preserved_as_a_quality_escalation_signal():
+    atlas = run_model_free_atlas(seed_count=4)
+    posterior = failure_streak_quality_posterior(atlas["base_cell_records"], low_quality_max=0.40)
+    assert [row["consecutive_failures"] for row in posterior] == [0, 1, 2, 3]
+    assert posterior[0]["low_quality_probability"] <= posterior[1]["low_quality_probability"]
+    assert posterior[1]["low_quality_probability"] <= posterior[2]["low_quality_probability"]
+    assert posterior[2]["low_quality_probability"] <= posterior[3]["low_quality_probability"]
+    assert all("quality_distribution" in row for row in posterior)
