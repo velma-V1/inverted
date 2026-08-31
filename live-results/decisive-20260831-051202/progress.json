@@ -1,0 +1,15 @@
+﻿{
+    "run_id":  "decisive-20260831-051202",
+    "branch":  "results/decisive-20260831-051202",
+    "completed":  0,
+    "total":  6480,
+    "percent":  0,
+    "last_chunk":  null,
+    "last_chunk_sha256":  null,
+    "value_checkpoint_files":  0,
+    "failed_call_records":  0,
+    "failed_call_log_sha256":  null,
+    "updated_utc":  "2026-08-31T09:12:06.6981111Z",
+    "final_signal_seen":  false,
+    "local_checkpoint":  "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-051202.checkpoint.jsonl"
+}
