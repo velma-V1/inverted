@@ -12,7 +12,6 @@ CROSS_REPO_FILES = (
 CROSS_REPO_MARKERS = (
     "velma-" + "alien-stack-lab",
     "experiment/010-" + "computational-basis-atlas",
-    "wait-for-010-" + "and-run-inverted.ps1",
 )
 
 TEXT_SUFFIXES = {

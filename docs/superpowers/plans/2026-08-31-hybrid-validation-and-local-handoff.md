@@ -1,12 +1,12 @@
-# Hybrid Validation and Local Handoff Implementation Plan
+# Hybrid Validation and Local Execution Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Validate the inverted benchmark exhaustively in GitHub cloud and reduce the local real-model run to only non-redundant, correctly paired evidence collection with progress/checkpoint/resume.
 
-**Architecture:** Add an explicit execution-plan layer between `ExperimentConfig` and `run_arm`, so redundant conditions are removed before inference and non-AI candidate seeds are model-independent. Add append-only checkpoints/progress to the existing runner, deterministic validation scenarios to CI, and a fail-closed Windows handoff script for the real Ollama campaign.
+**Architecture:** Add an explicit execution-plan layer between `ExperimentConfig` and `run_arm`, so redundant conditions are removed before inference and non-AI candidate seeds are model-independent. Add append-only checkpoints/progress to the existing runner and deterministic validation scenarios to CI. Local execution remains entirely within Inverted.
 
-**Tech Stack:** Python 3.11+, pytest, GitHub Actions, PowerShell 7/Windows PowerShell-compatible script, Ollama HTTP API, existing CSV/JSONL artifact writer.
+**Tech Stack:** Python 3.11+, pytest, GitHub Actions, PowerShell 7/Windows PowerShell-compatible scripts, Ollama HTTP API, existing CSV/JSONL artifact writer.
 
 **Spec:** `docs/superpowers/specs/2026-08-31-hybrid-validation-and-local-handoff-design.md`
 
@@ -19,7 +19,7 @@
 - `D_INVERTED` runs for every model/task/quality combination.
 - Non-AI candidate generation is invariant to auditor model identity.
 - Final benchmark artifact contract remains ten files.
-- Local automation fails closed while 010 is still running or prerequisites are missing.
+- Local automation fails closed when Inverted prerequisites are missing.
 
 ---
 
@@ -116,25 +116,7 @@
 - [ ] Fetch uploaded artifact metadata and verify expected evidence files exist.
 - [ ] Commit `ci: add exhaustive benchmark validation evidence`.
 
-### Task 6: Fail-closed Windows handoff after 010
-
-**Files:**
-- Create: `scripts/wait-for-010-and-run-inverted.ps1`
-- Create: `tests/test_handoff_script.py`
-- Modify: `README.md`
-
-**Interfaces:**
-- Script parameters: `-ProcessPattern`, `-RepoPath`, `-PythonExe`, `-Model1`, `-Model2`, `-Model3`, `-RunRoot`.
-- Uses CIM process inspection to wait until no matching 010/alien test command lines remain, then validates git/repo/Python/Ollama/models and launches CLI with `--checkpoint --resume --progress`.
-
-- [ ] Write static/behavioral tests requiring fail-closed checks, exact model names, progress/resume flags, artifact-existence verification, and no unconditional COMPLETE banner.
-- [ ] Run tests and verify failure before script exists.
-- [ ] Implement the PowerShell script with process-tree/pattern guard and prerequisite checks.
-- [ ] Add one copy/paste README section for the user's three models.
-- [ ] Run script tests and full suite.
-- [ ] Commit `feat: add automatic 010 to inverted handoff`.
-
-### Task 7: Final verification and integration
+### Task 6: Final verification and integration
 
 **Files:**
 - No new production files unless verification exposes defects.

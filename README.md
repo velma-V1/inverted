@@ -131,26 +131,6 @@ python -m inverted.cli `
 
 Progress is exact plan progress, for example `PROGRESS 1000/6480 ...`; it is not an estimated timer.
 
-## Automatic 010 → inverted handoff on Windows
-
-`scripts/wait-for-010-and-run-inverted.ps1` is intended for starting while the 010 live C/D experiment is still running. It:
-
-1. observes a running Python process whose command line matches `alien` by default;
-2. refuses to start inverted if it never observed 010;
-3. waits for the match to disappear for three consecutive checks;
-4. disables AC sleep, updates/installs the benchmark, checks Ollama and all three models;
-5. runs the decisive campaign with checkpoint/resume/exact progress;
-6. preserves a failed/interrupted run for resume;
-7. verifies all ten final evidence files before printing `INVERTED BENCHMARK COMPLETE`.
-
-After the repository containing this script is on `main`, the normal launch is:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME\inverted\scripts\wait-for-010-and-run-inverted.ps1" -ProcessPattern "alien"
-```
-
-If the repo has not been cloned yet, clone/update it first; the handoff script itself will also clone the repository if its configured repo path is absent.
-
 ## OpenAI-compatible endpoints
 
 Replace a model entry with:
