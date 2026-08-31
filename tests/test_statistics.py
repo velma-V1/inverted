@@ -63,6 +63,22 @@ def test_bootstrap_clusters_repeated_quality_and_model_rows_by_task():
     assert result["estimate"] == 1.0
 
 
+def test_bootstrap_reuses_single_direct_baseline_across_all_inverted_qualities():
+    trials = []
+    qualities = [0.2, 0.4, 0.6, 0.8, 0.95]
+    for i in range(4):
+        task_id = f"dedup-task-{i}"
+        trials.append(trial("A_DIRECT", False, quality=qualities[0], model="m1", seed=i, task_id=task_id))
+        for quality in qualities:
+            trials.append(trial("D_INVERTED", True, quality=quality, model="m1", seed=i, task_id=task_id))
+
+    result = bootstrap_rate_difference(trials, "D_INVERTED", "A_DIRECT", 200, 77)
+
+    assert result["n_pairs"] == 4 * len(qualities)
+    assert result["n_clusters"] == 4
+    assert result["estimate"] == 1.0
+
+
 def test_aggregate_exposes_independent_task_cluster_count():
     trials = []
     for i in range(4):
@@ -83,3 +99,17 @@ def test_crossover_finds_first_quality_where_inversion_wins():
             trials += [trial("A_DIRECT", i < 5, quality=q, seed=i), trial("D_INVERTED", i < d_successes, quality=q, seed=i)]
     c = estimate_crossover(trials)
     assert c["crossover_quality"] == 0.6
+
+
+def test_crossover_reuses_deduplicated_direct_baseline_for_each_quality():
+    trials = []
+    for i in range(10):
+        task_id = f"cross-task-{i}"
+        trials.append(trial("A_DIRECT", i < 5, quality=0.2, seed=i, task_id=task_id))
+        for q, successes in [(0.2, 2), (0.4, 4), (0.6, 8), (0.8, 9)]:
+            trials.append(trial("D_INVERTED", i < successes, quality=q, seed=i, task_id=task_id))
+
+    c = estimate_crossover(trials)
+
+    assert c["crossover_quality"] == 0.6
+    assert all(point["a_success"] == 0.5 for point in c["points"])
