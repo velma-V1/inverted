@@ -26,12 +26,16 @@ _CSV_FILES = {
         "ablation_effects": "effects/ablation-effects.csv",
         "pairwise_interactions": "effects/pairwise-interactions.csv",
         "failure_kill_matrix": "effects/failure-kill-matrix.csv",
+        "failure_recovery_matrix": "effects/failure-recovery-matrix.csv",
+        "component_slice_effects": "effects/component-slice-effects.csv",
         "synergy_matrix": "effects/synergy-matrix.csv",
     },
     "order": {
         "every_valid_order": "order/every-valid-order.csv",
         "order_ranking": "order/order-ranking.csv",
+        "order_slice_ranking": "order/order-slice-ranking.csv",
         "saturation": "order/saturation.csv",
+        "candidate_saturation": "order/candidate-saturation.csv",
     },
     "models": {
         "model_task_capability_matrix": "models/model-task-capability-matrix.csv",
@@ -55,6 +59,9 @@ _CSV_FILES = {
 }
 
 _JSON_FILES = {
+    "order": {
+        "candidate_independence": "order/candidate-independence.json",
+    },
     "models": {
         "role_champions": "models/role-champions.json",
         "router_policy": "models/router-policy.json",
