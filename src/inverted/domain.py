@@ -15,6 +15,15 @@ class WorldState:
     def to_dict(self) -> dict[str, Any]:
         return copy.deepcopy(self.data)
 
+    def get(self, path: str) -> Any:
+        """Read a dotted state path without mutating the world state."""
+        current: Any = self.data
+        for part in (p for p in path.split(".") if p):
+            if not isinstance(current, dict) or part not in current:
+                return None
+            current = current[part]
+        return current
+
 
 @dataclass(frozen=True)
 class Requirement:
