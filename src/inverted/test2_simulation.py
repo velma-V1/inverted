@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from itertools import combinations, permutations
+import math
 from typing import Any
 
 from .oracle import evaluate_task
@@ -25,6 +27,15 @@ _COMPONENTS = (
     "final_validator",
 )
 _PROGRESSIVE_ORDER = _COMPONENTS
+_SLICE_DIMENSIONS = (
+    ("family",),
+    ("complexity",),
+    ("quality",),
+    ("family", "complexity"),
+    ("family", "quality"),
+    ("complexity", "quality"),
+    ("family", "complexity", "quality"),
+)
 
 
 def analyze_orderings(
@@ -171,7 +182,88 @@ def _effect_row(name: str, before: list[OutcomeSnapshot], after: list[OutcomeSna
     }
 
 
-def _score_orders(cells: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _slice_values(cell: dict[str, Any], dimensions: tuple[str, ...]) -> tuple[Any, ...]:
+    return tuple(cell[dimension] for dimension in dimensions)
+
+
+def _slice_identity(dimensions: tuple[str, ...], values: tuple[Any, ...]) -> dict[str, Any]:
+    row: dict[str, Any] = {"slice_type": "_".join(dimensions)}
+    for dimension, value in zip(dimensions, values):
+        row[dimension] = value
+    return row
+
+
+def _component_slice_effects(
+    cells: list[dict[str, Any]],
+    comparisons: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for comparison in comparisons:
+        before: list[OutcomeSnapshot] = comparison["before"]
+        after: list[OutcomeSnapshot] = comparison["after"]
+        for dimensions in _SLICE_DIMENSIONS:
+            grouped: dict[tuple[Any, ...], list[tuple[OutcomeSnapshot, OutcomeSnapshot]]] = defaultdict(list)
+            for cell, a, b in zip(cells, before, after):
+                grouped[_slice_values(cell, dimensions)].append((a, b))
+            for values, pairs in grouped.items():
+                n = len(pairs)
+                before_successes = sum(a.success for a, _ in pairs)
+                after_successes = sum(b.success for _, b in pairs)
+                transitions = summarize_component_effects(pairs)
+                row = {
+                    **_slice_identity(dimensions, values),
+                    "mode": comparison["mode"],
+                    "component": comparison["component"],
+                    "n": n,
+                    "before_success_rate": before_successes / n if n else 0.0,
+                    "success_rate": after_successes / n if n else 0.0,
+                    "gain_pp": ((after_successes - before_successes) / n * 100.0) if n else 0.0,
+                    "blocked_rate": sum(b.blocked for _, b in pairs) / n if n else 0.0,
+                    "catastrophic_rate": sum(b.catastrophic for _, b in pairs) / n if n else 0.0,
+                    "wins_created": transitions["wins_created"],
+                    "wins_destroyed": transitions["wins_destroyed"],
+                    "net_wins": transitions["net_wins"],
+                    "failures_prevented": transitions["failures_prevented"],
+                    "failures_displaced": transitions["failures_displaced"],
+                    "catastrophics_removed": transitions["catastrophics_removed"],
+                    "catastrophics_added": transitions["catastrophics_added"],
+                }
+                rows.append(row)
+    return sorted(
+        rows,
+        key=lambda row: (
+            str(row["mode"]), str(row["component"]), str(row["slice_type"]),
+            str(row.get("family", "")), str(row.get("complexity", "")), str(row.get("quality", "")),
+        ),
+    )
+
+
+def _rank_order_slices(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        key = (
+            row["slice_type"], row.get("family"), row.get("complexity"), row.get("quality")
+        )
+        groups[key].append(row)
+    ranked: list[dict[str, Any]] = []
+    for key in sorted(groups, key=lambda item: tuple(str(x) for x in item)):
+        group = sorted(
+            groups[key],
+            key=lambda row: (
+                -float(row["simulated_success_rate"]),
+                float(row["catastrophic_rate"]),
+                float(row["blocked_rate"]),
+                str(row["order"]),
+            ),
+        )
+        for rank, row in enumerate(group, start=1):
+            ranked.append({**row, "rank_within_slice": rank})
+    return ranked
+
+
+def _score_orders(
+    cells: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     metadata = analyze_orderings(
         _COMPONENTS,
         # Retry replays already-fixed candidates; targeted repair would create a
@@ -179,6 +271,7 @@ def _score_orders(cells: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], li
         prompt_changing_components={"targeted_repair"},
     )
     scored: list[dict[str, Any]] = []
+    slice_rows: list[dict[str, Any]] = []
     for meta in metadata:
         order = tuple(meta["components"])
         outcomes = [_outcome_for_order(cell, order)[0] for cell in cells]
@@ -195,6 +288,23 @@ def _score_orders(cells: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], li
             "catastrophic": catastrophic,
             "catastrophic_rate": catastrophic / len(outcomes) if outcomes else 0.0,
         })
+        for dimensions in _SLICE_DIMENSIONS:
+            grouped: dict[tuple[Any, ...], list[OutcomeSnapshot]] = defaultdict(list)
+            for cell, outcome in zip(cells, outcomes):
+                grouped[_slice_values(cell, dimensions)].append(outcome)
+            for values, group in grouped.items():
+                n = len(group)
+                slice_rows.append({
+                    **_slice_identity(dimensions, values),
+                    "order": meta["order"],
+                    "components": meta["components"],
+                    "causal_status": meta["causal_status"],
+                    "changes_upstream_prompt": meta["changes_upstream_prompt"],
+                    "n": n,
+                    "simulated_success_rate": sum(x.success for x in group) / n if n else 0.0,
+                    "blocked_rate": sum(x.blocked for x in group) / n if n else 0.0,
+                    "catastrophic_rate": sum(x.catastrophic for x in group) / n if n else 0.0,
+                })
     ranking = sorted(
         scored,
         key=lambda row: (
@@ -205,7 +315,158 @@ def _score_orders(cells: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], li
         ),
     )
     ranking = [{"rank": index, **row} for index, row in enumerate(ranking, start=1)]
-    return scored, ranking
+    return scored, ranking, _rank_order_slices(slice_rows)
+
+
+def _binary_correlation(a: list[bool], b: list[bool]) -> float | None:
+    if not a or len(a) != len(b):
+        return None
+    xa = [1.0 if x else 0.0 for x in a]
+    xb = [1.0 if x else 0.0 for x in b]
+    ma = sum(xa) / len(xa)
+    mb = sum(xb) / len(xb)
+    va = sum((x - ma) ** 2 for x in xa) / len(xa)
+    vb = sum((x - mb) ** 2 for x in xb) / len(xb)
+    if va <= 0.0 or vb <= 0.0:
+        return None
+    cov = sum((x - ma) * (y - mb) for x, y in zip(xa, xb)) / len(xa)
+    return cov / math.sqrt(va * vb)
+
+
+def _candidate_attempt_metadata(cells: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    n = len(cells)
+    attempts = [[bool(cell["outcomes"][index].success) for cell in cells] for index in range(3)]
+    saturation: list[dict[str, Any]] = []
+    prior_success = [False] * n
+    for index in range(3):
+        current = attempts[index]
+        new_recoveries = sum((not prior_success[i]) and current[i] for i in range(n))
+        remaining_before = sum(not value for value in prior_success)
+        cumulative = [prior_success[i] or current[i] for i in range(n)]
+        saturation.append({
+            "attempts_available": index + 1,
+            "cumulative_successes": sum(cumulative),
+            "cumulative_success_rate": sum(cumulative) / n if n else 0.0,
+            "marginal_recoveries": new_recoveries,
+            "marginal_gain_pp": new_recoveries / n * 100.0 if n else 0.0,
+            "conditional_recovery_rate": new_recoveries / remaining_before if remaining_before else 0.0,
+            "remaining_failures": sum(not value for value in cumulative),
+        })
+        prior_success = cumulative
+
+    p = [sum(values) / n if n else 0.0 for values in attempts]
+    observed_no_success = sum(not (a or b or c) for a, b, c in zip(*attempts)) / n if n else 0.0
+    expected_no_success = math.prod(1.0 - value for value in p)
+    independence = {
+        "n": n,
+        "attempt_1_success_rate": p[0],
+        "attempt_2_success_rate": p[1],
+        "attempt_3_success_rate": p[2],
+        "observed_no_success_in_3_rate": observed_no_success,
+        "independent_expected_no_success_in_3_rate": expected_no_success,
+        "observed_to_independent_failure_ratio": (
+            observed_no_success / expected_no_success if expected_no_success > 0 else None
+        ),
+        "success_correlation_attempt_1_2": _binary_correlation(attempts[0], attempts[1]),
+        "success_correlation_attempt_1_3": _binary_correlation(attempts[0], attempts[2]),
+        "success_correlation_attempt_2_3": _binary_correlation(attempts[1], attempts[2]),
+    }
+    return saturation, independence
+
+
+def _base_cell_records(
+    cells: list[dict[str, Any]], full_outcomes: list[OutcomeSnapshot]
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for cell, full in zip(cells, full_outcomes):
+        outcomes = cell["outcomes"]
+        first_success = next((index + 1 for index, outcome in enumerate(outcomes) if outcome.success), None)
+        row: dict[str, Any] = {
+            "case_id": cell["id"],
+            "family": cell["family"],
+            "complexity": cell["complexity"],
+            "quality": cell["quality"],
+            "seed": cell["seed"],
+            "epoch": cell["epoch"],
+            "requirement_count": len(cell["task"].requirements),
+            "first_success_attempt": first_success,
+            "no_valid_candidate_in_3": first_success is None,
+            "full_stack_success": full.success,
+            "full_stack_blocked": full.blocked,
+            "full_stack_catastrophic": full.catastrophic,
+        }
+        for index, outcome in enumerate(outcomes, start=1):
+            candidate = cell["candidates"][index - 1]
+            row.update({
+                f"attempt_{index}_success": outcome.success,
+                f"attempt_{index}_catastrophic": outcome.catastrophic,
+                f"attempt_{index}_failure_signature": outcome.failure_signature,
+                f"attempt_{index}_injected_faults": list(candidate.injected_faults),
+            })
+        rows.append(row)
+    return rows
+
+
+def _candidate_records(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for cell in cells:
+        task = cell["task"]
+        for attempt, candidate in enumerate(cell["candidates"], start=1):
+            oracle = evaluate_task(task, candidate.state, candidate.actions)
+            rows.append({
+                "case_id": cell["id"],
+                "family": cell["family"],
+                "complexity": cell["complexity"],
+                "quality": cell["quality"],
+                "seed": cell["seed"],
+                "epoch": cell["epoch"],
+                "attempt": attempt,
+                "candidate_id": candidate.id,
+                "actions": [action.to_dict() for action in candidate.actions],
+                "final_state": candidate.state.to_dict(),
+                "injected_faults": list(candidate.injected_faults),
+                "oracle_success": oracle.success,
+                "catastrophic": oracle.catastrophic,
+                "passed_requirement_ids": list(oracle.passed_requirement_ids),
+                "failed_requirement_ids": list(oracle.failed_requirement_ids),
+            })
+    return rows
+
+
+def _failure_recovery_matrix(
+    cells: list[dict[str, Any]], baseline: list[OutcomeSnapshot], full_traces: list[list[dict[str, Any]]]
+) -> list[dict[str, Any]]:
+    grouped: dict[str, Counter[str]] = defaultdict(Counter)
+    for cell, before, trace in zip(cells, baseline, full_traces):
+        if before.success:
+            continue
+        fault = before.failure_signature or "unknown"
+        counter = grouped[fault]
+        counter["total_failures"] += 1
+        recovery = next(
+            (item["component"] for item in trace if not item["before_success"] and item["after_success"]),
+            None,
+        )
+        first_block = next(
+            (item["component"] for item in trace if not item["before_blocked"] and item["after_blocked"]),
+            None,
+        )
+        if first_block:
+            counter[f"first_blocked_by_{first_block}"] += 1
+        if recovery:
+            counter[f"recovered_by_{recovery}"] += 1
+        else:
+            counter["unrecovered"] += 1
+    columns = sorted({key for counter in grouped.values() for key in counter if key != "total_failures"})
+    rows = []
+    for fault, counter in sorted(grouped.items()):
+        total = counter["total_failures"]
+        row: dict[str, Any] = {"fault": fault, "total_failures": total}
+        for column in columns:
+            row[column] = counter[column]
+            row[f"{column}_rate"] = counter[column] / total if total else 0.0
+        rows.append(row)
+    return rows
 
 
 def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
@@ -236,6 +497,7 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
     progressive_snapshots: dict[int, list[OutcomeSnapshot]] = {0: baseline}
     active: list[str] = []
     previous = baseline
+    progressive_comparisons: list[dict[str, Any]] = []
     for step, component in enumerate(_PROGRESSIVE_ORDER, start=1):
         active.append(component)
         after = [_outcome_for_components(cell, tuple(active))[0] for cell in cells]
@@ -246,6 +508,7 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
             "cumulative_success_rate": sum(x.success for x in after) / len(after),
         })
         progressive_effects.append(row)
+        progressive_comparisons.append({"mode": "progressive", "component": component, "before": previous, "after": after})
         progressive_snapshots[step] = after
         previous = after
 
@@ -260,35 +523,45 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
         ablation_effects.append(row)
 
     pairwise_interactions = []
-    standalone_gain = {
-        component: (sum(x.success for x in outcomes) / len(outcomes)) - baseline_rate
+    standalone_rate = {
+        component: sum(x.success for x in outcomes) / len(outcomes)
         for component, outcomes in standalone_outcomes.items()
     }
+    standalone_gain = {component: rate - baseline_rate for component, rate in standalone_rate.items()}
     for a, b in combinations(_COMPONENTS, 2):
         outcomes = [_outcome_for_components(cell, (a, b))[0] for cell in cells]
         rate = sum(x.success for x in outcomes) / len(outcomes)
         observed_gain = rate - baseline_rate
         expected_additive_gain = standalone_gain[a] + standalone_gain[b]
         interaction = observed_gain - expected_additive_gain
+        best_single_rate = max(standalone_rate[a], standalone_rate[b])
+        if rate + 0.01 < best_single_rate:
+            classification = "INTERFERES"
+        elif interaction > 0.01:
+            classification = "SUPER_ADDITIVE"
+        elif interaction < -0.01:
+            classification = "SATURATION_OR_OVERLAP"
+        else:
+            classification = "ADDITIVE_OR_NEAR_INDEPENDENT"
         pairwise_interactions.append({
             "component_a": a,
             "component_b": b,
+            "component_a_success_rate": standalone_rate[a],
+            "component_b_success_rate": standalone_rate[b],
             "success_rate": rate,
             "observed_gain": observed_gain,
             "expected_additive_gain": expected_additive_gain,
             "interaction": interaction,
-            "classification": (
-                "SUPER_ADDITIVE" if interaction > 0.01 else
-                "ANTAGONISTIC" if interaction < -0.01 else
-                "REDUNDANT_OR_ADDITIVE"
-            ),
+            "classification": classification,
         })
 
     kill_records = []
     transitions = []
-    full_traces = []
+    component_traces: list[dict[str, Any]] = []
+    per_cell_traces: list[list[dict[str, Any]]] = []
     for cell, before, after in zip(cells, baseline, full_outcomes):
         _, caught_by, trace = _outcome_for_order(cell, full_components)
+        per_cell_traces.append(trace)
         fault = before.failure_signature or "none"
         kill_records.append({"fault": fault, "caught_by": caught_by or ("escaped" if not after.success else "none")})
         transitions.append({
@@ -304,7 +577,13 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
             "after_blocked": after.blocked,
         })
         for item in trace:
-            full_traces.append({"case_id": cell["id"], **item})
+            component_traces.append({
+                "case_id": cell["id"],
+                "family": cell["family"],
+                "complexity": cell["complexity"],
+                "quality": cell["quality"],
+                **item,
+            })
 
     saturation = []
     previous_rate = None
@@ -319,7 +598,16 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
         })
         previous_rate = rate
 
-    orderings, order_ranking = _score_orders(cells)
+    orderings, order_ranking, order_slice_ranking = _score_orders(cells)
+    candidate_saturation, candidate_independence = _candidate_attempt_metadata(cells)
+
+    standalone_comparisons = [
+        {"mode": "standalone", "component": component, "before": baseline, "after": outcomes}
+        for component, outcomes in standalone_outcomes.items()
+    ]
+    component_slice_effects = _component_slice_effects(
+        cells, standalone_comparisons + progressive_comparisons
+    )
 
     # Count simulated evaluation units, not inference calls.
     units_per_cell = 1 + len(_COMPONENTS) + len(_PROGRESSIVE_ORDER) + len(_COMPONENTS) + len(list(combinations(_COMPONENTS, 2))) + len(orderings)
@@ -338,9 +626,16 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
         "ablation_effects": ablation_effects,
         "pairwise_interactions": pairwise_interactions,
         "failure_kill_matrix": failure_kill_matrix(kill_records),
+        "failure_recovery_matrix": _failure_recovery_matrix(cells, baseline, per_cell_traces),
         "saturation": saturation,
+        "candidate_saturation": candidate_saturation,
+        "candidate_independence": candidate_independence,
         "orderings": orderings,
         "order_ranking": order_ranking,
+        "order_slice_ranking": order_slice_ranking,
+        "component_slice_effects": component_slice_effects,
         "outcome_transitions": transitions,
-        "component_traces": full_traces,
+        "component_traces": component_traces,
+        "base_cell_records": _base_cell_records(cells, full_outcomes),
+        "candidate_records": _candidate_records(cells),
     }
