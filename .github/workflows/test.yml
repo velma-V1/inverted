@@ -19,4 +19,4 @@ jobs:
       - run: pip install -e '.[test]'
       - run: pytest -q
       - run: python -m inverted.cli --config configs/smoke.yaml --output-dir /tmp/inverted-runs --run-id ci-smoke > /tmp/inverted-report.txt
-      - run: grep -q 'VERDICT: NON-DECISIVE' /tmp/inverted-report.txt
+      - run: "grep -q 'VERDICT: NON-DECISIVE' /tmp/inverted-report.txt"
