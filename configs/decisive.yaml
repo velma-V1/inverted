@@ -12,6 +12,10 @@ benchmark:
   minimum_primary_trials: 180
   bootstrap_samples: 10000
   bootstrap_seed: 20260830
+  # Balanced cumulative evidence stages: 60% -> 80% -> 100% of seeds.
+  # Interim stopping is intentionally stricter than the final fixed-sample rule.
+  sequential_seed_stages: [3, 4, 5]
+  sequential_interim_confidence: [0.995, 0.99]
 preflight:
   # 6 representative tasks x executor+auditor = 12 calls per real model.
   # Covers state/policy/reconciliation at complexity 1 and 4.
