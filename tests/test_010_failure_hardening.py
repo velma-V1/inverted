@@ -96,7 +96,8 @@ def test_ollama_retries_transient_no_response_and_records_every_attempt(monkeypa
     assert telemetry["attempts"][-1]["done_reason"] == "stop"
     payload = attempts[-1][1]
     assert payload["think"] is False
-    assert payload["format"] == "json"
+    assert isinstance(payload["format"], dict)
+    assert payload["format"]["required"] == ["accept", "failed_requirements", "reason"]
     assert payload["options"]["num_ctx"] == 8192
 
 
@@ -227,7 +228,7 @@ def test_preflight_aborts_if_any_generation_is_censored():
         _preflight_models([CensorOnce()], cells_per_model=12, max_generation_censored=0)
 
 
-def test_preflight_rejects_malformed_auditor_contract_before_campaign():
+def test_preflight_records_malformed_auditor_contract_as_model_evidence():
     class Malformed:
         provider = "ollama"
         model = "malformed"
@@ -239,8 +240,10 @@ def test_preflight_rejects_malformed_auditor_contract_before_campaign():
             rec.raw_provider_telemetry["attempts"][0]["content"] = text
             return CompletionResult(text, rec, {})
 
-    with pytest.raises(ValueError, match="preflight.*auditor"):
-        _preflight_models([Malformed()], cells_per_model=12, max_generation_censored=0)
+    rows = _preflight_models([Malformed()], cells_per_model=12, max_generation_censored=0)
+    assert rows[0]["executor_parse_failures"] == 0
+    assert rows[0]["auditor_parse_failures"] == 6
+    assert rows[0]["auditor_parse_ok"] is False
 
 
 def test_decisive_ollama_models_have_frozen_reliability_contract():

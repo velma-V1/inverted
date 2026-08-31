@@ -12,6 +12,7 @@ $Watcher = Join-Path $RepoPath "scripts\wait-for-010-and-run-inverted.ps1"
 $Publisher = Join-Path $RepoPath "scripts\publish-inverted-checkpoints.ps1"
 $StateFile = Join-Path $RunRoot "active-run-id.txt"
 $StopSignal = Join-Path $RunRoot "publisher-wrapper-stop.signal"
+$TerminalLog = $null
 
 if (-not (Test-Path $Watcher)) { throw "Missing handoff watcher: $Watcher" }
 if (-not (Test-Path $Publisher)) { throw "Missing checkpoint publisher: $Publisher" }
@@ -54,6 +55,11 @@ try {
         -Model2 $Model2 `
         -Model3 $Model3
     $WatcherExit = $LASTEXITCODE
+
+    if (Test-Path $StateFile) {
+        $RunId = (Get-Content $StateFile -Raw).Trim()
+        if ($RunId) { $TerminalLog = Join-Path $RunRoot "$RunId-terminal.log" }
+    }
 } finally {
     New-Item -ItemType File -Force -Path $StopSignal | Out-Null
     Write-Host ""
@@ -65,5 +71,16 @@ try {
 }
 
 if ($WatcherExit -ne 0) {
-    throw "Overnight handoff exited with code $WatcherExit. Local checkpoint/run state is preserved."
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Red
+    Write-Host " ROOT FAILURE FROM TERMINAL LOG" -ForegroundColor Red
+    Write-Host "============================================================" -ForegroundColor Red
+    if ($TerminalLog -and (Test-Path $TerminalLog)) {
+        Get-Content -Path $TerminalLog -Tail 80 | ForEach-Object { Write-Host $_ }
+    } else {
+        Write-Host "Terminal log unavailable. Watcher exit code: $WatcherExit" -ForegroundColor Red
+    }
+    Write-Host "============================================================" -ForegroundColor Red
+    Write-Host "Run state/checkpoint preserved. Watcher exit code: $WatcherExit" -ForegroundColor Red
+    exit $WatcherExit
 }
