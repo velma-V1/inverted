@@ -1,0 +1,39 @@
+# Preregistered one-campaign decisive configuration.
+# Set these three environment variables to three genuinely different model families/capacity tiers
+# available through Ollama before starting the run.
+benchmark:
+  families: [state, policy, reconciliation]
+  complexities: [1, 2, 3, 4]
+  qualities: [0.20, 0.40, 0.60, 0.80, 0.95]
+  seeds: [101, 211, 307, 401, 503]
+  epochs: 3
+  arms: [A_DIRECT, B_DIRECT_CHECKED, C_SYSTEM, D_INVERTED, E_RANDOM_AUDITOR, F_ORACLE_AUDITOR]
+  max_candidates: 3
+  max_tokens_per_trial: 4096
+  decisive: true
+  minimum_primary_trials: 180
+  bootstrap_samples: 10000
+  bootstrap_seed: 20260830
+models:
+  - provider: ollama
+    model: ${INVERTED_MODEL_1}
+    base_url: http://127.0.0.1:11434
+    temperature: 0.0
+    max_tokens: 1024
+    timeout_s: 180
+  - provider: ollama
+    model: ${INVERTED_MODEL_2}
+    base_url: http://127.0.0.1:11434
+    temperature: 0.0
+    max_tokens: 1024
+    timeout_s: 180
+  - provider: ollama
+    model: ${INVERTED_MODEL_3}
+    base_url: http://127.0.0.1:11434
+    temperature: 0.0
+    max_tokens: 1024
+    timeout_s: 180
+report:
+  capture_content: true
+  include_raw_rows: true
+output_dir: runs

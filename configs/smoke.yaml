@@ -1,0 +1,23 @@
+benchmark:
+  families: [state, policy, reconciliation]
+  complexities: [1, 2]
+  qualities: [0.4, 0.8]
+  seeds: [11, 29]
+  epochs: 1
+  arms: [A_DIRECT, B_DIRECT_CHECKED, C_SYSTEM, D_INVERTED, E_RANDOM_AUDITOR, F_ORACLE_AUDITOR]
+  max_candidates: 3
+  max_tokens_per_trial: 4096
+  decisive: false
+  minimum_primary_trials: 180
+  bootstrap_samples: 500
+  bootstrap_seed: 20260830
+models:
+  - provider: mock
+    model: mock-smoke
+    seed: 7
+    executor_accuracy: 0.60
+    auditor_accuracy: 0.85
+report:
+  capture_content: true
+  include_raw_rows: true
+output_dir: runs
