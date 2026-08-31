@@ -17,16 +17,22 @@ def _majority_positive(values: dict[str, float]) -> bool:
 def decide_verdict(summary: dict[str, Any], config: Any) -> dict[str, Any]:
     a_n = int(summary.get("by_arm", {}).get("A_DIRECT", {}).get("n", 0))
     d_n = int(summary.get("by_arm", {}).get("D_INVERTED", {}).get("n", 0))
+    primary = summary.get("primary", {})
+    independent_clusters = int(primary.get("independent_task_clusters", 0))
     minimum = int(config.minimum_primary_trials)
-    if not bool(config.decisive) or min(a_n, d_n) < minimum:
+    if not bool(config.decisive) or independent_clusters < minimum:
         return {
             "verdict": "NON-DECISIVE",
-            "reason": "Run is smoke/non-decisive or lacks preregistered minimum primary observations.",
-            "observations": {"A_DIRECT": a_n, "D_INVERTED": d_n, "minimum_each": minimum},
+            "reason": "Run is smoke/non-decisive or lacks preregistered minimum independent task clusters.",
+            "observations": {
+                "A_DIRECT": a_n,
+                "D_INVERTED": d_n,
+                "independent_task_clusters": independent_clusters,
+                "minimum_independent_task_clusters": minimum,
+            },
             "gates": [],
         }
 
-    primary = summary["primary"]
     diff = float(primary.get("d_minus_a") or 0.0)
     ci = primary.get("ci95") or {}
     ci_low = ci.get("lower")
