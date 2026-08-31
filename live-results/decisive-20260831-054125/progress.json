@@ -1,15 +1,15 @@
 ﻿{
     "run_id":  "decisive-20260831-054125",
     "branch":  "results/decisive-20260831-054125",
-    "completed":  1990,
+    "completed":  2088,
     "total":  6480,
-    "percent":  30.7099,
-    "last_chunk":  "checkpoint-001880-001990.jsonl",
-    "last_chunk_sha256":  "BDA50903CC84D0910A54BDC6BDCB60676B55D0689711D020E9760B6B5120DA41",
+    "percent":  32.2222,
+    "last_chunk":  "checkpoint-001991-002088.jsonl",
+    "last_chunk_sha256":  "B1A5FE8F1673F54D3AA8A981F83C7EF370844D5F72093FDB41B189A02DDFE9A2",
     "value_checkpoint_files":  2,
     "failed_call_records":  0,
     "failed_call_log_sha256":  null,
-    "updated_utc":  "2026-08-31T10:41:30.8222435Z",
+    "updated_utc":  "2026-08-31T10:46:33.5230163Z",
     "final_signal_seen":  false,
     "local_checkpoint":  "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-054125.checkpoint.jsonl"
 }
