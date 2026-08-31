@@ -8,6 +8,7 @@ from inverted.test2_cli import _local_evidence
 from inverted.test2_local_impl import LOCAL_MODELS, run_local_campaign
 from inverted.test2_metadata import enrich_test2_evidence
 from inverted.test2_preregistration import PREREGISTRATION
+from inverted.test2_readiness import finalize_test2_evidence
 
 
 def _empty_evidence(trials: list[dict]):
@@ -118,7 +119,7 @@ def test_repair_factorial_matrix_coverage_uses_selected_three_model_cohort_not_a
     assert all(row["missing_models"] == [] and row["matched_complete"] is True for row in rows)
 
 
-def test_local_evidence_embeds_frozen_preregistration_and_primary_verdict():
+def test_packet_finalization_embeds_frozen_preregistration_and_primary_verdict():
     local = {
         "records": _primary_rows(),
         "raw_calls": [],
@@ -133,6 +134,7 @@ def test_local_evidence_embeds_frozen_preregistration_and_primary_verdict():
         "repairs": [],
     }
     evidence = _local_evidence(local, {}, {"local": {"models": list(LOCAL_MODELS)}}, "readiness-verdict")
+    finalize_test2_evidence(evidence)
     assert evidence["preregistration"] == PREREGISTRATION
     assert evidence["verdict"]["verdict"] == "SUPPORTED"
     assert evidence["diagnostics"]["contamination_audit"]
@@ -140,8 +142,6 @@ def test_local_evidence_embeds_frozen_preregistration_and_primary_verdict():
 
 def test_artifact_writer_emits_conventional_completion_proof_files(tmp_path):
     evidence = _empty_evidence(_primary_rows())
-    evidence["preregistration"] = PREREGISTRATION
-    evidence["verdict"] = {"verdict": "INCONCLUSIVE", "reason": "fixture"}
     run_dir = tmp_path / "proof"
     paths = Test2ArtifactWriter(run_dir).write_all(evidence)
     written = {str(Path(path).relative_to(run_dir)).replace("\\", "/") for path in paths.values()}
