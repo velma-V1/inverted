@@ -20,19 +20,34 @@ models:
     base_url: http://127.0.0.1:11434
     temperature: 0.0
     max_tokens: 1024
-    timeout_s: 180
+    timeout_s: 600
+    max_retries: 2
+    retry_backoff_s: 5
+    think: false
+    format_json: true
+    context_limit: 8192
   - provider: ollama
     model: ${INVERTED_MODEL_2}
     base_url: http://127.0.0.1:11434
     temperature: 0.0
     max_tokens: 1024
-    timeout_s: 180
+    timeout_s: 600
+    max_retries: 2
+    retry_backoff_s: 5
+    think: false
+    format_json: true
+    context_limit: 8192
   - provider: ollama
     model: ${INVERTED_MODEL_3}
     base_url: http://127.0.0.1:11434
     temperature: 0.0
     max_tokens: 1024
-    timeout_s: 180
+    timeout_s: 600
+    max_retries: 2
+    retry_backoff_s: 5
+    think: false
+    format_json: true
+    context_limit: 8192
 report:
   capture_content: true
   include_raw_rows: true
