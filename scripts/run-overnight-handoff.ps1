@@ -3,8 +3,8 @@ param(
     [string]$RunRoot = "$HOME\inverted-runs",
     [string]$PythonExe = "C:\Python314\python.exe",
     [string]$Model1 = "qwen3.5:9b-q8_0",
-    [string]$Model2 = "gemma3:12b",
-    [string]$Model3 = "devstral-small-2:24b"
+    [string]$Model2 = "llama3.1:8b",
+    [string]$Model3 = "phi4-mini:3.8b"
 )
 
 $ErrorActionPreference = "Stop"
