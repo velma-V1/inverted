@@ -11,7 +11,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Branch = "results-$RunId"
+$Branch = "results/$RunId"
 $LocalBranch = "checkpoint-$RunId"
 $StagingRepo = Join-Path $RunRoot "$RunId-github"
 $ResultRoot = Join-Path $StagingRepo "live-results\$RunId"
