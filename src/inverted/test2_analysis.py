@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from statistics import fmean
+import math
 from typing import Any, Iterable
 
 
@@ -53,6 +53,40 @@ def summarize_component_effects(
     }
 
 
+def threshold_analysis(
+    *,
+    n: int,
+    baseline_successes: int,
+    recoverable_failures: int,
+    targets_pp: tuple[float, ...] = (1, 3, 5, 10),
+) -> list[dict[str, Any]]:
+    if n <= 0:
+        raise ValueError("n must be positive")
+    if not (0 <= baseline_successes <= n):
+        raise ValueError("baseline_successes must be within 0..n")
+    total_failures = n - baseline_successes
+    if not (0 <= recoverable_failures <= total_failures):
+        raise ValueError("recoverable_failures must be within remaining failures")
+    max_gain_pp = 100.0 * recoverable_failures / n
+    rows = []
+    for target in targets_pp:
+        required = math.ceil((float(target) / 100.0) * n - 1e-12)
+        rows.append({
+            "target_pp": target,
+            "n": n,
+            "baseline_successes": baseline_successes,
+            "baseline_success_rate": baseline_successes / n,
+            "remaining_failures": total_failures,
+            "recoverable_failures": recoverable_failures,
+            "required_net_recoveries": required,
+            "required_fraction_of_remaining_failures": required / total_failures if total_failures else None,
+            "required_fraction_of_recoverable_failures": required / recoverable_failures if recoverable_failures else None,
+            "max_possible_gain_pp": max_gain_pp,
+            "feasible": required <= recoverable_failures,
+        })
+    return rows
+
+
 def minimum_sufficient_stack(
     stacks: list[dict[str, Any]],
     gaps: tuple[float, ...] = (0.005, 0.01, 0.02),
@@ -76,7 +110,6 @@ def minimum_sufficient_stack(
 
 
 def _dominates(a: dict[str, Any], b: dict[str, Any]) -> bool:
-    # Maximize success; minimize calls, latency and catastrophic rate when present.
     dims = [
         (float(a.get("success_rate", 0.0)), float(b.get("success_rate", 0.0)), "max"),
         (float(a.get("calls", 0.0)), float(b.get("calls", 0.0)), "min"),
@@ -97,10 +130,10 @@ def _dominates(a: dict[str, Any], b: dict[str, Any]) -> bool:
 
 
 def pareto_frontier(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    frontier = []
-    for row in rows:
-        if not any(other is not row and _dominates(other, row) for other in rows):
-            frontier.append(row)
+    frontier = [
+        row for row in rows
+        if not any(other is not row and _dominates(other, row) for other in rows)
+    ]
     return sorted(frontier, key=lambda row: (-float(row.get("success_rate", 0)), float(row.get("calls", 0)), str(row.get("name", ""))))
 
 
@@ -108,7 +141,7 @@ def model_complementarity(
     outcomes: dict[str, dict[str, bool]], model_a: str, model_b: str
 ) -> dict[str, Any]:
     counts = Counter()
-    for task_id, by_model in outcomes.items():
+    for by_model in outcomes.values():
         a = bool(by_model.get(model_a, False))
         b = bool(by_model.get(model_b, False))
         if a and b:
@@ -130,8 +163,8 @@ def model_complementarity(
         "b_only": counts["b_only"],
         "both_fail": counts["both_fail"],
         "unique_wins": counts["a_only"] + counts["b_only"],
-        "error_overlap": (counts["both_fail"] / error_union) if error_union else 0.0,
-        "complementarity": ((counts["a_only"] + counts["b_only"]) / n) if n else 0.0,
+        "error_overlap": counts["both_fail"] / error_union if error_union else 0.0,
+        "complementarity": (counts["a_only"] + counts["b_only"]) / n if n else 0.0,
     }
 
 
@@ -160,17 +193,21 @@ def router_regret(
         "oracle_successes": oracle,
         "routed_successes": routed,
         "regret_successes": oracle - routed,
+        "regret_rate": (oracle - routed) / len(rows) if rows else 0.0,
         "rows": rows,
     }
 
 
 def _best_model_for_rows(rows: list[dict[str, Any]]) -> tuple[str | None, int]:
     counts: dict[str, int] = defaultdict(int)
+    totals: dict[str, int] = defaultdict(int)
     for row in rows:
-        counts[str(row["model"])] += int(bool(row.get("success")))
+        model = str(row["model"])
+        counts[model] += int(bool(row.get("success")))
+        totals[model] += 1
     if not counts:
         return None, 0
-    model = sorted(counts, key=lambda m: (-counts[m], m))[0]
+    model = sorted(counts, key=lambda m: (-(counts[m] / totals[m]), -counts[m], m))[0]
     return model, counts[model]
 
 
@@ -181,7 +218,9 @@ def derive_layered_router(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "best_static_role_assignment": {"successes": 0, "assignments": {}},
             "best_task_type_router": {"successes": 0, "assignments": {}},
             "oracle_per_task": {"successes": 0},
+            "task_type_router_regret_successes": 0,
             "role_champions": {},
+            "task_type_regret_rows": [],
         }
 
     best_single_model, best_single_successes = _best_model_for_rows(rows)
@@ -204,27 +243,44 @@ def derive_layered_router(rows: list[dict[str, Any]]) -> dict[str, Any]:
     for row in rows:
         type_groups[(str(row["role"]), str(row.get("family", "")))].append(row)
     type_assignments: dict[str, str] = {}
-    type_successes = 0
     for key, group in sorted(type_groups.items()):
         model, _ = _best_model_for_rows(group)
-        if model is None:
-            continue
-        encoded = f"{key[0]}|{key[1]}"
-        type_assignments[encoded] = model
-        type_successes += sum(
-            int(bool(row.get("success"))) for row in group if str(row["model"]) == model
-        )
+        if model is not None:
+            type_assignments[f"{key[0]}|{key[1]}"] = model
 
     task_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         task_groups[str(row["task_id"])].append(row)
-    oracle_successes = sum(any(bool(r.get("success")) for r in group) for group in task_groups.values())
+    oracle_successes = 0
+    type_successes = 0
+    regret_rows = []
+    for task_id, group in sorted(task_groups.items()):
+        oracle_ok = any(bool(r.get("success")) for r in group)
+        exemplar = group[0]
+        key = f"{exemplar.get('role', '')}|{exemplar.get('family', '')}"
+        chosen = type_assignments.get(key)
+        chosen_rows = [r for r in group if str(r.get("model")) == chosen]
+        routed_ok = any(bool(r.get("success")) for r in chosen_rows)
+        oracle_successes += int(oracle_ok)
+        type_successes += int(routed_ok)
+        regret_rows.append({
+            "task_id": task_id,
+            "role": exemplar.get("role"),
+            "family": exemplar.get("family"),
+            "chosen_model": chosen,
+            "routed_success": routed_ok,
+            "oracle_success": oracle_ok,
+            "regret": int(oracle_ok) - int(routed_ok),
+        })
 
     return {
         "best_single_model": {"model": best_single_model, "successes": best_single_successes},
         "best_static_role_assignment": {"successes": static_successes, "assignments": role_champions},
         "best_task_type_router": {"successes": type_successes, "assignments": type_assignments},
-        "oracle_per_task": {"successes": int(oracle_successes)},
+        "oracle_per_task": {"successes": oracle_successes},
+        "task_type_router_regret_successes": oracle_successes - type_successes,
+        "task_type_router_regret_rate": (oracle_successes - type_successes) / len(task_groups) if task_groups else 0.0,
+        "task_type_regret_rows": regret_rows,
         "role_champions": role_champions,
     }
 
@@ -248,8 +304,7 @@ def failure_kill_matrix(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def capability_matrix(rows: list[dict[str, Any]], dimensions: tuple[str, ...]) -> list[dict[str, Any]]:
     groups: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        key = tuple(row.get(dim) for dim in dimensions)
-        groups[key].append(row)
+        groups[tuple(row.get(dim) for dim in dimensions)].append(row)
     out = []
     for key, group in sorted(groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])):
         n = len(group)
