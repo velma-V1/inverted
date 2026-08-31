@@ -1,0 +1,221 @@
+{
+  "capture_content": true,
+  "captured_at": "2026-08-31T12:04:45.993651+00:00",
+  "checkpoint_path": "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-054125.checkpoint.jsonl",
+  "completed_seed_count": 3,
+  "completed_trial_units": 3888,
+  "config_path": "[REDACTED_USER_PROFILE]\\inverted\\configs\\decisive.yaml",
+  "cwd": "[REDACTED_USER_PROFILE]",
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "httpx": "0.28.1",
+    "pytest": null
+  },
+  "failure_log": "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-054125.call-failures.jsonl",
+  "git_commit": null,
+  "include_raw_rows": true,
+  "machine": "AMD64",
+  "models": [
+    {
+      "base_url": "http://127.0.0.1:11434",
+      "context_limit": 8192,
+      "format_json": true,
+      "max_retries": 2,
+      "max_tokens": 1024,
+      "model": "qwen3.5:9b-q8_0",
+      "provider": "ollama",
+      "retry_backoff_s": 5,
+      "temperature": 0.0,
+      "think": false,
+      "timeout_s": 600
+    },
+    {
+      "base_url": "http://127.0.0.1:11434",
+      "context_limit": 8192,
+      "format_json": true,
+      "max_retries": 2,
+      "max_tokens": 1024,
+      "model": "llama3.1:8b",
+      "provider": "ollama",
+      "retry_backoff_s": 5,
+      "temperature": 0.0,
+      "think": false,
+      "timeout_s": 600
+    },
+    {
+      "base_url": "http://127.0.0.1:11434",
+      "context_limit": 8192,
+      "format_json": true,
+      "max_retries": 2,
+      "max_tokens": 1024,
+      "model": "phi4-mini:3.8b",
+      "provider": "ollama",
+      "retry_backoff_s": 5,
+      "temperature": 0.0,
+      "think": false,
+      "timeout_s": 600
+    }
+  ],
+  "planned_trial_units": 6480,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "preflight": [
+    {
+      "auditor_parse_failures": 0,
+      "auditor_parse_ok": true,
+      "cells_attempted": 12,
+      "censorship_policy": "ZERO_CENSORSHIP",
+      "context_limit": 8192,
+      "executor_parse_failures": 0,
+      "executor_parse_ok": true,
+      "format_json": true,
+      "generation_censored": 0,
+      "max_generation_censored": 0,
+      "max_prompt_chars": 6112,
+      "model": "qwen3.5:9b-q8_0",
+      "provider": "ollama",
+      "think": false,
+      "total_latency_s": 37.68412499985425,
+      "total_retries": 0
+    },
+    {
+      "auditor_parse_failures": 0,
+      "auditor_parse_ok": true,
+      "cells_attempted": 12,
+      "censorship_policy": "ZERO_CENSORSHIP",
+      "context_limit": 8192,
+      "executor_parse_failures": 0,
+      "executor_parse_ok": true,
+      "format_json": true,
+      "generation_censored": 0,
+      "max_generation_censored": 0,
+      "max_prompt_chars": 6112,
+      "model": "llama3.1:8b",
+      "provider": "ollama",
+      "think": false,
+      "total_latency_s": 18.854213200043887,
+      "total_retries": 0
+    },
+    {
+      "auditor_parse_failures": 0,
+      "auditor_parse_ok": true,
+      "cells_attempted": 12,
+      "censorship_policy": "ZERO_CENSORSHIP",
+      "context_limit": 8192,
+      "executor_parse_failures": 0,
+      "executor_parse_ok": true,
+      "format_json": true,
+      "generation_censored": 0,
+      "max_generation_censored": 0,
+      "max_prompt_chars": 6112,
+      "model": "phi4-mini:3.8b",
+      "provider": "ollama",
+      "think": false,
+      "total_latency_s": 15.108978700009175,
+      "total_retries": 0
+    }
+  ],
+  "preflight_call_log": "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-054125.preflight-model-calls.jsonl",
+  "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+  "python": "3.14.6 (tags/v3.14.6:c63aec6, Jun 10 2026, 10:26:10) [MSC v.1944 64 bit (AMD64)]",
+  "python_executable": "C:\\Python314\\python.exe",
+  "resumed": true,
+  "run_ended_at": "2026-08-31T12:04:45.634760+00:00",
+  "run_started_at": "2026-08-31T11:45:57.820628+00:00",
+  "sequential_decision": {
+    "completed_seed_count": 3,
+    "gates": [
+      {
+        "name": "interim_effect_at_least_10pp",
+        "passed": false,
+        "threshold": 0.1,
+        "value": -0.13456790123456797
+      },
+      {
+        "name": "interim_high_confidence_ci_excludes_zero",
+        "passed": false,
+        "threshold": ">0 at 99.500% confidence",
+        "value": -0.20308796296296294
+      },
+      {
+        "name": "all_families_positive",
+        "passed": false,
+        "value": {
+          "policy": 0.08148148148148149,
+          "reconciliation": -0.2962962962962963,
+          "state": -0.18888888888888888
+        }
+      },
+      {
+        "name": "beats_random_auditor",
+        "passed": true,
+        "value": 0.2246913580246913
+      },
+      {
+        "name": "no_catastrophic_increase_2pp",
+        "passed": true,
+        "threshold": "<0.02",
+        "value": 0.0012345679012345685
+      },
+      {
+        "name": "positive_equal_token_budget",
+        "passed": false,
+        "value": -0.13456790123456797
+      },
+      {
+        "name": "all_models_positive",
+        "passed": false,
+        "value": {
+          "llama3.1:8b": -0.2870370370370371,
+          "phi4-mini:3.8b": -0.09999999999999998,
+          "qwen3.5:9b-q8_0": -0.01666666666666672
+        }
+      },
+      {
+        "name": "all_observed_seeds_positive",
+        "passed": false,
+        "value": {
+          "101": -0.1333333333333333,
+          "211": -0.10185185185185186,
+          "307": -0.1685185185185185
+        }
+      },
+      {
+        "name": "not_decisively_worse_than_checked_baseline",
+        "passed": false,
+        "threshold": ">=-0.10",
+        "value": -0.21172839506172836
+      }
+    ],
+    "interim_confidence": 0.995,
+    "primary_interval": {
+      "confidence": 0.995,
+      "estimate": -0.1345679012345679,
+      "lower": -0.20308796296296294,
+      "n_clusters": 108,
+      "n_pairs": 1620,
+      "samples": 10000,
+      "upper": -0.06234567901234569
+    },
+    "reason": "Sequential early stop at stage 1: the 99.5% primary interval rules out a +5pp meaningful D-A advantage.",
+    "refutation_reasons": [
+      "99.5% interim CI rules out a +5pp meaningful advantage"
+    ],
+    "stage": 1,
+    "stop": true,
+    "verdict": "REFUTED"
+  },
+  "sequential_interim_confidence": [
+    0.995,
+    0.99
+  ],
+  "sequential_seed_stages": [
+    3,
+    4,
+    5
+  ],
+  "stopped_early": true,
+  "value_checkpoint_seed_stages": [
+    1,
+    2
+  ]
+}
