@@ -1,6 +1,4 @@
 # Preregistered one-campaign decisive configuration.
-# Set these three environment variables to three genuinely different model families/capacity tiers
-# available through Ollama before starting the run.
 benchmark:
   families: [state, policy, reconciliation]
   complexities: [1, 2, 3, 4]
@@ -14,6 +12,12 @@ benchmark:
   minimum_primary_trials: 180
   bootstrap_samples: 10000
   bootstrap_seed: 20260830
+preflight:
+  # 6 representative tasks x executor+auditor = 12 calls per real model.
+  # Covers state/policy/reconciliation at complexity 1 and 4.
+  cells_per_model: 12
+  # With 12 cells, one GENERATION_CENSORED event = 8.33%, so even one aborts.
+  censorship_threshold: 0.05
 models:
   - provider: ollama
     model: ${INVERTED_MODEL_1}
