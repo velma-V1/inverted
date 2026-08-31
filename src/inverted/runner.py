@@ -76,26 +76,34 @@ def build_trial_plan(config: ExperimentConfig, models: list[Any]) -> list[TrialP
         raise ValueError("at least one executor quality is required")
 
     plan: list[TrialPlan] = []
-    task_cells = itertools.product(
+    task_cells = list(itertools.product(
         range(config.epochs), config.families, config.complexities, config.seeds
-    )
+    ))
     canonical_quality = config.qualities[0]
 
+    # Run the model-independent controls exactly once. They consume no model
+    # behavior and therefore do not justify loading or switching Ollama models.
     for epoch, family, complexity, seed in task_cells:
         for arm_name in config.arms:
             arm = Arm(arm_name)
-            if arm in {Arm.A_DIRECT, Arm.B_DIRECT_CHECKED}:
-                for model_index in range(len(models)):
+            if arm.value in _MODEL_DEPENDENT_ARMS:
+                continue
+            for quality in config.qualities:
+                plan.append(TrialPlan(0, epoch, family, complexity, quality, seed, arm.value))
+
+    # Complete every model-dependent trial for one model before moving to the
+    # next model. This prevents Qwen -> Gemma -> Devstral -> Qwen load thrash
+    # while preserving exactly the same preregistered trial keys and pairing.
+    for model_index in range(len(models)):
+        for epoch, family, complexity, seed in task_cells:
+            for arm_name in config.arms:
+                arm = Arm(arm_name)
+                if arm in {Arm.A_DIRECT, Arm.B_DIRECT_CHECKED}:
                     plan.append(TrialPlan(model_index, epoch, family, complexity, canonical_quality, seed, arm.value))
-            elif arm == Arm.D_INVERTED:
-                for model_index in range(len(models)):
+                elif arm == Arm.D_INVERTED:
                     for quality in config.qualities:
                         plan.append(TrialPlan(model_index, epoch, family, complexity, quality, seed, arm.value))
-            else:
-                # C/E/F do not consume model behavior. Execute them once per
-                # task/quality condition rather than once for every model.
-                for quality in config.qualities:
-                    plan.append(TrialPlan(0, epoch, family, complexity, quality, seed, arm.value))
+
     return plan
 
 
