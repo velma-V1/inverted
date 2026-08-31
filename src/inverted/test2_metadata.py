@@ -127,6 +127,29 @@ def _response_contract_health(raw: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"role": role, "model": model, **dict(counts)} for (role, model), counts in sorted(groups.items())]
 
 
+def _repair_factorial_expected_models(trials: list[dict[str, Any]], configured_models: list[str]) -> set[str]:
+    configured = set(configured_models)
+    screen_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in trials:
+        if row.get("phase") == "repair_screen" and row.get("model") in configured:
+            screen_groups[str(row["model"])].append(row)
+    if screen_groups:
+        ranked = sorted(
+            screen_groups,
+            key=lambda model: (
+                -(sum(bool(r.get("success")) for r in screen_groups[model]) / len(screen_groups[model])),
+                -sum(float(r.get("preservation_rate", 0.0) or 0.0) for r in screen_groups[model]),
+                model,
+            ),
+        )
+        return set(ranked[:3])
+    return {
+        str(row.get("model"))
+        for row in trials
+        if row.get("phase") == "repair_factorial" and row.get("model") in configured
+    }
+
+
 def _matrix_coverage(trials: list[dict[str, Any]], configured_models: list[str]) -> list[dict[str, Any]]:
     groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in trials:
@@ -135,20 +158,31 @@ def _matrix_coverage(trials: list[dict[str, Any]], configured_models: list[str])
             continue
         groups[(str(row.get("phase")), str(evaluation_id))].append(row)
     out = []
-    expected = set(configured_models)
+    configured_expected = set(configured_models)
+    repair_expected = _repair_factorial_expected_models(trials, configured_models)
+    all_model_phases = {"formalization", "execution", "auditing", "repair_screen", "stability"}
     for (phase, evaluation_id), group in sorted(groups.items()):
-        observed = {str(row.get("model")) for row in group if row.get("model") in expected}
-        # Pipeline/holdout rows intentionally use layered/non-comparable model labels.
-        matched_phase = phase in {"formalization", "execution", "auditing", "repair_screen", "repair_factorial", "stability"}
+        if phase in all_model_phases:
+            expected = configured_expected
+            matched_phase = True
+        elif phase == "repair_factorial":
+            expected = repair_expected
+            matched_phase = True
+        else:
+            expected = set()
+            matched_phase = False
+        observed_all = {str(row.get("model")) for row in group if row.get("model") is not None}
+        observed = observed_all & expected if matched_phase else observed_all
         out.append({
             "phase": phase,
             "evaluation_id": evaluation_id,
             "rows": len(group),
-            "observed_models": sorted(observed),
+            "observed_models": sorted(observed_all),
             "expected_models": sorted(expected) if matched_phase else [],
             "missing_models": sorted(expected - observed) if matched_phase else [],
+            "unexpected_models": sorted(observed_all - expected) if matched_phase else [],
             "duplicate_models": sorted(model for model, count in Counter(str(row.get("model")) for row in group).items() if count > 1),
-            "matched_complete": (observed == expected) if matched_phase else None,
+            "matched_complete": (observed == expected and not (observed_all - expected)) if matched_phase else None,
         })
     return out
 
@@ -166,13 +200,13 @@ def _contamination_audit(raw: dict[str, Any], trials: list[dict[str, Any]]) -> d
             hits.append({"call_identity": row.get("call_identity"), "markers": found})
 
     duplicate_condition_model = []
-    seen: Counter[tuple[str, str]] = Counter()
+    seen: Counter[tuple[str, str, str]] = Counter()
     for row in trials:
         if row.get("evaluation_id") is not None and row.get("model") is not None:
-            seen[(str(row["evaluation_id"]), str(row["model"]))] += 1
-    for (evaluation_id, model), count in sorted(seen.items()):
-        if count > 1 and str(row.get("phase")) not in {"progressive_holdout"}:
-            duplicate_condition_model.append({"evaluation_id": evaluation_id, "model": model, "count": count})
+            seen[(str(row.get("phase")), str(row["evaluation_id"]), str(row["model"]))] += 1
+    for (phase, evaluation_id, model), count in sorted(seen.items()):
+        if count > 1:
+            duplicate_condition_model.append({"phase": phase, "evaluation_id": evaluation_id, "model": model, "count": count})
 
     call_ids = [str(row.get("call_identity")) for row in raw.get("model_calls", []) if row.get("call_identity")]
     prompt_ids = [str(row.get("call_identity")) for row in raw.get("prompts", []) if row.get("call_identity")]
