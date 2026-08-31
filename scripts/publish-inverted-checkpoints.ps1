@@ -59,16 +59,22 @@ function Ensure-PublishWorktree {
         if (Test-Path (Join-Path $Worktree ".git")) { Log "Reusing checkpoint worktree: $Worktree"; return }
         Remove-Item $Worktree -Recurse -Force
     }
-    & git -C $RepoPath fetch origin main 2>&1 | ForEach-Object { Log "git fetch main: $_" }
-    if ($LASTEXITCODE -ne 0) { throw "GIT_FETCH_MAIN_FAILED:$LASTEXITCODE" }
-    $remote = (& git -C $RepoPath ls-remote origin "refs/heads/$Branch" 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0) { throw "GIT_LS_REMOTE_FAILED:$LASTEXITCODE" }
-    if ($remote) {
-        $remoteRef = "refs/remotes/origin/$Branch"; $refspec = "+refs/heads/$Branch`:$remoteRef"
-        & git -C $RepoPath fetch origin $refspec 2>&1 | ForEach-Object { Log "git fetch results: $_" }
-        if ($LASTEXITCODE -ne 0) { throw "GIT_FETCH_RESULTS_BRANCH_FAILED:$LASTEXITCODE" }
+
+    # Fetch using the clone's normal refspec, then inspect the local
+    # remote-tracking ref. This avoids ls-remote ref-pattern quirks in
+    # Git-for-Windows, and gives resume a concrete commit to start from.
+    & git -C $RepoPath fetch origin --prune 2>&1 | ForEach-Object { Log "git fetch: $_" }
+    if ($LASTEXITCODE -ne 0) { throw "GIT_FETCH_ORIGIN_FAILED:$LASTEXITCODE" }
+
+    $remoteRef = "refs/remotes/origin/$Branch"
+    & git -C $RepoPath show-ref --verify --quiet $remoteRef
+    $remoteExists = ($LASTEXITCODE -eq 0)
+
+    if ($remoteExists) {
         & git -C $RepoPath worktree add -B $Branch $Worktree $remoteRef 2>&1 | ForEach-Object { Log "git worktree: $_" }
     } else {
+        & git -C $RepoPath show-ref --verify --quiet refs/remotes/origin/main
+        if ($LASTEXITCODE -ne 0) { throw "REMOTE_MAIN_NOT_FETCHED" }
         & git -C $RepoPath worktree add -b $Branch $Worktree refs/remotes/origin/main 2>&1 | ForEach-Object { Log "git worktree: $_" }
     }
     if ($LASTEXITCODE -ne 0) { throw "GIT_WORKTREE_ADD_FAILED:$LASTEXITCODE" }
