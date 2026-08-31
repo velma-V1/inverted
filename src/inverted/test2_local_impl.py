@@ -182,7 +182,7 @@ def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 48
     original_validator = _hardened._validator_row
     original_call_row = _hardened._call_row
 
-    screen_condition_by_case: dict[str, tuple[str, str]] = {}
+    screen_condition_by_model_case: dict[tuple[str, str], tuple[str, str]] = {}
     primary_completion: dict[tuple[str, str, str, str], BoundedCompletion] = {}
     repair_candidate_lineage: dict[str, dict[str, str]] = {}
     pending_primary_lineage: dict[str, str] | None = None
@@ -191,8 +191,14 @@ def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 48
         bank = list(original_bank_builder())
         if len(bank) != 10:
             raise AssertionError(f"frozen repair bank must contain exactly 10 cases, got {len(bank)}")
-        for case, condition in zip(bank[:4], _SCREEN_CONDITIONS):
-            screen_condition_by_case[str(case.case_id)] = condition
+        for model_index, model_name in enumerate(LOCAL_MODELS):
+            for case_index, case in enumerate(bank[:4]):
+                condition = _SCREEN_CONDITIONS[
+                    (model_index + case_index) % len(_SCREEN_CONDITIONS)
+                ]
+                screen_condition_by_model_case[
+                    (model_name, str(case.case_id))
+                ] = condition
         return _PartitionedRepairBank(bank)
 
     def call_row_hook(completion, *, phase, task_id, model, role, pipeline=None):
@@ -222,7 +228,9 @@ def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 48
         if phase == "repair_factorial" and trial_id.endswith("-screen"):
             case_id = trial_id[: -len("-screen")]
             try:
-                feedback, strategy = screen_condition_by_case[case_id]
+                feedback, strategy = screen_condition_by_model_case[
+                    (model_name, case_id)
+                ]
             except KeyError as exc:
                 raise AssertionError(f"repair screen case {case_id!r} is outside the frozen selection partition") from exc
             kwargs["feedback_style"] = feedback
@@ -288,7 +296,9 @@ def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 48
     screen_rows = [row for row in result.get("records", []) if row.get("phase") == "repair_screen"]
     for row in screen_rows:
         case_id = str(row.get("task_id") or "")
-        feedback, strategy = screen_condition_by_case[case_id]
+        feedback, strategy = screen_condition_by_model_case[
+            (str(row.get("model") or ""), case_id)
+        ]
         row["feedback_style"] = feedback
         row["strategy"] = strategy
         row["evaluation_id"] = _hardened._evaluation_id(
