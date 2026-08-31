@@ -12,8 +12,10 @@ benchmark:
   minimum_primary_trials: 180
   bootstrap_samples: 10000
   bootstrap_seed: 20260830
-  # Balanced cumulative evidence stages: 60% -> 80% -> 100% of seeds.
-  # Interim stopping is intentionally stricter than the final fixed-sample rule.
+  # Balanced exploratory snapshots after 1/5 and 2/5 seeds. These NEVER issue
+  # a scientific verdict; they exist only to judge whether more runtime is useful.
+  value_checkpoint_seed_stages: [1, 2]
+  # Decisive cumulative evidence gates remain 60% -> 80% -> 100%.
   sequential_seed_stages: [3, 4, 5]
   sequential_interim_confidence: [0.995, 0.99]
 preflight:
