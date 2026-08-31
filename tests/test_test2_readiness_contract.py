@@ -115,11 +115,16 @@ def test_repair_factorial_matrix_coverage_uses_selected_three_model_cohort_not_a
     enrich_test2_evidence(evidence)
     rows = [row for row in evidence["diagnostics"]["matrix_coverage"] if row["phase"] == "repair_factorial"]
     assert rows
-    assert all(row["expected_models"] == list(selected) for row in rows)
+    assert all(set(row["expected_models"]) == set(selected) for row in rows)
     assert all(row["missing_models"] == [] and row["matched_complete"] is True for row in rows)
 
 
 def test_packet_finalization_embeds_frozen_preregistration_and_primary_verdict():
+    stable_snapshot = {
+        "before": {"server_version": "test", "models": {}},
+        "after": {"server_version": "test", "models": {}},
+        "identity_match": True,
+    }
     local = {
         "records": _primary_rows(),
         "raw_calls": [],
@@ -132,6 +137,7 @@ def test_packet_finalization_embeds_frozen_preregistration_and_primary_verdict()
         "events": [],
         "validator_results": [],
         "repairs": [],
+        "ollama_provenance": stable_snapshot,
     }
     evidence = _local_evidence(local, {}, {"local": {"models": list(LOCAL_MODELS)}}, "readiness-verdict")
     finalize_test2_evidence(evidence)
