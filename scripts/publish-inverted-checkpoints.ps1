@@ -11,7 +11,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Branch = "results/$RunId"
+$Branch = "results-$RunId"
 $LocalBranch = "checkpoint-$RunId"
 $Worktree = Join-Path $RunRoot "$RunId-github"
 $ResultRoot = Join-Path $Worktree "live-results\$RunId"
@@ -68,9 +68,8 @@ function Ensure-PublishWorktree {
     & git -C $RepoPath show-ref --verify --quiet $remoteRef
     $remoteExists = ($LASTEXITCODE -eq 0)
 
-    # Use a slash-free local worktree branch. Git-for-Windows accepts the
-    # results/<run> remote ref on push/fetch, but some versions reject that
-    # slash-containing name when worktree add creates a local branch.
+    # Both local and remote checkpoint branch names are slash-free because
+    # Git-for-Windows 2.55 rejects slash-containing refs in this worktree path.
     if ($remoteExists) {
         & git -C $RepoPath worktree add -B $LocalBranch $Worktree $remoteRef 2>&1 | ForEach-Object { Log "git worktree: $_" }
     } else {
