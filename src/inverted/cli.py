@@ -19,6 +19,7 @@ from .statistics import aggregate_trials, bootstrap_rate_difference
 from .system_executor import generate_candidate
 from .tasks import generate_task
 from .telemetry import ModelCallRecord
+from .value_checkpoints import _persist_value_checkpoint
 from .verdict import decide_interim_stop, decide_verdict
 
 _ENV_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
@@ -51,13 +52,21 @@ def _validate_decisive(raw: dict[str, Any]) -> None:
     seeds = tuple(bench.get("seeds", []))
     if len(set(seeds)) < 3 or int(bench.get("epochs", 0)) < 2: raise ValueError("decisive runs require at least three seeds and two epochs")
 
+    value_stages = tuple(int(x) for x in bench.get("value_checkpoint_seed_stages", []) or [])
     stages = tuple(int(x) for x in bench.get("sequential_seed_stages", []) or [])
     confidences = tuple(float(x) for x in bench.get("sequential_interim_confidence", []) or [])
+    if value_stages:
+        if tuple(sorted(set(value_stages))) != value_stages or any(x <= 0 or x >= len(seeds) for x in value_stages):
+            raise ValueError("value_checkpoint_seed_stages must be strictly increasing partial cumulative seed counts")
+        if not stages:
+            raise ValueError("decisive value checkpoints require sequential_seed_stages")
     if stages:
         if tuple(sorted(set(stages))) != stages or any(x <= 0 for x in stages):
             raise ValueError("sequential_seed_stages must be strictly increasing positive cumulative seed counts")
         if stages[-1] != len(seeds):
             raise ValueError("final sequential seed stage must include every configured seed")
+        if value_stages and value_stages[-1] >= stages[0]:
+            raise ValueError("exploratory value checkpoints must occur before the first decisive sequential stage")
         if len(confidences) != len(stages) - 1:
             raise ValueError("sequential_interim_confidence must define one confidence level for each interim stage")
         if any(c <= 0.95 or c >= 1.0 for c in confidences):
@@ -89,7 +98,7 @@ def load_config(path: str | Path) -> dict[str, Any]:
 
 def _experiment_config(raw: dict[str, Any]) -> ExperimentConfig:
     bench = dict(raw.get("benchmark") or {})
-    for key in {"families", "complexities", "qualities", "seeds", "arms", "sequential_seed_stages", "sequential_interim_confidence"}:
+    for key in {"families", "complexities", "qualities", "seeds", "arms", "value_checkpoint_seed_stages", "sequential_seed_stages", "sequential_interim_confidence"}:
         if key in bench: bench[key] = tuple(bench[key])
     allowed = {f.name for f in fields(ExperimentConfig)}
     unknown = set(bench) - allowed
@@ -225,25 +234,42 @@ def main(argv: list[str] | None = None) -> int:
         progress_callback = render_progress
 
     stage_callback = None
-    if config.sequential_seed_stages:
+    if config.value_checkpoint_seed_stages or config.sequential_seed_stages:
         def evaluate_stage(stage_number: int, completed_seed_count: int, total_seed_count: int, trials: list[Any]) -> dict[str, Any]:
-            confidence = float(config.sequential_interim_confidence[stage_number - 1])
             interim_summary = aggregate_trials(trials, config.bootstrap_samples, config.bootstrap_seed)
+            pct = 100.0 * completed_seed_count / total_seed_count
+
+            if completed_seed_count in config.value_checkpoint_seed_stages:
+                paths = _persist_value_checkpoint(ledger_root, run_label, completed_seed_count, total_seed_count, interim_summary)
+                primary = interim_summary.get("primary", {})
+                print(
+                    f"VALUE CHECKPOINT: seeds={completed_seed_count}/{total_seed_count} ({pct:.0f}%) "
+                    f"D-A={primary.get('d_minus_a')} D-B={primary.get('d_minus_b')} status=EXPLORATORY_NON_DECISIVE",
+                    flush=True,
+                )
+                print(f"VALUE CHECKPOINT FILES: {paths['json']} | {paths['text']}", flush=True)
+                return {"stop": False, "verdict": "VALUE_CHECK", "stage": stage_number, "completed_seed_count": completed_seed_count}
+
+            if completed_seed_count not in config.sequential_seed_stages:
+                return {"stop": False, "verdict": "CONTINUE"}
+            sequential_index = config.sequential_seed_stages.index(completed_seed_count)
+            if sequential_index >= len(config.sequential_interim_confidence):
+                return {"stop": False, "verdict": "CONTINUE"}
+            confidence = float(config.sequential_interim_confidence[sequential_index])
             interval = bootstrap_rate_difference(
                 trials, "D_INVERTED", "A_DIRECT",
-                config.bootstrap_samples, config.bootstrap_seed + stage_number,
+                config.bootstrap_samples, config.bootstrap_seed + sequential_index + 1,
                 confidence=confidence,
             )
             decision = decide_interim_stop(
                 interim_summary, config,
-                stage_number=stage_number,
+                stage_number=sequential_index + 1,
                 completed_seed_count=completed_seed_count,
                 confidence=confidence,
                 primary_interval=interval,
             )
-            pct = 100.0 * completed_seed_count / total_seed_count
             print(
-                f"SEQUENTIAL STAGE {stage_number}: seeds={completed_seed_count}/{total_seed_count} ({pct:.0f}%) "
+                f"SEQUENTIAL STAGE {sequential_index + 1}: seeds={completed_seed_count}/{total_seed_count} ({pct:.0f}%) "
                 f"confidence={confidence:.3f} decision={decision.get('verdict')} stop={decision.get('stop')}",
                 flush=True,
             )
@@ -278,6 +304,7 @@ def main(argv: list[str] | None = None) -> int:
         "resumed": bool(args.resume),
         "run_started_at": result.started_at,
         "run_ended_at": result.ended_at,
+        "value_checkpoint_seed_stages": list(config.value_checkpoint_seed_stages),
         "sequential_seed_stages": list(config.sequential_seed_stages),
         "sequential_interim_confidence": list(config.sequential_interim_confidence),
         "stopped_early": result.stopped_early,
