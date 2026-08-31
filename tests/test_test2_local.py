@@ -15,7 +15,8 @@ def test_local_plan_uses_exact_models_and_never_exceeds_480_physical_calls():
     plan = build_local_plan()
     assert tuple(plan.models) == LOCAL_MODELS
     assert sum(LOCAL_PHASE_LIMITS.values()) == 480
-    assert LOCAL_PHASE_LIMITS["progressive_holdout"] == 110
+    assert LOCAL_PHASE_LIMITS["repair_factorial"] == 100
+    assert LOCAL_PHASE_LIMITS["progressive_holdout"] == 100
     assert plan.max_physical_calls == 480
     assert plan.planned_max_physical_calls <= 480
 
