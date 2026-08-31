@@ -12,17 +12,17 @@ local:
     execution: 60
     auditing: 100
     atomic_audit: 20
-    repair_factorial: 80
-    progressive_holdout: 110
+    repair_factorial: 100
+    progressive_holdout: 100
     stability: 40
-    reserve: 10
+    reserve: 0
   ollama:
     base_url: http://127.0.0.1:11434
     temperature: 0
     max_tokens: 1024
     timeout_s: 600
-    transport_retries: 2
-    retry_backoff_s: 5
+    transport_retries: 0
+    retry_backoff_s: 0
     think: false
     context_limit: 8192
 model_free:
