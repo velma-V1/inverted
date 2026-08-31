@@ -10,11 +10,11 @@ def test_handoff_supervisor_starts_nonblocking_checkpoint_publisher():
     assert "publisher-wrapper-stop.signal" in text
 
 
-def test_checkpoint_publisher_uses_dedicated_results_branch_and_incremental_chunks():
+def test_checkpoint_publisher_uses_separate_local_and_remote_results_branches_and_incremental_chunks():
     text = Path("scripts/publish-inverted-checkpoints.ps1").read_text(encoding="utf-8")
-    assert '$Branch = "results-$RunId"' in text
-    assert '$Branch = "results/$RunId"' not in text
-    assert "checkpoint-" in text
+    assert '$Branch = "results/$RunId"' in text
+    assert '$LocalBranch = "checkpoint-$RunId"' in text
+    assert '$Branch = "results-$RunId"' not in text
     assert "progress.json" in text
     assert "Get-FileHash" in text
     assert "git" in text and "push" in text
