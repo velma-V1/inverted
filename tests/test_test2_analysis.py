@@ -6,6 +6,7 @@ from inverted.test2_analysis import (
     pareto_frontier,
     router_regret,
     summarize_component_effects,
+    threshold_analysis,
 )
 
 
@@ -85,3 +86,19 @@ def test_router_regret_and_model_complementarity_capture_specialization_value():
     assert regret["oracle_successes"] == 3
     assert regret["routed_successes"] == 2
     assert regret["regret_successes"] == 1
+
+
+def test_threshold_analysis_reports_required_recovery_and_impossible_targets():
+    rows = threshold_analysis(
+        n=100,
+        baseline_successes=80,
+        recoverable_failures=15,
+        targets_pp=(1, 3, 5, 10, 20),
+    )
+    by_target = {row["target_pp"]: row for row in rows}
+    assert by_target[1]["required_net_recoveries"] == 1
+    assert by_target[5]["required_net_recoveries"] == 5
+    assert by_target[10]["feasible"] is True
+    assert by_target[10]["required_fraction_of_recoverable_failures"] == 10 / 15
+    assert by_target[20]["feasible"] is False
+    assert by_target[20]["max_possible_gain_pp"] == 15.0
