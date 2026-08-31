@@ -30,5 +30,5 @@ def test_progress_emits_once_per_family_complexity_class_not_per_trial():
     assert sum("family=state complexity=2" in line for line in lines) == 1
     assert sum("family=policy complexity=1" in line for line in lines) == 1
     assert sum("family=policy complexity=2" in line for line in lines) == 1
-    assert all("CLASS COMPLETE" in line for line in lines)
+    assert all("CLASS START" in line for line in lines)
     assert lines[-1].startswith("CLASS PROGRESS [####################] 4/4")
