@@ -5,6 +5,7 @@ from inverted.test2_cases import (
     build_holdout_cases,
     build_repair_candidate_bank,
 )
+from inverted.test2_gold import evaluate_test2_gold
 
 
 def test_formalization_cases_are_deterministic_and_cover_all_representation_classes():
@@ -31,12 +32,22 @@ def test_execution_cases_are_exact_three_by_four_matrix():
 def test_audit_bank_is_fixed_balanced_and_fault_diverse():
     bank = build_audit_candidate_bank()
     assert len(bank) == 20
-    assert sum(x.oracle_success for x in bank) == 10
-    assert sum(not x.oracle_success for x in bank) == 10
+    gold = [evaluate_test2_gold(x.task, x.candidate) for x in bank]
+    assert sum(x.success for x in gold) == 10
+    assert sum(not x.success for x in gold) == 10
+    # Pure semantic side-effect probes deliberately pass the runtime/public
+    # oracle while failing hidden gold. This is what lets semantic auditing add
+    # measurable value without leaking benchmark truth into deterministic gates.
+    semantic_only = [
+        (probe, result) for probe, result in zip(bank, gold)
+        if "unintended_side_effect" in probe.candidate.injected_faults
+    ]
+    assert semantic_only
+    assert all(probe.oracle_success and not result.success for probe, result in semantic_only)
     assert len({x.case_id for x in bank}) == 20
     faults = {fault.split("+")[0] for x in bank for fault in x.candidate.injected_faults}
     assert {"omitted_requirement", "wrong_value", "unintended_side_effect"} <= faults
-    assert {"ordering_violation", "forbidden_procedure"} & faults
+    assert {"ordering_violation", "forbidden_procedure"} <= faults
 
 
 def test_repair_bank_contains_only_oracle_failures_and_holdout_is_disjoint():
