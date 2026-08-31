@@ -11,9 +11,9 @@ import yaml
 
 from .artifacts import collect_provenance
 from .models import OllamaAdapter
-from .test2_analysis import residual_bottlenecks
+from .test2_analysis import residual_bottlenecks, threshold_analysis
 from .test2_artifacts import Test2ArtifactWriter
-from .test2_local import LOCAL_MODELS, build_local_plan, run_local_campaign
+from .test2_local import LOCAL_MODELS, PROGRESSIVE_PIPELINES, build_local_plan, run_local_campaign
 from .test2_simulation import run_model_free_atlas
 
 
@@ -34,19 +34,132 @@ def _threshold_rows(atlas: dict[str, Any], target_pp: float) -> list[dict[str, A
     base_cells = int(atlas.get("base_cells") or 0)
     if not base_cells:
         return []
-    target_gain = target_pp / 100.0
+    baseline_successes = int(atlas.get("baseline_successes") or 0)
+    baseline_failures = int(atlas.get("baseline_failures") or (base_cells - baseline_successes))
+    feasibility = threshold_analysis(
+        n=base_cells,
+        baseline_successes=baseline_successes,
+        recoverable_failures=baseline_failures,
+        targets_pp=(target_pp,),
+    )[0]
     rows = []
     for effect in atlas.get("standalone_effects", []):
         current_gain = float(effect.get("success_rate", 0.0)) - float(atlas.get("baseline_success_rate", 0.0))
+        required = int(feasibility["required_net_recoveries"])
+        observed = int(effect.get("net_wins", 0))
         rows.append({
             "component": effect.get("component"),
             "target_pp": target_pp,
-            "required_net_recoveries": int((target_gain * base_cells) + 0.999999),
-            "observed_net_wins": effect.get("net_wins", 0),
+            "required_net_recoveries": required,
+            "recoverable_baseline_failures": baseline_failures,
+            "required_fraction_of_baseline_failures": (
+                required / baseline_failures if baseline_failures else 0.0
+            ),
+            "observed_net_wins": observed,
             "observed_gain": current_gain,
-            "target_already_met": current_gain >= target_gain,
+            "observed_fraction_of_required_recoveries": (
+                observed / required if required else None
+            ),
+            "target_already_met": current_gain >= (target_pp / 100.0),
+            "globally_feasible_if_failures_are_recoverable": bool(feasibility["feasible"]),
+            "max_possible_gain_pp": feasibility["max_possible_gain_pp"],
         })
     return rows
+
+
+def _model_free_next_stride(atlas: dict[str, Any], run_id: str) -> str:
+    standalone = list(atlas.get("standalone_effects", []))
+    progressive = list(atlas.get("progressive_effects", []))
+    ablations = list(atlas.get("ablation_effects", []))
+    saturation = list(atlas.get("candidate_saturation", []))
+    independence = dict(atlas.get("candidate_independence") or {})
+    ranking = list(atlas.get("order_ranking", []))
+    best_overall = ranking[0] if ranking else None
+    best_causal = next((row for row in ranking if row.get("causal_status") == "CAUSAL_REPLAY"), None)
+    most_recovery = max(standalone, key=lambda row: int(row.get("net_wins", 0)), default=None)
+    most_prevention = max(standalone, key=lambda row: int(row.get("failures_prevented", 0)), default=None)
+    most_important_ablation = min(ablations, key=lambda row: float(row.get("success_rate", 1.0)), default=None)
+
+    lines = [
+        "VELMA TEST 2 — MODEL-FREE NEXT-STRIDE REPORT",
+        "================================================",
+        f"Run ID: {run_id}",
+        f"Evidence scope: {atlas.get('evidence_scope')}",
+        f"Base cells: {atlas.get('base_cells')}",
+        f"Simulated evaluation units: {atlas.get('trial_units')}",
+        "Physical model calls: 0",
+        "",
+        "CORE HEADROOM",
+        f"Baseline success: {float(atlas.get('baseline_success_rate', 0.0)):.6%}",
+        f"Full oracle/model-free stack success: {float(atlas.get('full_success_rate', 0.0)):.6%}",
+    ]
+    if most_recovery:
+        lines.append(
+            f"Largest standalone recovery upper bound: {most_recovery.get('component')} "
+            f"net_wins={most_recovery.get('net_wins')} success={float(most_recovery.get('success_rate', 0.0)):.6%}"
+        )
+    if most_prevention:
+        lines.append(
+            f"Largest standalone failure prevention: {most_prevention.get('component')} "
+            f"failures_prevented={most_prevention.get('failures_prevented')} "
+            f"catastrophics_removed={most_prevention.get('catastrophics_removed')}"
+        )
+    if most_important_ablation:
+        lines.append(
+            f"Largest full-stack ablation loss: remove={most_important_ablation.get('removed')} "
+            f"remaining_success={float(most_important_ablation.get('success_rate', 0.0)):.6%}"
+        )
+
+    lines.extend(["", "CANDIDATE SATURATION"])
+    for row in saturation:
+        lines.append(
+            f"Attempts<={row.get('attempts_available')}: cumulative_success={float(row.get('cumulative_success_rate', 0.0)):.6%} "
+            f"marginal_gain_pp={float(row.get('marginal_gain_pp', 0.0)):.4f} "
+            f"remaining_failures={row.get('remaining_failures')}"
+        )
+    if independence:
+        lines.append(
+            "Three-candidate failure: observed="
+            f"{float(independence.get('observed_no_success_in_3_rate', 0.0)):.6%} "
+            "independent_expected="
+            f"{float(independence.get('independent_expected_no_success_in_3_rate', 0.0)):.6%} "
+            f"ratio={independence.get('observed_to_independent_failure_ratio')}"
+        )
+
+    lines.extend(["", "PROGRESSIVE COMPOUNDING"])
+    for row in progressive:
+        lines.append(
+            f"Step {row.get('step')} +{row.get('component')}: success={float(row.get('success_rate', 0.0)):.6%} "
+            f"net_wins={row.get('net_wins')} prevented={row.get('failures_prevented')} "
+            f"catastrophics_removed={row.get('catastrophics_removed')}"
+        )
+
+    lines.extend(["", "ORDER BOUNDS"])
+    if best_overall:
+        lines.append(
+            f"Best simulated order: {best_overall.get('order')} "
+            f"success={float(best_overall.get('simulated_success_rate', 0.0)):.6%} "
+            f"status={best_overall.get('causal_status')}"
+        )
+    if best_causal:
+        lines.append(
+            f"Best replay-causal order: {best_causal.get('order')} "
+            f"success={float(best_causal.get('simulated_success_rate', 0.0)):.6%}"
+        )
+
+    lines.extend([
+        "",
+        "INTERPRETATION GUARDRAILS",
+        "targeted_repair is an ORACLE REPAIR UPPER BOUND in this model-free atlas, not observed model repair performance.",
+        "oracle_auditor is an oracle upper bound; its model-free redundancy does not prove a real semantic auditor is useless.",
+        "requirement/final validators are deterministic gates: blocked bad output is prevention, not a recovered win.",
+        "Order rows marked REQUIRES_NEW_INFERENCE are hypotheses to test locally, not causal replay evidence.",
+        "",
+        "NEXT STRIDE",
+        "Use the bounded five-model local campaign to measure which models realize the formalization, execution, repair, and audit headroom exposed here, while preserving the 480-call ceiling.",
+        "",
+    ])
+    return "\n".join(lines)
 
 
 def _model_free_evidence(atlas: dict[str, Any], config: dict[str, Any], run_id: str) -> dict[str, Any]:
@@ -55,22 +168,30 @@ def _model_free_evidence(atlas: dict[str, Any], config: dict[str, Any], run_id: 
     ablations = list(atlas.get("ablation_effects", []))
     pairwise = list(atlas.get("pairwise_interactions", []))
     orderings = list(atlas.get("orderings", []))
-    causal_orders = [row for row in orderings if row.get("causal_status") == "CAUSAL_REPLAY"]
+    provenance = collect_provenance()
     master_index = {
         "run_id": run_id,
         "mode": "model-free",
         "evidence_scope": atlas.get("evidence_scope"),
         "base_cells": atlas.get("base_cells"),
         "trial_units": atlas.get("trial_units"),
+        "baseline_successes": atlas.get("baseline_successes"),
+        "baseline_failures": atlas.get("baseline_failures"),
+        "baseline_success_rate": atlas.get("baseline_success_rate"),
+        "full_successes": atlas.get("full_successes"),
+        "full_success_rate": atlas.get("full_success_rate"),
         "physical_model_calls": 0,
         "local_call_ceiling": 480,
+        "candidate_independence": atlas.get("candidate_independence"),
     }
     return {
         "master_index": master_index,
         "raw": {
-            "trials": list(atlas.get("outcome_transitions", [])),
-            "model_calls": [], "prompts": [], "responses": [], "candidates": [],
-            "events": [], "validator_results": [], "repairs": [],
+            "trials": list(atlas.get("base_cell_records", [])),
+            "model_calls": [], "prompts": [], "responses": [],
+            "candidates": list(atlas.get("candidate_records", [])),
+            "events": list(atlas.get("component_traces", [])),
+            "validator_results": [], "repairs": [],
         },
         "effects": {
             "outcome_transitions": list(atlas.get("outcome_transitions", [])),
@@ -79,12 +200,17 @@ def _model_free_evidence(atlas: dict[str, Any], config: dict[str, Any], run_id: 
             "ablation_effects": ablations,
             "pairwise_interactions": pairwise,
             "failure_kill_matrix": list(atlas.get("failure_kill_matrix", [])),
+            "failure_recovery_matrix": list(atlas.get("failure_recovery_matrix", [])),
+            "component_slice_effects": list(atlas.get("component_slice_effects", [])),
             "synergy_matrix": pairwise,
         },
         "order": {
             "every_valid_order": orderings,
-            "order_ranking": causal_orders,
+            "order_ranking": list(atlas.get("order_ranking", [])),
+            "order_slice_ranking": list(atlas.get("order_slice_ranking", [])),
             "saturation": list(atlas.get("saturation", [])),
+            "candidate_saturation": list(atlas.get("candidate_saturation", [])),
+            "candidate_independence": dict(atlas.get("candidate_independence") or {}),
         },
         "models": {
             "model_task_capability_matrix": [], "model_family_matrix": [],
@@ -103,16 +229,29 @@ def _model_free_evidence(atlas: dict[str, Any], config: dict[str, Any], run_id: 
         },
         "provenance": {
             "config": config,
-            "environment": collect_provenance(),
-            "git": {"commit": collect_provenance().get("git_commit")},
+            "environment": provenance,
+            "git": {"commit": provenance.get("git_commit")},
             "models": {"mode": "none-model-free"},
         },
-        "next_stride_report": (
-            "VELMA TEST 2 — MODEL-FREE VALIDATION NEXT STRIDE\n"
-            "This packet validates deterministic causal-analysis machinery and upper-bound components.\n"
-            "It is not local-model architecture evidence. Run the bounded local campaign for model-role conclusions.\n"
-        ),
+        "next_stride_report": _model_free_next_stride(atlas, run_id),
     }
+
+
+def _router_summary_rows(router: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for level in ("best_single_model", "best_static_role_assignment", "best_task_type_router", "oracle_per_task"):
+        value = dict(router.get(level) or {})
+        rows.append({
+            "router_level": level,
+            "successes": value.get("successes", 0),
+            "model": value.get("model"),
+            "assignments": value.get("assignments"),
+        })
+    if rows:
+        oracle = int(next((row["successes"] for row in rows if row["router_level"] == "oracle_per_task"), 0) or 0)
+        for row in rows:
+            row["regret_to_oracle_successes"] = oracle - int(row.get("successes") or 0)
+    return rows
 
 
 def _local_evidence(local: dict[str, Any], atlas: dict[str, Any], config: dict[str, Any], run_id: str) -> dict[str, Any]:
@@ -143,10 +282,11 @@ def _local_evidence(local: dict[str, Any], atlas: dict[str, Any], config: dict[s
 
     best_pipeline_rows = [
         row for row in records
-        if row.get("phase") == "progressive_holdout" and row.get("pipeline") == "specialized_stack"
+        if row.get("phase") == "progressive_holdout" and row.get("pipeline") == PROGRESSIVE_PIPELINES[4]
     ]
     residual = residual_bottlenecks(best_pipeline_rows)
     router = dict(local.get("layered_router") or {})
+    router_rows = _router_summary_rows(router)
     master_index = {
         "run_id": run_id,
         "mode": "local",
@@ -173,7 +313,7 @@ def _local_evidence(local: dict[str, Any], atlas: dict[str, Any], config: dict[s
     for role, model in sorted(role_champions.items()):
         next_lines.append(f"{role}: {model}")
     next_lines.append("")
-    next_lines.append("REMAINING BOTTLENECKS")
+    next_lines.append("REMAINING BOTTLENECKS IN S4 FULL SPECIALIZATION")
     if residual:
         for i, row in enumerate(residual, start=1):
             next_lines.append(
@@ -181,14 +321,15 @@ def _local_evidence(local: dict[str, Any], atlas: dict[str, Any], config: dict[s
                 f"perfect-component ceiling gain={row['perfect_component_ceiling_gain']:.6f}"
             )
     else:
-        next_lines.append("No residual failures in the evaluated specialized holdout rows.")
+        next_lines.append("No residual failures in the evaluated S4 specialized holdout rows.")
     next_lines.extend([
         "",
         "NEXT EXPERIMENT",
-        "Target the highest residual recoverable failure class after checking whether its required component is already saturated or redundant.",
+        "Target the highest residual recoverable failure class after checking whether its required component is already saturated, redundant, or router-sensitive.",
         "",
     ])
 
+    provenance = collect_provenance()
     return {
         "master_index": master_index,
         "raw": {
@@ -208,12 +349,17 @@ def _local_evidence(local: dict[str, Any], atlas: dict[str, Any], config: dict[s
             "ablation_effects": list(atlas.get("ablation_effects", [])),
             "pairwise_interactions": list(atlas.get("pairwise_interactions", [])),
             "failure_kill_matrix": list(atlas.get("failure_kill_matrix", [])),
+            "failure_recovery_matrix": list(atlas.get("failure_recovery_matrix", [])),
+            "component_slice_effects": list(atlas.get("component_slice_effects", [])),
             "synergy_matrix": list(atlas.get("pairwise_interactions", [])),
         },
         "order": {
             "every_valid_order": list(atlas.get("orderings", [])),
-            "order_ranking": [row for row in atlas.get("orderings", []) if row.get("causal_status") == "CAUSAL_REPLAY"],
+            "order_ranking": list(atlas.get("order_ranking", [])),
+            "order_slice_ranking": list(atlas.get("order_slice_ranking", [])),
             "saturation": list(atlas.get("saturation", [])),
+            "candidate_saturation": list(atlas.get("candidate_saturation", [])),
+            "candidate_independence": dict(atlas.get("candidate_independence") or {}),
         },
         "models": {
             "model_task_capability_matrix": list(local.get("capability_by_role_model", [])),
@@ -226,8 +372,8 @@ def _local_evidence(local: dict[str, Any], atlas: dict[str, Any], config: dict[s
             "model_unique_wins": pair_rows,
             "role_champions": role_champions,
             "router_policy": role_champions,
-            "router_holdout_results": best_pipeline_rows,
-            "router_regret": [router],
+            "router_holdout_results": list(local.get("holdout_pipeline_rows", [])),
+            "router_regret": router_rows,
         },
         "thresholds": {
             "break_even": _threshold_rows(atlas, 0.0),
@@ -238,8 +384,8 @@ def _local_evidence(local: dict[str, Any], atlas: dict[str, Any], config: dict[s
         },
         "provenance": {
             "config": config,
-            "environment": collect_provenance(),
-            "git": {"commit": collect_provenance().get("git_commit")},
+            "environment": provenance,
+            "git": {"commit": provenance.get("git_commit")},
             "models": {"configured": list(LOCAL_MODELS)},
         },
         "next_stride_report": "\n".join(next_lines),
