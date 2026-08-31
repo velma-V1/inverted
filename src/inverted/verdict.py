@@ -14,6 +14,10 @@ def _majority_positive(values: dict[str, float]) -> bool:
     return sum(v > 0 for v in values.values()) > len(values) / 2
 
 
+def _all_positive(values: dict[str, float]) -> bool:
+    return bool(values) and all(v > 0 for v in values.values())
+
+
 def decide_verdict(summary: dict[str, Any], config: Any) -> dict[str, Any]:
     a_n = int(summary.get("by_arm", {}).get("A_DIRECT", {}).get("n", 0))
     d_n = int(summary.get("by_arm", {}).get("D_INVERTED", {}).get("n", 0))
@@ -75,3 +79,89 @@ def decide_verdict(summary: dict[str, Any], config: Any) -> dict[str, Any]:
     if refutation_reasons:
         return {"verdict": "REFUTED", "reason": "; ".join(refutation_reasons), "gates": gates, "refutation_reasons": refutation_reasons}
     return {"verdict": "INCONCLUSIVE", "reason": "Evidence is neither strong enough for support nor decisive enough for refutation.", "gates": gates}
+
+
+def decide_interim_stop(
+    summary: dict[str, Any],
+    config: Any,
+    *,
+    stage_number: int,
+    completed_seed_count: int,
+    confidence: float,
+    primary_interval: dict[str, Any],
+) -> dict[str, Any]:
+    """Conservative optional-stopping gate for balanced cumulative seed stages.
+
+    The full-sample 180-cluster verdict rule is untouched. Interim support uses
+    a stricter confidence interval than the final 95% rule and additionally
+    requires unanimous positive D-A direction across every observed model,
+    family, and seed. Interim refutation is allowed only when the stricter
+    interval rules out even the preregistered +5pp meaningful advantage.
+    """
+    if completed_seed_count >= len(config.seeds):
+        return {"stop": False, "stage": stage_number, "reason": "final stage uses the original full-sample verdict rule"}
+    if not (0.95 < float(confidence) < 1.0):
+        raise ValueError("interim confidence must be stricter than 95% and below 100%")
+
+    primary = summary.get("primary", {})
+    diff = float(primary.get("d_minus_a") or 0.0)
+    equal_diff = float(primary.get("equal_budget_diff") or 0.0)
+    d_minus_b = float(primary.get("d_minus_b") or 0.0)
+    lower = primary_interval.get("lower")
+    upper = primary_interval.get("upper")
+    d_rate = _metric(summary, "D_INVERTED", "success_rate")
+    e_rate = _metric(summary, "E_RANDOM_AUDITOR", "success_rate")
+    catastrophic_delta = _metric(summary, "D_INVERTED", "catastrophic_rate") - _metric(summary, "A_DIRECT", "catastrophic_rate")
+    family_adv = summary.get("family_advantage", {})
+    model_adv = summary.get("model_advantage", {})
+    seed_adv = summary.get("seed_advantage", {})
+
+    support_gates = [
+        {"name": "interim_effect_at_least_10pp", "passed": diff >= 0.10, "value": diff, "threshold": 0.10},
+        {"name": "interim_high_confidence_ci_excludes_zero", "passed": lower is not None and float(lower) > 0, "value": lower, "threshold": f">0 at {confidence:.3%} confidence"},
+        {"name": "all_families_positive", "passed": _all_positive(family_adv), "value": family_adv},
+        {"name": "beats_random_auditor", "passed": d_rate > e_rate, "value": d_rate - e_rate},
+        {"name": "no_catastrophic_increase_2pp", "passed": catastrophic_delta < 0.02, "value": catastrophic_delta, "threshold": "<0.02"},
+        {"name": "positive_equal_token_budget", "passed": equal_diff > 0, "value": equal_diff},
+        {"name": "all_models_positive", "passed": _all_positive(model_adv), "value": model_adv},
+        {"name": "all_observed_seeds_positive", "passed": _all_positive(seed_adv), "value": seed_adv},
+        {"name": "not_decisively_worse_than_checked_baseline", "passed": d_minus_b >= -0.10, "value": d_minus_b, "threshold": ">=-0.10"},
+    ]
+    if all(g["passed"] for g in support_gates):
+        return {
+            "stop": True,
+            "verdict": "SUPPORTED",
+            "reason": f"Sequential early stop at stage {stage_number}: all support gates pass under a {confidence:.1%} primary interval with unanimous model/family/seed direction.",
+            "gates": support_gates,
+            "stage": stage_number,
+            "completed_seed_count": completed_seed_count,
+            "interim_confidence": confidence,
+            "primary_interval": primary_interval,
+        }
+
+    # Early refutation is intentionally narrower than the full refutation rule:
+    # only overwhelming primary evidence can stop early. Secondary failures
+    # continue collecting data through the next stage/full sample.
+    if diff <= 0 and upper is not None and float(upper) < 0.05:
+        return {
+            "stop": True,
+            "verdict": "REFUTED",
+            "reason": f"Sequential early stop at stage {stage_number}: the {confidence:.1%} primary interval rules out a +5pp meaningful D-A advantage.",
+            "gates": support_gates,
+            "refutation_reasons": [f"{confidence:.1%} interim CI rules out a +5pp meaningful advantage"],
+            "stage": stage_number,
+            "completed_seed_count": completed_seed_count,
+            "interim_confidence": confidence,
+            "primary_interval": primary_interval,
+        }
+
+    return {
+        "stop": False,
+        "verdict": "CONTINUE",
+        "reason": "Interim evidence is not strong enough to lock the scientific conclusion; continue to the next balanced seed stage.",
+        "gates": support_gates,
+        "stage": stage_number,
+        "completed_seed_count": completed_seed_count,
+        "interim_confidence": confidence,
+        "primary_interval": primary_interval,
+    }
