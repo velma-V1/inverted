@@ -4,7 +4,13 @@ from inverted.verdict import decide_verdict
 
 def base_summary():
     return {
-        "primary": {"d_minus_a": 0.15, "ci95": {"lower": 0.08, "upper": 0.22}, "equal_budget_diff": 0.12, "d_minus_b": -0.02},
+        "primary": {
+            "d_minus_a": 0.15,
+            "ci95": {"lower": 0.08, "upper": 0.22},
+            "equal_budget_diff": 0.12,
+            "d_minus_b": -0.02,
+            "independent_task_clusters": 300,
+        },
         "by_arm": {
             "A_DIRECT": {"n": 300, "success_rate": 0.60, "catastrophic_rate": 0.02},
             "B_DIRECT_CHECKED": {"n": 300, "success_rate": 0.77, "catastrophic_rate": 0.02},
@@ -50,8 +56,17 @@ def test_inconclusive_for_small_uncertain_effect():
     assert result["verdict"] == "INCONCLUSIVE"
 
 
-def test_insufficient_power_is_non_decisive():
+def test_insufficient_independent_clusters_is_non_decisive_even_with_many_repeated_rows():
     s = base_summary()
-    s["by_arm"]["A_DIRECT"]["n"] = 20
-    s["by_arm"]["D_INVERTED"]["n"] = 20
+    s["by_arm"]["A_DIRECT"]["n"] = 2700
+    s["by_arm"]["D_INVERTED"]["n"] = 2700
+    s["primary"]["independent_task_clusters"] = 20
+    result = decide_verdict(s, cfg())
+    assert result["verdict"] == "NON-DECISIVE"
+    assert result["observations"]["independent_task_clusters"] == 20
+
+
+def test_missing_cluster_count_cannot_accidentally_pass_power_gate():
+    s = base_summary()
+    del s["primary"]["independent_task_clusters"]
     assert decide_verdict(s, cfg())["verdict"] == "NON-DECISIVE"

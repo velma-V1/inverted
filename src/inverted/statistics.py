@@ -110,19 +110,29 @@ def bootstrap_rate_difference(trials: list[TrialRecord], treatment_arm: str, bas
     baseline = {_pair_key(t): t for t in trials if t.arm == baseline_arm}
     keys = sorted(set(treatment) & set(baseline), key=str)
     if not keys:
-        return {"estimate": None, "lower": None, "upper": None, "n_pairs": 0, "samples": samples}
-    diffs = [int(treatment[k].success) - int(baseline[k].success) for k in keys]
-    estimate = _stats.fmean(diffs)
+        return {"estimate": None, "lower": None, "upper": None, "n_pairs": 0, "n_clusters": 0, "samples": samples}
+
+    # Model and executor-quality rows are repeated measurements on the same synthetic
+    # task instance. Cluster at task_id so those repeats cannot manufacture statistical
+    # power. Each unique task contributes one mean paired effect to the bootstrap.
+    by_task: dict[str, list[float]] = defaultdict(list)
+    for key in keys:
+        t = treatment[key]
+        b = baseline[key]
+        by_task[t.task_id].append(float(int(t.success) - int(b.success)))
+    cluster_effects = [_stats.fmean(v) for _, v in sorted(by_task.items())]
+    estimate = _stats.fmean(cluster_effects)
     rng = random.Random(seed)
     boots: list[float] = []
-    n = len(diffs)
+    n_clusters = len(cluster_effects)
     for _ in range(samples):
-        boots.append(_stats.fmean(diffs[rng.randrange(n)] for _ in range(n)))
+        boots.append(_stats.fmean(cluster_effects[rng.randrange(n_clusters)] for _ in range(n_clusters)))
     return {
         "estimate": estimate,
         "lower": _percentile(boots, 0.025),
         "upper": _percentile(boots, 0.975),
-        "n_pairs": n,
+        "n_pairs": len(keys),
+        "n_clusters": n_clusters,
         "samples": samples,
     }
 
@@ -188,6 +198,7 @@ def aggregate_trials(trials: list[TrialRecord], bootstrap_samples: int = 2000, b
             # Every model-using arm is hard-capped by the same configured token budget.
             "equal_budget_diff": primary_diff,
             "d_minus_b": d_minus_b,
+            "independent_task_clusters": ci.get("n_clusters", 0),
         },
         "family_advantage": _advantage_by(trials, "family"),
         "model_advantage": _advantage_by(trials, "model"),
