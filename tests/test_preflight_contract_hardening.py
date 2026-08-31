@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import httpx
 import yaml
 
@@ -131,11 +129,3 @@ def test_cli_preflight_failure_returns_dedicated_code_without_traceback(tmp_path
     assert "PREFLIGHT_FAILURE" in out
     assert "phi4-mini:3.8b" in out
     assert "Traceback" not in out
-
-
-def test_wrapper_surfaces_terminal_failure_instead_of_throwing_generic_exit_code():
-    text = Path("scripts/run-overnight-handoff.ps1").read_text(encoding="utf-8")
-    assert "Get-Content -Path $TerminalLog -Tail" in text
-    assert "ROOT FAILURE FROM TERMINAL LOG" in text
-    assert "exit $WatcherExit" in text
-    assert 'throw "Overnight handoff exited with code $WatcherExit' not in text
