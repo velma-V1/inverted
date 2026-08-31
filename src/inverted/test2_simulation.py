@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from itertools import combinations, permutations
-from typing import Any, Iterable
+from typing import Any
 
 from .oracle import evaluate_task
 from .system_executor import generate_candidate
 from .tasks import generate_task
-from .test2_analysis import OutcomeSnapshot, classify_transition, failure_kill_matrix, summarize_component_effects
+from .test2_analysis import (
+    OutcomeSnapshot,
+    classify_transition,
+    failure_kill_matrix,
+    summarize_component_effects,
+)
 
 
 CAUSAL = "CAUSAL_REPLAY"
@@ -76,57 +81,131 @@ def _cell(family: str, complexity: int, quality: float, seed: int, epoch: int) -
     }
 
 
-def _outcome_for_components(cell: dict[str, Any], components: tuple[str, ...]) -> tuple[OutcomeSnapshot, str | None]:
+def _blocked_from(current: OutcomeSnapshot) -> OutcomeSnapshot:
+    return OutcomeSnapshot(
+        success=False,
+        catastrophic=False,
+        blocked=True,
+        failure_signature=current.failure_signature,
+    )
+
+
+def _outcome_for_order(
+    cell: dict[str, Any], order: tuple[str, ...]
+) -> tuple[OutcomeSnapshot, str | None, list[dict[str, Any]]]:
     outcomes: list[OutcomeSnapshot] = cell["outcomes"]
     current = outcomes[0]
+    candidate_index = 0
     first_defense: str | None = None
+    trace: list[dict[str, Any]] = []
 
-    # Retry without a validator cannot identify correctness. It simply obtains a
-    # second draw after a failure, which can recover or displace the failure.
-    if "retry" in components and not current.success:
-        current = outcomes[1]
+    for step, component in enumerate(order, start=1):
+        before = current
+        terminal = False
 
-    # A requirement validator can reject a bad candidate. If retry is also
-    # present it searches the remaining fixed draws for a validator-passing one.
-    if "requirement_validator" in components and not current.success:
-        first_defense = first_defense or "validator"
-        if "retry" in components:
-            valid = next((outcome for outcome in outcomes[1:] if outcome.success), None)
-            current = valid or OutcomeSnapshot(False, catastrophic=False, blocked=True, failure_signature=current.failure_signature)
+        if component == "requirement_validator":
+            if not current.success:
+                first_defense = first_defense or "validator"
+                current = _blocked_from(current)
+
+        elif component == "retry":
+            if not current.success and candidate_index + 1 < len(outcomes):
+                candidate_index += 1
+                current = outcomes[candidate_index]
+
+        elif component == "targeted_repair":
+            if not current.success:
+                first_defense = first_defense or "repair"
+                current = _snapshot(cell["task"], cell["perfect"])
+
+        elif component == "oracle_auditor":
+            if not current.success:
+                first_defense = first_defense or "auditor"
+                current = _blocked_from(current)
+
+        elif component == "final_validator":
+            if not current.success:
+                first_defense = first_defense or "final_validator"
+                current = _blocked_from(current)
+                terminal = True
+
         else:
-            current = OutcomeSnapshot(False, catastrophic=False, blocked=True, failure_signature=current.failure_signature)
+            raise ValueError(f"unknown Test-2 component: {component}")
 
-    # Targeted repair is an oracle upper-bound in the model-free atlas. The
-    # local campaign measures actual model repair; this branch only quantifies
-    # the maximum value available from repair on these deterministic tasks.
-    if "targeted_repair" in components and not current.success:
-        first_defense = first_defense or "repair"
-        current = _snapshot(cell["task"], cell["perfect"])
+        trace.append({
+            "step": step,
+            "component": component,
+            "before_success": before.success,
+            "before_blocked": before.blocked,
+            "after_success": current.success,
+            "after_blocked": current.blocked,
+            "transition": classify_transition(before, current),
+            "candidate_index": candidate_index,
+            "terminal": terminal,
+        })
+        if terminal:
+            break
 
-    # Oracle auditor is another explicit model-free ceiling: it may select only
-    # among the already-generated fixed candidates, never generate a new one.
-    if "oracle_auditor" in components and not current.success:
-        first_defense = first_defense or "auditor"
-        good = next((outcome for outcome in outcomes if outcome.success), None)
-        current = good or OutcomeSnapshot(False, catastrophic=False, blocked=True, failure_signature=current.failure_signature)
+    return current, first_defense, trace
 
-    if "final_validator" in components and not current.success and not current.blocked:
-        first_defense = first_defense or "final_validator"
-        current = OutcomeSnapshot(False, catastrophic=False, blocked=True, failure_signature=current.failure_signature)
 
-    return current, first_defense
+def _outcome_for_components(
+    cell: dict[str, Any], components: tuple[str, ...]
+) -> tuple[OutcomeSnapshot, str | None]:
+    outcome, defense, _ = _outcome_for_order(cell, components)
+    return outcome, defense
 
 
 def _effect_row(name: str, before: list[OutcomeSnapshot], after: list[OutcomeSnapshot]) -> dict[str, Any]:
     summary = summarize_component_effects(zip(before, after))
     n = len(after)
+    successes = sum(x.success for x in after)
     return {
         "component": name,
         "n": n,
-        "successes": sum(x.success for x in after),
-        "success_rate": sum(x.success for x in after) / n if n else 0.0,
+        "successes": successes,
+        "success_rate": successes / n if n else 0.0,
+        "blocked": sum(x.blocked for x in after),
+        "catastrophic": sum(x.catastrophic for x in after),
         **{key: value for key, value in summary.items() if key != "transitions"},
     }
+
+
+def _score_orders(cells: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    metadata = analyze_orderings(
+        _COMPONENTS,
+        # Retry replays already-fixed candidates; targeted repair would create a
+        # new model output and therefore invalidates downstream prompt replay.
+        prompt_changing_components={"targeted_repair"},
+    )
+    scored: list[dict[str, Any]] = []
+    for meta in metadata:
+        order = tuple(meta["components"])
+        outcomes = [_outcome_for_order(cell, order)[0] for cell in cells]
+        successes = sum(x.success for x in outcomes)
+        blocked = sum(x.blocked for x in outcomes)
+        catastrophic = sum(x.catastrophic for x in outcomes)
+        scored.append({
+            **meta,
+            "n": len(outcomes),
+            "successes": successes,
+            "simulated_success_rate": successes / len(outcomes) if outcomes else 0.0,
+            "blocked": blocked,
+            "blocked_rate": blocked / len(outcomes) if outcomes else 0.0,
+            "catastrophic": catastrophic,
+            "catastrophic_rate": catastrophic / len(outcomes) if outcomes else 0.0,
+        })
+    ranking = sorted(
+        scored,
+        key=lambda row: (
+            -float(row["simulated_success_rate"]),
+            float(row["catastrophic_rate"]),
+            float(row["blocked_rate"]),
+            str(row["order"]),
+        ),
+    )
+    ranking = [{"rank": index, **row} for index, row in enumerate(ranking, start=1)]
+    return scored, ranking
 
 
 def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
@@ -143,6 +222,8 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
                         cells.append(_cell(family, complexity, quality, seed, epoch))
 
     baseline = [cell["outcomes"][0] for cell in cells]
+    baseline_successes = sum(x.success for x in baseline)
+    baseline_rate = baseline_successes / len(baseline)
 
     standalone_effects = []
     standalone_outcomes: dict[str, list[OutcomeSnapshot]] = {}
@@ -159,7 +240,11 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
         active.append(component)
         after = [_outcome_for_components(cell, tuple(active))[0] for cell in cells]
         row = _effect_row(component, previous, after)
-        row.update({"step": step, "stack": " -> ".join(active), "cumulative_success_rate": sum(x.success for x in after) / len(after)})
+        row.update({
+            "step": step,
+            "stack": " -> ".join(active),
+            "cumulative_success_rate": sum(x.success for x in after) / len(after),
+        })
         progressive_effects.append(row)
         progressive_snapshots[step] = after
         previous = after
@@ -175,7 +260,6 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
         ablation_effects.append(row)
 
     pairwise_interactions = []
-    baseline_rate = sum(x.success for x in baseline) / len(baseline)
     standalone_gain = {
         component: (sum(x.success for x in outcomes) / len(outcomes)) - baseline_rate
         for component, outcomes in standalone_outcomes.items()
@@ -202,8 +286,9 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
 
     kill_records = []
     transitions = []
+    full_traces = []
     for cell, before, after in zip(cells, baseline, full_outcomes):
-        _, caught_by = _outcome_for_components(cell, full_components)
+        _, caught_by, trace = _outcome_for_order(cell, full_components)
         fault = before.failure_signature or "none"
         kill_records.append({"fault": fault, "caught_by": caught_by or ("escaped" if not after.success else "none")})
         transitions.append({
@@ -216,7 +301,10 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
             "after_success": after.success,
             "before_catastrophic": before.catastrophic,
             "after_catastrophic": after.catastrophic,
+            "after_blocked": after.blocked,
         })
+        for item in trace:
+            full_traces.append({"case_id": cell["id"], **item})
 
     saturation = []
     previous_rate = None
@@ -231,18 +319,20 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
         })
         previous_rate = rate
 
-    orderings = analyze_orderings(
-        _COMPONENTS,
-        prompt_changing_components={"retry", "targeted_repair"},
-    )
+    orderings, order_ranking = _score_orders(cells)
 
-    # Each base cell is evaluated under baseline plus five standalone/progressive
-    # configurations; this is an instrument/model-free unit count, not inference.
-    trial_units = len(cells) * 6
+    # Count simulated evaluation units, not inference calls.
+    units_per_cell = 1 + len(_COMPONENTS) + len(_PROGRESSIVE_ORDER) + len(_COMPONENTS) + len(list(combinations(_COMPONENTS, 2))) + len(orderings)
+    trial_units = len(cells) * units_per_cell
     return {
         "evidence_scope": "MODEL_FREE_DETERMINISTIC_ATLAS_NOT_LOCAL_MODEL_EVIDENCE",
         "base_cells": len(cells),
         "trial_units": trial_units,
+        "baseline_successes": baseline_successes,
+        "baseline_failures": len(baseline) - baseline_successes,
+        "baseline_success_rate": baseline_rate,
+        "full_successes": sum(x.success for x in full_outcomes),
+        "full_success_rate": sum(x.success for x in full_outcomes) / len(full_outcomes),
         "standalone_effects": standalone_effects,
         "progressive_effects": progressive_effects,
         "ablation_effects": ablation_effects,
@@ -250,5 +340,7 @@ def run_model_free_atlas(seed_count: int = 10) -> dict[str, Any]:
         "failure_kill_matrix": failure_kill_matrix(kill_records),
         "saturation": saturation,
         "orderings": orderings,
+        "order_ranking": order_ranking,
         "outcome_transitions": transitions,
+        "component_traces": full_traces,
     }
