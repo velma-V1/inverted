@@ -91,6 +91,11 @@ def _trial_id(run_id: str, task: TaskCase, arm: Arm, model: Any, quality: float,
     return "trial-" + hashlib.sha256(f"{run_id}:{task.id}:{arm.value}:{getattr(model,'model','none')}:{quality}:{seed}:{epoch}".encode()).hexdigest()[:18]
 
 
+def _candidate_seed(task: TaskCase, quality: float, seed: int, epoch: int, attempt: int) -> int:
+    """Seed non-AI candidates from the experimental condition, never model identity."""
+    return _stable_int("system-candidate", task.id, f"{quality:.8f}", seed, epoch, attempt) % (2**31)
+
+
 def _public_task(task: TaskCase) -> dict[str, Any]:
     return {"task_id": task.id, "family": task.family, "complexity": task.complexity, "goal": task.goal, "initial_state": task.initial_state.to_dict(), "allowed_ops": list(task.allowed_ops), "requirements": task.metadata.get("public_requirements", [])}
 
@@ -340,17 +345,17 @@ def run_arm(arm: Arm, task: TaskCase, model: Any, executor_quality: float, seed:
 
     elif arm == Arm.C_SYSTEM:
         trial.candidate_attempts = 1
-        cand = generate_candidate(task, executor_quality, _stable_int(seed, trial_id, 0) % (2**31))
+        cand = generate_candidate(task, executor_quality, _candidate_seed(task, executor_quality, seed, epoch, 0))
         truth = evaluate_task(task, cand.state, cand.actions).success
         trial.candidate_events.append(_candidate_event(task, cand, 0, truth, "accept"))
         _oracle_into_trial(trial, task, cand, accepted=True)
 
     else:
-        rng = random.Random(_stable_int(seed, trial_id, arm.value))
+        rng = random.Random(_stable_int("random-auditor", task.id, f"{executor_quality:.8f}", seed, epoch))
         last_candidate = None
         for attempt in range(budget.max_candidates):
             trial.candidate_attempts += 1
-            cand = generate_candidate(task, executor_quality, _stable_int(seed, trial_id, attempt) % (2**31))
+            cand = generate_candidate(task, executor_quality, _candidate_seed(task, executor_quality, seed, epoch, attempt))
             last_candidate = cand
             oracle = evaluate_task(task, cand.state, cand.actions)
             if arm == Arm.F_ORACLE_AUDITOR:
