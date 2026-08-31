@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
-import random
 import time
 import uuid
 from typing import Any
@@ -24,6 +23,10 @@ class ModelCallError(RuntimeError):
     def __init__(self, message: str, record: ModelCallRecord):
         super().__init__(message)
         self.record = record
+
+
+class GenerationCensored(ModelCallError):
+    """Generation consumed its output budget without producing final content."""
 
 
 class EmptyModelResponse(RuntimeError):
@@ -62,26 +65,12 @@ class MockModelAdapter:
         input_tokens = _rough_mock_tokens(messages)
         output_tokens = _rough_mock_tokens(text)
         record = ModelCallRecord(
-            call_id=_id(context, "call_id", "call"),
-            run_id=_id(context, "run_id", "run"),
-            trial_id=_id(context, "trial_id", "trial"),
-            candidate_id=context.get("candidate_id"),
-            role=role,
-            model=self.model,
-            provider=self.provider,
-            start_ts=start_ts,
-            end_ts=_now(),
-            latency_s=latency,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=input_tokens + output_tokens,
-            eval_duration_s=latency,
-            status_code=200,
-            finish_reason="stop",
-            params={"seed": self.seed},
+            call_id=_id(context, "call_id", "call"), run_id=_id(context, "run_id", "run"), trial_id=_id(context, "trial_id", "trial"), candidate_id=context.get("candidate_id"),
+            role=role, model=self.model, provider=self.provider, start_ts=start_ts, end_ts=_now(), latency_s=latency,
+            input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=input_tokens + output_tokens,
+            eval_duration_s=latency, status_code=200, finish_reason="stop", params={"seed": self.seed},
             raw_usage={"prompt_tokens": input_tokens, "completion_tokens": output_tokens, "total_tokens": input_tokens + output_tokens},
-            prompt=messages if self.capture_content else None,
-            response=text if self.capture_content else None,
+            prompt=messages if self.capture_content else None, response=text if self.capture_content else None,
         )
         return CompletionResult(text, record, {"mock": True})
 
@@ -135,12 +124,10 @@ class OpenAICompatibleAdapter:
         except Exception as exc:
             latency = time.perf_counter() - start
             status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-            timeout = isinstance(exc, httpx.TimeoutException)
             record = ModelCallRecord(
                 call_id=_id(context, "call_id", "call"), run_id=_id(context, "run_id", "run"), trial_id=_id(context, "trial_id", "trial"), candidate_id=context.get("candidate_id"),
                 role=role, model=self.model, provider=self.provider, start_ts=start_ts, end_ts=_now(), latency_s=latency, status_code=status,
-                error_class=type(exc).__name__, error_message=str(exc), timeout=timeout, params={"temperature": self.temperature, "max_tokens": self.max_tokens},
-                prompt=messages if self.capture_content else None,
+                error_class=type(exc).__name__, error_message=str(exc), timeout=isinstance(exc, httpx.TimeoutException), params={"temperature": self.temperature, "max_tokens": self.max_tokens}, prompt=messages if self.capture_content else None,
             )
             raise ModelCallError(str(exc), record) from exc
 
@@ -148,21 +135,9 @@ class OpenAICompatibleAdapter:
 class OllamaAdapter:
     provider = "ollama"
     _RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+    _CENSORED_REASONS = {"length", "max_tokens", "max_token", "token_limit", "token-limit"}
 
-    def __init__(
-        self,
-        model: str,
-        base_url: str = "http://127.0.0.1:11434",
-        timeout_s: float = 120.0,
-        capture_content: bool = True,
-        temperature: float = 0.0,
-        max_tokens: int = 1024,
-        max_retries: int = 0,
-        retry_backoff_s: float = 1.0,
-        think: bool | str | None = None,
-        format_json: bool = False,
-        context_limit: int | None = None,
-    ):
+    def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", timeout_s: float = 120.0, capture_content: bool = True, temperature: float = 0.0, max_tokens: int = 1024, max_retries: int = 0, retry_backoff_s: float = 1.0, think: bool | str | None = None, format_json: bool = False, context_limit: int | None = None):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.timeout_s = timeout_s
@@ -180,141 +155,122 @@ class OllamaAdapter:
         return exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
 
     def _retryable(self, exc: Exception) -> bool:
+        if isinstance(exc, GenerationCensored):
+            return False
         if isinstance(exc, (httpx.TransportError, json.JSONDecodeError, EmptyModelResponse)):
             return True
-        status = self._status(exc)
-        return status in self._RETRYABLE_STATUS
+        return self._status(exc) in self._RETRYABLE_STATUS
 
-    @staticmethod
-    def _retry_event(exc: Exception, attempt: int) -> dict[str, Any]:
-        return {
-            "attempt": attempt,
-            "error_class": type(exc).__name__,
-            "error_message": str(exc),
-            "timeout": isinstance(exc, httpx.TimeoutException),
-            "status_code": OllamaAdapter._status(exc),
-        }
-
-    def _payload(self, messages: list[dict[str, str]], *, max_tokens: int | None = None) -> dict[str, Any]:
-        options: dict[str, Any] = {
-            "temperature": self.temperature,
-            "num_predict": int(max_tokens if max_tokens is not None else self.max_tokens),
-        }
+    def _payload(self, messages: list[dict[str, str]]) -> dict[str, Any]:
+        options: dict[str, Any] = {"temperature": self.temperature, "num_predict": self.max_tokens}
         if self.context_limit is not None:
             options["num_ctx"] = self.context_limit
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-            "options": options,
-        }
+        payload: dict[str, Any] = {"model": self.model, "messages": messages, "stream": False, "options": options}
         if self.think is not None:
             payload["think"] = self.think
         if self.format_json:
             payload["format"] = "json"
         return payload
 
+    def _attempt_from_raw(self, raw: dict[str, Any], attempt: int, status_code: int | None = 200) -> dict[str, Any]:
+        message = raw.get("message") or {}
+        return {
+            "attempt": attempt,
+            "status_code": status_code,
+            "content": str(message.get("content") or ""),
+            "thinking": message.get("thinking"),
+            "prompt_eval_count": raw.get("prompt_eval_count"),
+            "eval_count": raw.get("eval_count"),
+            "done_reason": raw.get("done_reason"),
+        }
+
+    def _is_generation_censored(self, raw: dict[str, Any], text: str) -> bool:
+        if text.strip():
+            return False
+        eval_count = raw.get("eval_count")
+        done_reason = str(raw.get("done_reason") or "").lower()
+        exhausted = isinstance(eval_count, int) and eval_count >= self.max_tokens
+        return exhausted or done_reason in self._CENSORED_REASONS
+
+    def _record(self, *, context: dict[str, Any], role: str, start_ts: str, latency: float, attempts: list[dict[str, Any]], raw: dict[str, Any] | None = None, response_text: str | None = None, error_class: str | None = None, error_message: str | None = None, timeout: bool = False, status_code: int | None = None) -> ModelCallRecord:
+        raw = raw or {}
+        input_tokens = raw.get("prompt_eval_count")
+        output_tokens = raw.get("eval_count")
+        total_tokens = input_tokens + output_tokens if isinstance(input_tokens, int) and isinstance(output_tokens, int) else None
+        ns = 1_000_000_000
+        return ModelCallRecord(
+            call_id=_id(context, "call_id", "call"), run_id=_id(context, "run_id", "run"), trial_id=_id(context, "trial_id", "trial"), candidate_id=context.get("candidate_id"),
+            role=role, model=self.model, provider=self.provider, start_ts=start_ts, end_ts=_now(), latency_s=latency,
+            input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=total_tokens,
+            prompt_eval_duration_s=(raw.get("prompt_eval_duration") / ns) if raw.get("prompt_eval_duration") is not None else None,
+            eval_duration_s=(raw.get("eval_duration") / ns) if raw.get("eval_duration") is not None else None,
+            load_duration_s=(raw.get("load_duration") / ns) if raw.get("load_duration") is not None else None,
+            status_code=status_code, error_class=error_class, error_message=error_message, timeout=timeout,
+            retry_number=max(0, len(attempts) - 1), retry_reason=(attempts[-2].get("error_class") + ": " + attempts[-2].get("error_message", "")) if len(attempts) > 1 and attempts[-2].get("error_class") else None,
+            finish_reason=raw.get("done_reason"),
+            params={"temperature": self.temperature, "max_tokens": self.max_tokens, "think": self.think, "format_json": self.format_json, "context_limit": self.context_limit},
+            raw_usage={"prompt_eval_count": input_tokens, "eval_count": output_tokens},
+            raw_provider_telemetry={"attempts": attempts, "thinking": (raw.get("message") or {}).get("thinking"), "content": (raw.get("message") or {}).get("content"), "done_reason": raw.get("done_reason"), "eval_count": output_tokens, "prompt_eval_count": input_tokens},
+            prompt=context.get("_prompt") if self.capture_content else None,
+            response=response_text if self.capture_content else None,
+        )
+
     def complete(self, messages: list[dict[str, str]], *, role: str, context: dict[str, Any]) -> CompletionResult:
         start_ts, overall_start = _now(), time.perf_counter()
         payload = self._payload(messages)
-        retry_errors: list[dict[str, Any]] = []
+        attempts: list[dict[str, Any]] = []
+        context = dict(context)
+        context["_prompt"] = messages
         last_exc: Exception | None = None
 
         for attempt in range(self.max_retries + 1):
+            raw: dict[str, Any] | None = None
             try:
                 response = httpx.post(f"{self.base_url}/api/chat", json=payload, timeout=self.timeout_s)
                 response.raise_for_status()
                 raw = response.json()
                 text = str((raw.get("message") or {}).get("content") or "")
+                event = self._attempt_from_raw(raw, attempt, response.status_code)
+                if self._is_generation_censored(raw, text):
+                    event["error_class"] = "GENERATION_CENSORED"
+                    event["error_message"] = "empty content after generation budget exhaustion"
+                    attempts.append(event)
+                    record = self._record(context=context, role=role, start_ts=start_ts, latency=time.perf_counter() - overall_start, attempts=attempts, raw=raw, response_text=text, error_class="GENERATION_CENSORED", error_message=event["error_message"], status_code=response.status_code)
+                    raise GenerationCensored(event["error_message"], record)
                 if not text.strip():
-                    raise EmptyModelResponse(
-                        f"empty Ollama content: done_reason={raw.get('done_reason')!r} eval_count={raw.get('eval_count')!r}"
-                    )
-
-                latency = time.perf_counter() - overall_start
-                input_tokens, output_tokens = raw.get("prompt_eval_count"), raw.get("eval_count")
-                total_tokens = input_tokens + output_tokens if input_tokens is not None and output_tokens is not None else None
-                ns = 1_000_000_000
-                provider_telemetry = {k: v for k, v in raw.items() if k not in {"message"}}
-                provider_telemetry["retry_errors"] = retry_errors
-                record = ModelCallRecord(
-                    call_id=_id(context, "call_id", "call"), run_id=_id(context, "run_id", "run"), trial_id=_id(context, "trial_id", "trial"), candidate_id=context.get("candidate_id"),
-                    role=role, model=self.model, provider=self.provider, start_ts=start_ts, end_ts=_now(), latency_s=latency,
-                    input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=total_tokens,
-                    prompt_eval_duration_s=(raw.get("prompt_eval_duration") / ns) if raw.get("prompt_eval_duration") is not None else None,
-                    eval_duration_s=(raw.get("eval_duration") / ns) if raw.get("eval_duration") is not None else None,
-                    load_duration_s=(raw.get("load_duration") / ns) if raw.get("load_duration") is not None else None,
-                    status_code=response.status_code, finish_reason=raw.get("done_reason"),
-                    retry_number=attempt,
-                    retry_reason=(retry_errors[-1]["error_class"] + ": " + retry_errors[-1]["error_message"]) if retry_errors else None,
-                    params={
-                        "temperature": self.temperature,
-                        "max_tokens": self.max_tokens,
-                        "think": self.think,
-                        "format_json": self.format_json,
-                        "context_limit": self.context_limit,
-                    },
-                    raw_usage={"prompt_eval_count": input_tokens, "eval_count": output_tokens},
-                    raw_provider_telemetry=provider_telemetry,
-                    prompt=messages if self.capture_content else None,
-                    response=text if self.capture_content else None,
-                )
+                    event["error_class"] = "EmptyModelResponse"
+                    event["error_message"] = "empty Ollama content without generation-budget exhaustion"
+                    attempts.append(event)
+                    raise EmptyModelResponse(event["error_message"])
+                attempts.append(event)
+                record = self._record(context=context, role=role, start_ts=start_ts, latency=time.perf_counter() - overall_start, attempts=attempts, raw=raw, response_text=text, status_code=response.status_code)
                 return CompletionResult(text, record, raw)
+            except GenerationCensored:
+                raise
             except Exception as exc:
                 last_exc = exc
-                retry_errors.append(self._retry_event(exc, attempt))
+                if raw is None:
+                    attempts.append({"attempt": attempt, "status_code": self._status(exc), "content": None, "thinking": None, "prompt_eval_count": None, "eval_count": None, "done_reason": None, "error_class": type(exc).__name__, "error_message": str(exc), "timeout": isinstance(exc, httpx.TimeoutException)})
                 if attempt >= self.max_retries or not self._retryable(exc):
                     break
                 if self.retry_backoff_s:
                     time.sleep(self.retry_backoff_s * (2 ** attempt))
 
         assert last_exc is not None
-        latency = time.perf_counter() - overall_start
-        status = self._status(last_exc)
-        record = ModelCallRecord(
-            call_id=_id(context, "call_id", "call"), run_id=_id(context, "run_id", "run"), trial_id=_id(context, "trial_id", "trial"), candidate_id=context.get("candidate_id"),
-            role=role, model=self.model, provider=self.provider, start_ts=start_ts, end_ts=_now(), latency_s=latency, status_code=status,
-            error_class=type(last_exc).__name__, error_message=str(last_exc), timeout=isinstance(last_exc, httpx.TimeoutException),
-            retry_number=max(0, len(retry_errors) - 1),
-            retry_reason=(retry_errors[-1]["error_class"] + ": " + retry_errors[-1]["error_message"]),
-            params={
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "think": self.think,
-                "format_json": self.format_json,
-                "context_limit": self.context_limit,
-            },
-            raw_provider_telemetry={"retry_errors": retry_errors},
-            prompt=messages if self.capture_content else None,
-        )
+        record = self._record(context=context, role=role, start_ts=start_ts, latency=time.perf_counter() - overall_start, attempts=attempts, error_class=type(last_exc).__name__, error_message=str(last_exc), timeout=isinstance(last_exc, httpx.TimeoutException), status_code=self._status(last_exc))
         raise ModelCallError(str(last_exc), record) from last_exc
 
     def preflight(self) -> dict[str, Any]:
-        messages = [
-            {"role": "system", "content": "Return only valid JSON."},
-            {"role": "user", "content": 'Return exactly {"ok":true}.'},
-        ]
-        result = self.complete(
-            messages,
-            role="preflight",
-            context={"run_id": "preflight", "trial_id": f"preflight-{self.model}", "call_id": f"preflight-{self.model}"},
-        )
+        messages = [{"role": "system", "content": "Return only valid JSON."}, {"role": "user", "content": 'Return exactly {"ok":true}.'}]
+        result = self.complete(messages, role="preflight", context={"run_id": "preflight", "trial_id": f"preflight-{self.model}", "call_id": f"preflight-{self.model}"})
         try:
             parsed = json.loads(result.text)
         except json.JSONDecodeError as exc:
-            record = result.record
-            record.error_class = "PreflightInvalidJSON"
-            record.error_message = str(exc)
-            raise ModelCallError(f"preflight invalid JSON for {self.model}: {exc}", record) from exc
+            result.record.error_class = "PreflightInvalidJSON"
+            result.record.error_message = str(exc)
+            raise ModelCallError(f"preflight invalid JSON for {self.model}: {exc}", result.record) from exc
         if not isinstance(parsed, dict) or parsed.get("ok") is not True:
-            record = result.record
-            record.error_class = "PreflightUnexpectedResponse"
-            record.error_message = result.text
-            raise ModelCallError(f"preflight unexpected response for {self.model}: {result.text}", record)
-        return {
-            "model": self.model,
-            "provider": self.provider,
-            "response": parsed,
-            "latency_s": result.record.latency_s,
-            "retry_number": result.record.retry_number,
-        }
+            result.record.error_class = "PreflightUnexpectedResponse"
+            result.record.error_message = result.text
+            raise ModelCallError(f"preflight unexpected response for {self.model}: {result.text}", result.record)
+        return {"model": self.model, "provider": self.provider, "response": parsed, "latency_s": result.record.latency_s, "retry_number": result.record.retry_number}
