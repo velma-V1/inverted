@@ -6,6 +6,7 @@ import pytest
 
 import inverted.test2_local_impl as local_impl
 from inverted.models import MockModelAdapter, ModelCallError
+from inverted.test2_integrity import attach_repair_validator_outcomes, harden_evidence_integrity
 from inverted.test2_local import BoundedModelCaller, LOCAL_MODELS, run_local_campaign
 from inverted.test2_metadata import enrich_test2_evidence
 from inverted.test2_preregistration import evaluate_primary_verdict
@@ -16,7 +17,7 @@ def _evidence_with_calls(model_calls: list[dict]):
     prompt = {"call_identity": "same", "model": "m", "role": "executor", "messages": [{"role": "user", "content": "x"}], "serialized": "x"}
     response = {"call_identity": "same", "model": "m", "role": "executor", "text": "{}"}
     return {
-        "master_index": {"mode": "local"},
+        "master_index": {"mode": "local", "physical_model_calls": 1},
         "raw": {
             "trials": [], "model_calls": model_calls,
             "prompts": [prompt, dict(prompt)], "responses": [response, dict(response)],
@@ -77,13 +78,15 @@ def test_primary_contract_requires_every_preregistered_cell_to_be_a_distinct_phy
 
 def test_legitimate_cache_reuse_is_not_misclassified_as_duplicate_physical_identity():
     evidence = _evidence_with_calls([
-        {"call_identity": "same", "model": "m", "role": "executor", "cache_hit": False},
-        {"call_identity": "same", "model": "m", "role": "executor", "cache_hit": True},
+        {"call_identity": "same", "model": "m", "role": "executor", "cache_hit": False, "physical_call_number": 1},
+        {"call_identity": "same", "model": "m", "role": "executor", "cache_hit": True, "physical_call_number": None},
     ])
     enrich_test2_evidence(evidence)
+    harden_evidence_integrity(evidence)
     audit = evidence["diagnostics"]["contamination_audit"]
     assert audit["unique_model_call_identity"] is True
     assert audit["cache_identity_reference_integrity"] is True
+    assert audit["physical_call_number_integrity"] is True
 
 
 def test_repair_screen_is_condition_balanced_and_disjoint_from_primary_factorial():
@@ -101,9 +104,11 @@ def test_repair_screen_is_condition_balanced_and_disjoint_from_primary_factorial
         rows = [row for row in screen if row.get("model") == model]
         assert len(rows) == 4
         assert {(row.get("feedback_style"), row.get("strategy")) for row in rows} == expected
+    assert all(row.get("cache_hit") is False for row in primary)
+    assert len({row.get("physical_call_number") for row in primary}) == len(primary)
 
 
-def test_catastrophic_lineage_is_joined_by_model_and_condition_not_list_position(monkeypatch):
+def test_catastrophic_lineage_is_joined_by_model_and_condition_not_list_position():
     trials = [
         {"phase": "repair_factorial", "model": "m1", "task_id": "t", "evaluation_id": "e", "feedback_style": "structured", "strategy": "targeted"},
         {"phase": "repair_factorial", "model": "m2", "task_id": "t", "evaluation_id": "e", "feedback_style": "structured", "strategy": "targeted"},
@@ -112,11 +117,8 @@ def test_catastrophic_lineage_is_joined_by_model_and_condition_not_list_position
         {"phase": "repair_factorial", "model": "m2", "task_id": "t", "evaluation_id": "e", "stage": "repair_structured_targeted", "catastrophic": True},
         {"phase": "repair_factorial", "model": "m1", "task_id": "t", "evaluation_id": "e", "stage": "repair_structured_targeted", "catastrophic": False},
     ]
-    monkeypatch.setattr(local_impl._hardened, "run_local_campaign", lambda *args, **kwargs: {
-        "records": trials, "validator_results": validators, "raw_calls": [], "physical_model_calls": 0,
-    })
-    fake_models = [SimpleNamespace(provider="mock", model="m1"), SimpleNamespace(provider="mock", model="m2")]
-    result = local_impl.run_local_campaign(fake_models, run_id="lineage-order", hard_limit=480)
+    result = {"records": trials, "validator_results": validators}
+    attach_repair_validator_outcomes(result)
     by_model = {row["model"]: row["catastrophic"] for row in result["records"]}
     assert by_model == {"m1": False, "m2": True}
 
