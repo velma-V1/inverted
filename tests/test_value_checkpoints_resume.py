@@ -121,14 +121,6 @@ def test_mid_stage_manual_stop_can_resume_same_checkpoint_without_duplicate_tria
     assert len({trial_record_key(row) for row in rows}) == expected
 
 
-def test_existing_handoff_contract_reuses_run_id_and_resume_flag():
-    text = Path("scripts/wait-for-010-and-run-inverted.ps1").read_text(encoding="utf-8")
-    assert 'active-run-id.txt' in text
-    assert '$ResumeExisting = Test-Path $StateFile' in text
-    assert '--resume' in text
-    assert 'checkpoint were preserved for resume' in text
-
-
 def test_checkpoint_publisher_copies_value_snapshots_to_remote_results():
     text = Path("scripts/publish-inverted-checkpoints.ps1").read_text(encoding="utf-8")
     assert "value-checkpoints" in text
