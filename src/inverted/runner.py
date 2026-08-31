@@ -66,6 +66,12 @@ def _model_identity(model: Any) -> str:
     return f"{getattr(model, 'provider', 'none')}:{getattr(model, 'model', 'none')}"
 
 
+def _unload_model(model: Any) -> None:
+    unload = getattr(model, "unload", None)
+    if callable(unload):
+        unload()
+
+
 def trial_plan_key(item: TrialPlan, models: list[Any]) -> tuple[Any, ...]:
     identity = _model_identity(models[item.model_index]) if item.arm in _MODEL_DEPENDENT_ARMS else _MODEL_INDEPENDENT
     return (identity, item.epoch, item.family, item.complexity, float(item.quality), item.seed, item.arm)
@@ -191,22 +197,35 @@ def run_experiment(
 
     flat_offset = 0
     for stage_number, stage in enumerate(stages, start=1):
-        for item in stage:
-            key = trial_plan_key(item, models)
-            if key in trials_by_key:
-                continue
-            task_seed = (item.seed * 1009) + (item.epoch * 9176) + (item.complexity * 31)
-            task = generate_task(item.family, item.complexity, task_seed)
-            trial = run_arm(
-                Arm(item.arm), task, models[item.model_index], item.quality, item.seed,
-                run_id, budget, epoch=item.epoch,
-            )
-            trials_by_key[key] = trial
-            if checkpoint_store is not None:
-                checkpoint_store.append_trial(trial)
-            completed += 1
-            if progress_callback is not None:
-                progress_callback(completed, total, item)
+        active_model_index: int | None = None
+        try:
+            for item in stage:
+                key = trial_plan_key(item, models)
+                if key in trials_by_key:
+                    continue
+
+                if item.arm in _MODEL_DEPENDENT_ARMS:
+                    if active_model_index is None:
+                        active_model_index = item.model_index
+                    elif item.model_index != active_model_index:
+                        _unload_model(models[active_model_index])
+                        active_model_index = item.model_index
+
+                task_seed = (item.seed * 1009) + (item.epoch * 9176) + (item.complexity * 31)
+                task = generate_task(item.family, item.complexity, task_seed)
+                trial = run_arm(
+                    Arm(item.arm), task, models[item.model_index], item.quality, item.seed,
+                    run_id, budget, epoch=item.epoch,
+                )
+                trials_by_key[key] = trial
+                if checkpoint_store is not None:
+                    checkpoint_store.append_trial(trial)
+                completed += 1
+                if progress_callback is not None:
+                    progress_callback(completed, total, item)
+        finally:
+            if active_model_index is not None:
+                _unload_model(models[active_model_index])
 
         flat_offset += len(stage)
         completed_seed_count = int(stage_seed_counts[stage_number - 1])
