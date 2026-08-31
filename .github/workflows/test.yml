@@ -5,22 +5,52 @@ on:
   pull_request:
 
 jobs:
-  pytest:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python: ["3.11", "3.12", "3.14"]
-        include:
-          - os: windows-latest
-            python: "3.14"
-    runs-on: ${{ matrix.os }}
-    name: "pytest (${{ matrix.os }}, py${{ matrix.python }})"
+  ubuntu-py311:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - run: python -m pytest -q
+      - run: python -m inverted.cli --config configs/smoke.yaml --output-dir ci-runs --run-id ci-smoke > ci-report.txt
+      - run: python -c "from pathlib import Path; text=Path('ci-report.txt').read_text(encoding='utf-8'); assert 'VERDICT: NON-DECISIVE' in text"
+
+  ubuntu-py312:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - run: python -m pytest -q
+      - run: python -m inverted.cli --config configs/smoke.yaml --output-dir ci-runs --run-id ci-smoke > ci-report.txt
+      - run: python -c "from pathlib import Path; text=Path('ci-report.txt').read_text(encoding='utf-8'); assert 'VERDICT: NON-DECISIVE' in text"
+
+  ubuntu-py314:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - run: python -m pytest -q
+      - run: python -m inverted.cli --config configs/smoke.yaml --output-dir ci-runs --run-id ci-smoke > ci-report.txt
+      - run: python -c "from pathlib import Path; text=Path('ci-report.txt').read_text(encoding='utf-8'); assert 'VERDICT: NON-DECISIVE' in text"
+
+  windows-py314:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[test]"
       - run: python -m pytest -q
