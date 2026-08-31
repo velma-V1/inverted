@@ -24,7 +24,26 @@ $RequiredArtifacts = @("events.jsonl","model_calls.jsonl","trials.csv","trials.j
 
 function Log([string]$Message) {
     $line = "[$([DateTime]::UtcNow.ToString('o'))] $Message"
-    $line | Tee-Object -FilePath $PublisherLog -Append
+    Add-Content -Path $PublisherLog -Value $line -Encoding UTF8
+    Write-Host $line
+}
+
+function Run-Git {
+    param([Parameter(Mandatory = $true)][string[]]$GitArgs)
+    # Windows PowerShell 5.1 promotes native-process stderr records to
+    # terminating errors when ErrorActionPreference=Stop. Git routinely uses
+    # stderr for successful fetch/push progress, so only the process exit code
+    # may decide success/failure.
+    $previous = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = @(& git @GitArgs 2>&1)
+        $code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+    return [pscustomobject]@{ ExitCode = $code; Output = $output }
 }
 
 function Invoke-Git {
@@ -32,10 +51,9 @@ function Invoke-Git {
         [Parameter(Mandatory = $true)][string[]]$GitArgs,
         [Parameter(Mandatory = $true)][string]$Label
     )
-    $output = & git @GitArgs 2>&1
-    $code = $LASTEXITCODE
-    foreach ($line in $output) { Log "$Label`: $line" }
-    if ($code -ne 0) { throw "$Label`_FAILED:$code" }
+    $result = Run-Git -GitArgs $GitArgs
+    foreach ($line in $result.Output) { Log "$Label`: $line" }
+    if ($result.ExitCode -ne 0) { throw "$Label`_FAILED:$($result.ExitCode)" }
 }
 
 function Get-LineCount([string]$Path) {
@@ -82,8 +100,10 @@ function Ensure-StagingRepo {
     if (Test-Path $StagingRepo) { Remove-Item $StagingRepo -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $StagingRepo | Out-Null
 
-    $origin = (& git -C $RepoPath remote get-url origin 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $origin) { throw "GIT_ORIGIN_LOOKUP_FAILED:$LASTEXITCODE" }
+    $originResult = Run-Git -GitArgs @("-C", $RepoPath, "remote", "get-url", "origin")
+    if ($originResult.ExitCode -ne 0) { throw "GIT_ORIGIN_LOOKUP_FAILED:$($originResult.ExitCode)" }
+    $origin = (($originResult.Output | ForEach-Object { $_.ToString() }) -join "`n").Trim()
+    if (-not $origin) { throw "GIT_ORIGIN_LOOKUP_EMPTY" }
 
     Invoke-Git -GitArgs @("init", $StagingRepo) -Label "GIT_INIT_STAGING"
     Invoke-Git -GitArgs @("-C", $StagingRepo, "remote", "add", "origin", $origin) -Label "GIT_ADD_REMOTE"
@@ -95,21 +115,20 @@ function Ensure-StagingRepo {
 function Commit-And-Push([string]$Reason) {
     Invoke-Git -GitArgs @("-C", $StagingRepo, "add", "--", "live-results/$RunId") -Label "GIT_ADD_CHECKPOINT"
 
-    & git -C $StagingRepo diff --cached --quiet
-    $hasChanges = ($LASTEXITCODE -ne 0)
+    $diffResult = Run-Git -GitArgs @("-C", $StagingRepo, "diff", "--cached", "--quiet")
+    if ($diffResult.ExitCode -gt 1) { throw "GIT_DIFF_CHECKPOINT_FAILED:$($diffResult.ExitCode)" }
+    $hasChanges = ($diffResult.ExitCode -eq 1)
     if ($hasChanges) {
         Invoke-Git -GitArgs @("-C", $StagingRepo, "-c", "user.name=inverted-checkpoint", "-c", "user.email=inverted-checkpoint@users.noreply.github.com", "commit", "-m", "results: $RunId $Reason") -Label "GIT_COMMIT_CHECKPOINT"
     }
 
-    $output = & git -C $StagingRepo push --force-with-lease origin "HEAD:$Branch" 2>&1
-    $code = $LASTEXITCODE
-    foreach ($line in $output) { Log "git push: $line" }
-    if ($code -ne 0) {
-        $output = & git -C $StagingRepo push origin "HEAD:$Branch" 2>&1
-        $code = $LASTEXITCODE
-        foreach ($line in $output) { Log "git push fallback: $line" }
+    $pushResult = Run-Git -GitArgs @("-C", $StagingRepo, "push", "--force-with-lease", "origin", "HEAD:$Branch")
+    foreach ($line in $pushResult.Output) { Log "git push: $line" }
+    if ($pushResult.ExitCode -ne 0) {
+        $pushResult = Run-Git -GitArgs @("-C", $StagingRepo, "push", "origin", "HEAD:$Branch")
+        foreach ($line in $pushResult.Output) { Log "git push fallback: $line" }
     }
-    if ($code -ne 0) { throw "GIT_PUSH_CHECKPOINT_FAILED:$code" }
+    if ($pushResult.ExitCode -ne 0) { throw "GIT_PUSH_CHECKPOINT_FAILED:$($pushResult.ExitCode)" }
     Log "REMOTE CHECKPOINT VERIFIED branch=$Branch reason=$Reason"
 }
 
