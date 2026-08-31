@@ -13,6 +13,7 @@ from typing import Any
 
 from . import test2_local_hardened as _hardened
 from .models import ModelCallError
+from .test2_integrity import attach_repair_validator_outcomes
 from .test2_local_hardened import *  # noqa: F401,F403
 from .test2_local_hardened import LOCAL_PHASE_LIMITS, LocalTest2Plan
 from .test2_provenance import collect_ollama_provenance
@@ -24,7 +25,11 @@ _SCREEN_CONDITIONS = (
     ("structured", "regenerate"),
     ("structured", "targeted"),
 )
-_PRIMARY_SUFFIXES = tuple(f"-{feedback}-{strategy}" for feedback in ("raw", "structured") for strategy in ("regenerate", "targeted"))
+_PRIMARY_SUFFIXES = tuple(
+    f"-{feedback}-{strategy}"
+    for feedback in ("raw", "structured")
+    for strategy in ("regenerate", "targeted")
+)
 
 
 class BoundedModelCaller(_hardened.BoundedModelCaller):
@@ -156,18 +161,6 @@ def _identity_projection(snapshot: dict, model_names: tuple[str, ...]) -> dict:
     }
 
 
-def _trial_key(row: dict[str, Any]) -> tuple[str, str, str]:
-    return (
-        str(row.get("model") or ""),
-        str(row.get("task_id") or ""),
-        f"repair_{row.get('feedback_style')}_{row.get('strategy')}",
-    )
-
-
-def _validator_key(row: dict[str, Any]) -> tuple[str, str, str]:
-    return (str(row.get("model") or ""), str(row.get("task_id") or ""), str(row.get("stage") or ""))
-
-
 def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 480):
     """Run the fixed Test-2 campaign with fail-closed experiment boundaries."""
     model_list = list(models)
@@ -187,6 +180,7 @@ def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 48
     original_bank_builder = _hardened.build_repair_candidate_bank
     original_repair = _hardened._repair
     original_validator = _hardened._validator_row
+    original_call_row = _hardened._call_row
 
     screen_condition_by_case: dict[str, tuple[str, str]] = {}
     primary_completion: dict[tuple[str, str, str, str], BoundedCompletion] = {}
@@ -200,6 +194,21 @@ def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 48
         for case, condition in zip(bank[:4], _SCREEN_CONDITIONS):
             screen_condition_by_case[str(case.case_id)] = condition
         return _PartitionedRepairBank(bank)
+
+    def call_row_hook(completion, *, phase, task_id, model, role, pipeline=None):
+        row = original_call_row(
+            completion,
+            phase=phase,
+            task_id=task_id,
+            model=model,
+            role=role,
+            pipeline=pipeline,
+        )
+        telemetry = dict(row.get("telemetry") or {})
+        telemetry["logical_call_index"] = completion.logical_index
+        telemetry["physical_call_number"] = completion.physical_call_number
+        row["telemetry"] = telemetry
+        return row
 
     def repair_hook(*args, **kwargs):
         nonlocal pending_primary_lineage
@@ -265,6 +274,7 @@ def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 48
     _hardened.build_repair_candidate_bank = partitioned_bank_builder
     _hardened._repair = repair_hook
     _hardened._validator_row = validator_hook
+    _hardened._call_row = call_row_hook
     try:
         result = _hardened.run_local_campaign(model_list, run_id=run_id, hard_limit=hard_limit)
     finally:
@@ -272,6 +282,7 @@ def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 48
         _hardened.build_repair_candidate_bank = original_bank_builder
         _hardened._repair = original_repair
         _hardened._validator_row = original_validator
+        _hardened._call_row = original_call_row
 
     # Correct the legacy screen-row labels to the actual balanced conditions.
     screen_rows = [row for row in result.get("records", []) if row.get("phase") == "repair_screen"]
@@ -309,29 +320,13 @@ def run_local_campaign(models, run_id: str = "test2-local", hard_limit: int = 48
         row["call_identity"] = completion.identity
         row["cache_hit"] = bool(completion.cache_hit)
         row["physical_call_number"] = completion.physical_call_number
+        record = completion.record.to_dict() if hasattr(completion.record, "to_dict") else {}
+        row["call_error_class"] = record.get("error_class")
+        row["call_error_message"] = record.get("error_message")
+        row["call_timeout"] = bool(record.get("timeout", False))
+        row["call_status_code"] = record.get("status_code")
 
-    # Join catastrophic outcomes by model+task+condition, never list position.
-    repair_validators = [
-        row for row in result.get("validator_results", [])
-        if row.get("phase") == "repair_factorial" and str(row.get("stage", "")).startswith("repair_")
-    ]
-    validator_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
-    for validator in repair_validators:
-        key = _validator_key(validator)
-        if key in validator_by_key:
-            raise AssertionError(f"duplicate repair-factorial validator lineage {key!r}")
-        validator_by_key[key] = validator
-    trial_keys = {_trial_key(row) for row in repair_rows}
-    if len(trial_keys) != len(repair_rows) or trial_keys != set(validator_by_key):
-        raise AssertionError(
-            "repair-factorial trial/validator key mismatch: "
-            f"trials_only={sorted(trial_keys - set(validator_by_key))!r} "
-            f"validators_only={sorted(set(validator_by_key) - trial_keys)!r}"
-        )
-    for trial in repair_rows:
-        validator = validator_by_key[_trial_key(trial)]
-        trial["candidate_id"] = validator.get("candidate_id")
-        trial["catastrophic"] = bool(validator.get("catastrophic"))
+    attach_repair_validator_outcomes(result)
 
     if ollama is not None:
         base_url, model_names = ollama
