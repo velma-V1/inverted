@@ -16,6 +16,7 @@ $LocalBranch = "checkpoint-$RunId"
 $StagingRepo = Join-Path $RunRoot "$RunId-github"
 $ResultRoot = Join-Path $StagingRepo "live-results\$RunId"
 $ChunkRoot = Join-Path $ResultRoot "chunks"
+$ValueRoot = Join-Path $ResultRoot "value-checkpoints"
 $ProgressPath = Join-Path $ResultRoot "progress.json"
 $PublisherLog = Join-Path $RunRoot "$RunId-github-publisher.log"
 $FailureLog = Join-Path $RunRoot "$RunId.call-failures.jsonl"
@@ -30,10 +31,6 @@ function Log([string]$Message) {
 
 function Run-Git {
     param([Parameter(Mandatory = $true)][string[]]$GitArgs)
-    # Windows PowerShell 5.1 promotes native-process stderr records to
-    # terminating errors when ErrorActionPreference=Stop. Git routinely uses
-    # stderr for successful fetch/push progress, so only the process exit code
-    # may decide success/failure.
     $previous = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
@@ -132,6 +129,16 @@ function Commit-And-Push([string]$Reason) {
     Log "REMOTE CHECKPOINT VERIFIED branch=$Branch reason=$Reason"
 }
 
+function Copy-ValueCheckpoints {
+    $files = @(Get-ChildItem -Path $RunRoot -Filter "$RunId.value-checkpoint-*.*" -File -ErrorAction SilentlyContinue)
+    if ($files.Count -eq 0) { return 0 }
+    New-Item -ItemType Directory -Force -Path $ValueRoot | Out-Null
+    foreach ($file in $files) {
+        Copy-Item $file.FullName (Join-Path $ValueRoot $file.Name) -Force
+    }
+    return $files.Count
+}
+
 function Publish-Checkpoint([bool]$ForceFinal = $false) {
     $completed = Get-LineCount $Checkpoint
     $newChunk = $completed -gt $script:LastPublished
@@ -148,6 +155,7 @@ function Publish-Checkpoint([bool]$ForceFinal = $false) {
         $hash = (Get-FileHash -Algorithm SHA256 -Path $chunkPath).Hash
     }
 
+    $valueCheckpointCount = Copy-ValueCheckpoints
     $failureCount = Get-LineCount $FailureLog
     $failureHash = $null
     if (Test-Path $FailureLog) {
@@ -163,6 +171,7 @@ function Publish-Checkpoint([bool]$ForceFinal = $false) {
         percent = if ($TotalTrials -gt 0) { [Math]::Round(100.0 * $completed / $TotalTrials, 4) } else { 100.0 }
         last_chunk = $chunkName
         last_chunk_sha256 = $hash
+        value_checkpoint_files = $valueCheckpointCount
         failed_call_records = $failureCount
         failed_call_log_sha256 = $failureHash
         updated_utc = [DateTime]::UtcNow.ToString("o")
@@ -176,6 +185,9 @@ function Publish-Checkpoint([bool]$ForceFinal = $false) {
     if ($newChunk) {
         $script:LastPublished = $completed
         Log "Published checkpoint through row $completed SHA256=$hash"
+    }
+    if ($valueCheckpointCount -gt 0) {
+        Log "Published value-checkpoint files=$valueCheckpointCount"
     }
     if ($failureCount -gt 0) {
         Log "Published failed-call telemetry rows=$failureCount SHA256=$failureHash"
