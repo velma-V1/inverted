@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,9 @@ from inverted.test2_local import BoundedModelCaller, LOCAL_MODELS, run_local_cam
 from inverted.test2_metadata import enrich_test2_evidence
 from inverted.test2_preregistration import evaluate_primary_verdict
 from inverted.test2_types import PhysicalCallBudget
+
+
+CONDITIONS = {("raw", "regenerate"), ("raw", "targeted"), ("structured", "regenerate"), ("structured", "targeted")}
 
 
 def _evidence_with_calls(model_calls: list[dict]):
@@ -89,7 +93,7 @@ def test_legitimate_cache_reuse_is_not_misclassified_as_duplicate_physical_ident
     assert audit["physical_call_number_integrity"] is True
 
 
-def test_repair_screen_is_condition_balanced_and_disjoint_from_primary_factorial():
+def test_repair_screen_is_condition_balanced_disjoint_and_task_spread():
     result = run_local_campaign(
         [MockModelAdapter(model=model) for model in LOCAL_MODELS],
         run_id="final-red-team-screen",
@@ -99,13 +103,37 @@ def test_repair_screen_is_condition_balanced_and_disjoint_from_primary_factorial
     primary = [row for row in result["records"] if row.get("phase") == "repair_factorial"]
     assert screen and primary
     assert {row["task_id"] for row in screen}.isdisjoint({row["task_id"] for row in primary})
-    expected = {("raw", "regenerate"), ("raw", "targeted"), ("structured", "regenerate"), ("structured", "targeted")}
     for model in LOCAL_MODELS:
         rows = [row for row in screen if row.get("model") == model]
         assert len(rows) == 4
-        assert {(row.get("feedback_style"), row.get("strategy")) for row in rows} == expected
+        assert {(row.get("feedback_style"), row.get("strategy")) for row in rows} == CONDITIONS
+    by_task = defaultdict(list)
+    for row in screen:
+        by_task[row["task_id"]].append((row["feedback_style"], row["strategy"]))
+    assert all(set(values) == CONDITIONS for values in by_task.values())
+    global_counts = Counter((row["feedback_style"], row["strategy"]) for row in screen)
+    assert set(global_counts.values()) == {5}
     assert all(row.get("cache_hit") is False for row in primary)
     assert len({row.get("physical_call_number") for row in primary}) == len(primary)
+
+
+def test_primary_factorial_counterbalances_condition_ordinal_position():
+    result = run_local_campaign(
+        [MockModelAdapter(model=model) for model in LOCAL_MODELS],
+        run_id="final-red-team-order",
+        hard_limit=480,
+    )
+    primary = [row for row in result["records"] if row.get("phase") == "repair_factorial"]
+    grouped = defaultdict(list)
+    for row in primary:
+        grouped[(row["model"], row["task_id"])].append((row["feedback_style"], row["strategy"]))
+    assert grouped and all(set(order) == CONDITIONS and len(order) == 4 for order in grouped.values())
+    orders = list(grouped.values())
+    assert len({tuple(order) for order in orders}) > 1
+    for ordinal in range(4):
+        counts = Counter(order[ordinal] for order in orders)
+        assert set(counts) == CONDITIONS
+        assert max(counts.values()) - min(counts.values()) <= 1
 
 
 def test_catastrophic_lineage_is_joined_by_model_and_condition_not_list_position():
