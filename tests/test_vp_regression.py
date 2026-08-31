@@ -1,5 +1,8 @@
 from pathlib import Path
 import ast
+import os
+
+import pytest
 
 
 VP = Path("tools/vp")
@@ -16,6 +19,7 @@ def _source_gate_python(text: str) -> str:
     return text[start:end].lstrip("\n")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="vp executes inside WSL/Linux, not native Windows")
 def test_vp_bash_syntax_is_valid():
     import subprocess
 
