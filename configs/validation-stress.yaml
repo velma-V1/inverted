@@ -2,14 +2,14 @@ benchmark:
   families: [state, policy, reconciliation]
   complexities: [1, 2, 3, 4]
   qualities: [0.20, 0.40, 0.60, 0.80, 0.95]
-  seeds: [101, 211, 307, 401, 503]
-  epochs: 2
+  seeds: [101, 211, 307, 401, 503, 601, 701, 809, 907, 1009]
+  epochs: 5
   arms: [A_DIRECT, B_DIRECT_CHECKED, C_SYSTEM, D_INVERTED, E_RANDOM_AUDITOR, F_ORACLE_AUDITOR]
   max_candidates: 3
   max_tokens_per_trial: 10000
   decisive: false
   minimum_primary_trials: 180
-  bootstrap_samples: 2000
+  bootstrap_samples: 10000
   bootstrap_seed: 20260830
   metadata:
     evidence_scope: "INSTRUMENT VALIDATION — NOT ARCHITECTURE EVIDENCE"
