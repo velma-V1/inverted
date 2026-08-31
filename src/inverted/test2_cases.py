@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-from typing import Iterable
 
-from .domain import Candidate, TaskCase
-from .oracle import evaluate_task
+from .domain import Action, Candidate, TaskCase
+from .oracle import apply_actions, evaluate_task
 from .system_executor import generate_candidate
 from .tasks import generate_task
 
@@ -113,15 +112,40 @@ def _find_fault_candidate(task: TaskCase, desired_fault: str, seed_start: int) -
         base_faults = {fault.split("+")[0] for fault in candidate.injected_faults}
         if desired_fault in base_faults:
             oracle = evaluate_task(task, candidate.state, candidate.actions)
-            if not oracle.success:
+            # Reject compound forced-fault samples: each diagnostic candidate must
+            # isolate the named mechanism rather than give the model two reasons.
+            if not oracle.success and all("+forced_requirement_violation" not in fault for fault in candidate.injected_faults):
                 return candidate
-    raise RuntimeError(f"could not deterministically generate fault {desired_fault!r} for {task.id}")
+    raise RuntimeError(f"could not deterministically generate clean fault {desired_fault!r} for {task.id}")
+
+
+def _pure_side_effect_candidate(task: TaskCase, seed: int) -> Candidate:
+    clean = generate_candidate(task, 1.0, seed)
+    op = "set" if "set" in task.allowed_ops else task.allowed_ops[0]
+    if task.family == "state":
+        path = "guard.unexpected"
+    elif task.family == "reconciliation":
+        path = "resolved.unexpected"
+    else:
+        path = "workflow.unexpected"
+    actions = tuple(clean.actions) + (Action(op, path, "side-effect"),)
+    state = apply_actions(task.initial_state, actions)
+    if not evaluate_task(task, state, actions).success:
+        raise AssertionError("pure side-effect diagnostic unexpectedly violates explicit oracle requirements")
+    return Candidate(
+        id=f"semantic-side-effect-{task.id}",
+        state=state,
+        actions=actions,
+        injected_faults=("unintended_side_effect",),
+        configured_quality=0.0,
+        metadata={"seed": seed, "semantic_probe": True},
+    )
 
 
 def build_audit_candidate_bank() -> list[CandidateProbe]:
     bank: list[CandidateProbe] = []
 
-    # Ten oracle-valid candidates.
+    # Ten explicit-requirement and semantic-gold valid candidates.
     for index in range(10):
         family = ("state", "policy", "reconciliation")[index % 3]
         complexity = (index % 4) + 1
@@ -132,7 +156,9 @@ def build_audit_candidate_bank() -> list[CandidateProbe]:
             raise AssertionError("quality=1 candidate unexpectedly failed oracle")
         bank.append(CandidateProbe(f"audit-valid-{index+1:02d}-{task.id}", task, candidate, True))
 
-    # Ten oracle-invalid candidates with deliberate fault coverage.
+    # Ten invalid candidates. Side-effect cases are deliberately pure semantic
+    # residuals: the public oracle still passes, so only semantic auditing can
+    # detect them. Other cases isolate one explicit failure mechanism.
     desired = (
         "omitted_requirement", "wrong_value", "unintended_side_effect",
         "ordering_violation", "forbidden_procedure",
@@ -143,7 +169,10 @@ def build_audit_candidate_bank() -> list[CandidateProbe]:
         family = "policy" if fault in {"ordering_violation", "forbidden_procedure"} else ("state", "reconciliation")[index % 2]
         complexity = 4 if fault == "ordering_violation" else ((index % 4) + 1)
         task = generate_task(family, complexity, 61000 + index * 181)
-        candidate = _find_fault_candidate(task, fault, 71000 + index * 10000)
+        if fault == "unintended_side_effect":
+            candidate = _pure_side_effect_candidate(task, 71000 + index)
+        else:
+            candidate = _find_fault_candidate(task, fault, 71000 + index * 10000)
         oracle = evaluate_task(task, candidate.state, candidate.actions)
         bank.append(CandidateProbe(f"audit-invalid-{index+1:02d}-{task.id}-{fault}", task, candidate, oracle.success))
 
@@ -151,11 +180,15 @@ def build_audit_candidate_bank() -> list[CandidateProbe]:
 
 
 def build_repair_candidate_bank() -> list[CandidateProbe]:
+    # Repair-factorial candidates intentionally contain only failures that are
+    # observable from deterministic validation. Pure semantic side effects are
+    # kept for the auditor experiment; feeding their hidden gold label to repair
+    # would contaminate the causal feedback comparison.
     desired = (
-        "omitted_requirement", "wrong_value", "unintended_side_effect",
-        "ordering_violation", "forbidden_procedure",
-        "wrong_value", "omitted_requirement", "unintended_side_effect",
-        "ordering_violation", "forbidden_procedure",
+        "omitted_requirement", "wrong_value", "ordering_violation",
+        "forbidden_procedure", "wrong_value", "omitted_requirement",
+        "ordering_violation", "forbidden_procedure", "wrong_value",
+        "omitted_requirement",
     )
     out: list[CandidateProbe] = []
     for index, fault in enumerate(desired):
