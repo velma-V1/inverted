@@ -29,12 +29,37 @@ def _ctx():
 
 
 def _record(role="executor", model="broken", *, error_class=None, error_message=None, timeout=False):
+    content = None if error_class else "{}"
+    thinking = None if error_class else ""
+    prompt_tokens = None if error_class else 4
+    output_tokens = None if error_class else 2
+    done_reason = None if error_class else "stop"
     return ModelCallRecord(
         call_id="c", run_id="r", trial_id="t", candidate_id=None,
         role=role, model=model, provider="ollama",
         start_ts="2026-08-31T00:00:00+00:00", end_ts="2026-08-31T00:00:01+00:00",
-        latency_s=1.0, error_class=error_class, error_message=error_message, timeout=timeout,
+        latency_s=1.0, input_tokens=prompt_tokens, output_tokens=output_tokens,
+        total_tokens=(prompt_tokens + output_tokens) if prompt_tokens is not None and output_tokens is not None else None,
+        finish_reason=done_reason, error_class=error_class, error_message=error_message, timeout=timeout,
         retry_number=2 if error_class else 0, retry_reason=(f"{error_class}: {error_message}" if error_class else None),
+        raw_provider_telemetry={
+            "attempts": [{
+                "attempt": 0,
+                "status_code": None if error_class else 200,
+                "thinking": thinking,
+                "content": content,
+                "prompt_eval_count": prompt_tokens,
+                "eval_count": output_tokens,
+                "done_reason": done_reason,
+                "error_class": error_class,
+                "error_message": error_message,
+            }],
+            "thinking": thinking,
+            "content": content,
+            "prompt_eval_count": prompt_tokens,
+            "eval_count": output_tokens,
+            "done_reason": done_reason,
+        },
     )
 
 
@@ -155,19 +180,23 @@ def test_preflight_runs_12_representative_cells_per_model():
         def complete(self, messages, *, role, context):
             self.roles.append(role)
             text = '{"actions":[]}' if role == "preflight_executor" else '{"accept":false,"failed_requirements":["probe"],"reason":"probe"}'
-            return CompletionResult(text, _record(role=role, model=self.model), {})
+            rec = _record(role=role, model=self.model)
+            rec.response = text
+            rec.raw_provider_telemetry["content"] = text
+            rec.raw_provider_telemetry["attempts"][0]["content"] = text
+            return CompletionResult(text, rec, {})
 
     model = ContractModel()
-    evidence = _preflight_models([model], cells_per_model=12, censorship_threshold=0.05)
+    evidence = _preflight_models([model], cells_per_model=12, max_generation_censored=0)
     assert len(model.roles) == 12
     assert model.roles.count("preflight_executor") == 6
     assert model.roles.count("preflight_auditor") == 6
     assert evidence[0]["cells_attempted"] == 12
     assert evidence[0]["generation_censored"] == 0
-    assert evidence[0]["censorship_rate"] == 0.0
+    assert evidence[0]["censorship_policy"] == "ZERO_CENSORSHIP"
 
 
-def test_preflight_aborts_if_censorship_rate_exceeds_threshold():
+def test_preflight_aborts_if_any_generation_is_censored():
     class CensorOnce:
         provider = "ollama"
         model = "censor-once"
@@ -181,12 +210,21 @@ def test_preflight_aborts_if_censorship_rate_exceeds_threshold():
                 rec = _record(role=role, model=self.model, error_class="GENERATION_CENSORED", error_message="budget exhausted")
                 rec.output_tokens = 1024
                 rec.finish_reason = "length"
+                rec.raw_provider_telemetry["thinking"] = "budget used"
+                rec.raw_provider_telemetry["content"] = ""
+                rec.raw_provider_telemetry["prompt_eval_count"] = 111
+                rec.raw_provider_telemetry["eval_count"] = 1024
+                rec.raw_provider_telemetry["done_reason"] = "length"
+                rec.raw_provider_telemetry["attempts"][0].update({"thinking": "budget used", "content": "", "prompt_eval_count": 111, "eval_count": 1024, "done_reason": "length"})
                 raise GenerationCensored("budget exhausted", rec)
             text = '{"actions":[]}' if role == "preflight_executor" else '{"accept":true,"failed_requirements":[],"reason":"ok"}'
-            return CompletionResult(text, _record(role=role, model=self.model), {})
+            rec = _record(role=role, model=self.model)
+            rec.raw_provider_telemetry["content"] = text
+            rec.raw_provider_telemetry["attempts"][0]["content"] = text
+            return CompletionResult(text, rec, {})
 
-    with pytest.raises(RuntimeError, match="censorship.*threshold"):
-        _preflight_models([CensorOnce()], cells_per_model=12, censorship_threshold=0.05)
+    with pytest.raises(RuntimeError, match="zero-censorship preflight failed"):
+        _preflight_models([CensorOnce()], cells_per_model=12, max_generation_censored=0)
 
 
 def test_preflight_rejects_malformed_auditor_contract_before_campaign():
@@ -196,10 +234,13 @@ def test_preflight_rejects_malformed_auditor_contract_before_campaign():
 
         def complete(self, messages, *, role, context):
             text = '{"actions":[]}' if role == "preflight_executor" else "NOT JSON"
-            return CompletionResult(text, _record(role=role, model=self.model), {})
+            rec = _record(role=role, model=self.model)
+            rec.raw_provider_telemetry["content"] = text
+            rec.raw_provider_telemetry["attempts"][0]["content"] = text
+            return CompletionResult(text, rec, {})
 
     with pytest.raises(ValueError, match="preflight.*auditor"):
-        _preflight_models([Malformed()], cells_per_model=12, censorship_threshold=0.05)
+        _preflight_models([Malformed()], cells_per_model=12, max_generation_censored=0)
 
 
 def test_decisive_ollama_models_have_frozen_reliability_contract():
@@ -234,4 +275,5 @@ def test_decisive_config_uses_010_hardened_ollama_and_preflight_settings():
         assert spec["format_json"] is True
         assert spec["context_limit"] == 8192
     assert raw["preflight"]["cells_per_model"] == 12
-    assert raw["preflight"]["censorship_threshold"] == 0.05
+    assert raw["preflight"]["max_generation_censored"] == 0
+    assert "censorship_threshold" not in raw["preflight"]
