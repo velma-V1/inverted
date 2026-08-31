@@ -192,3 +192,59 @@ def failure_streak_quality_posterior(
                 if not bool(row.get(f"attempt_{next_attempt}_success"))
             ]
     return out
+
+
+def mutation_boundary_analysis(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Quantify why every newly generated candidate must be revalidated.
+
+    This replays already-recorded oracle outcomes only. It does not claim a
+    model-generated repair will be perfect; the final repair row is explicitly
+    an oracle upper bound used to define available recovery headroom.
+    """
+    if not rows:
+        return []
+    n = len(rows)
+
+    def row(name: str, successes: int, catastrophics: int, blocked: int, note: str) -> dict[str, Any]:
+        return {
+            "stage": name,
+            "n": n,
+            "successes": successes,
+            "success_rate": successes / n,
+            "catastrophic_escapes": catastrophics,
+            "catastrophic_escape_rate": catastrophics / n,
+            "blocked_failures": blocked,
+            "note": note,
+        }
+
+    first_success = [bool(item.get("attempt_1_success")) for item in rows]
+    second_success = [bool(item.get("attempt_2_success")) for item in rows]
+    third_success = [bool(item.get("attempt_3_success")) for item in rows]
+    first_cat = [bool(item.get("attempt_1_catastrophic")) for item in rows]
+    second_cat = [bool(item.get("attempt_2_catastrophic")) for item in rows]
+    third_cat = [bool(item.get("attempt_3_catastrophic")) for item in rows]
+
+    s1 = sum(first_success)
+    f1 = n - s1
+    cumulative2 = [a or b for a, b in zip(first_success, second_success)]
+    s2 = sum(cumulative2)
+    f2 = n - s2
+    unchecked_cat2 = sum((not a) and c for a, c in zip(first_success, second_cat))
+    cumulative3 = [a or b or c for a, b, c in zip(first_success, second_success, third_success)]
+    s3 = sum(cumulative3)
+    f3 = n - s3
+    unchecked_cat3 = sum(
+        (not a) and (not b) and c
+        for a, b, c in zip(first_success, second_success, third_cat)
+    )
+
+    return [
+        row("ONE_SHOT_UNVALIDATED", s1, sum(first_cat), 0, "Raw first candidate."),
+        row("VALIDATE_ATTEMPT_1", s1, 0, f1, "Deterministic validation blocks every invalid first candidate in this synthetic atlas."),
+        row("RETRY_2_WITHOUT_REVALIDATION", s2, unchecked_cat2, 0, "A fresh retry can reintroduce catastrophic output after an earlier validation."),
+        row("RETRY_2_THEN_REVALIDATE", s2, 0, f2, "Revalidation preserves recovered wins while blocking all remaining invalid retry-2 candidates."),
+        row("RETRY_3_WITHOUT_REVALIDATION", s3, unchecked_cat3, 0, "A third fresh draw can again reintroduce catastrophic output."),
+        row("RETRY_3_THEN_REVALIDATE", s3, 0, f3, "Revalidation after attempt 3 removes catastrophic escape without reducing valid recoveries."),
+        row("FINAL_AUTHORITY_BEFORE_REPAIR", s2, 0, f2, "Terminal authority at this point safely stops but forfeits all repairable residual failures."),
+        row("ORACLE_REPAIR_THEN_FINAL_AUTHORITY", n, 0, 0, "Oracle repair upper bound: defines maximum residual headroom; real model repair must be measured locally."),
+    ]
