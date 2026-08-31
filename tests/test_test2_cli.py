@@ -41,6 +41,8 @@ def test_model_free_smoke_writes_complete_evidence(tmp_path):
         "order/order-slice-ranking.csv",
         "order/candidate-saturation.csv",
         "order/candidate-independence.json",
+        "order/candidate-independence-strata.csv",
+        "order/retry-repair-thresholds.csv",
         "raw/every-trial.jsonl",
         "raw/every-candidate.jsonl",
         "raw/every-event.jsonl",
