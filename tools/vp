@@ -136,7 +136,6 @@ fi
 SHA="$(git -C "$REPO" rev-parse HEAD)"
 SHORT="${SHA:0:12}"
 BRANCH="$(git -C "$REPO" branch --show-current)"
-DIRTY="$(git -C "$REPO" status --porcelain=v1)"
 ORIGIN="$(git -C "$REPO" remote get-url origin 2>/dev/null || true)"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -243,57 +242,58 @@ EOF
 git -C "$REPO" log -1 --format=fuller > "$OUT/commit.txt"
 
 WIN_REPO="$(wslpath -w "$REPO")"
-export VP_WIN_REPO="$WIN_REPO"
 
-# Explicitly propagate this WSL variable into Windows processes.
-if [[ -n "${WSLENV:-}" ]]; then
-    export WSLENV="${WSLENV}:VP_WIN_REPO"
-else
-    export WSLENV="VP_WIN_REPO"
-fi
-
-powershell.exe -NoProfile -Command '
+printf '%s\n' "$WIN_REPO" |
+    powershell.exe -NoProfile -Command '
 $ErrorActionPreference = "Stop"
-$r = $env:VP_WIN_REPO
+$r = [Console]::In.ReadLine()
+if (-not $r) {
+    Write-Error "Missing Windows repository path"
+    exit 90
+}
 
 & git -C $r status --porcelain=v1
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
-' 2>&1 | tr -d '
-' > "$OUT/source-dirty.txt"
+' 2>&1 | tr -d '\r' > "$OUT/source-dirty.txt"
 
-ps_status=${PIPESTATUS[0]}
+ps_status=${PIPESTATUS[1]}
 
 if [[ "$ps_status" -ne 0 ]]; then
     cat "$OUT/source-dirty.txt"
     block "source_git_status_unavailable"
 else
-    powershell.exe -NoProfile -Command '
-    $ErrorActionPreference = "Stop"
-    $r = $env:VP_WIN_REPO
-    $paths = New-Object System.Collections.Generic.List[string]
+    printf '%s\n' "$WIN_REPO" |
+        powershell.exe -NoProfile -Command '
+$ErrorActionPreference = "Stop"
+$r = [Console]::In.ReadLine()
+if (-not $r) {
+    Write-Error "Missing Windows repository path"
+    exit 90
+}
 
-    foreach ($line in (& git -C $r diff --name-only)) {
-        [void]$paths.Add($line)
-    }
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$paths = New-Object System.Collections.Generic.List[string]
 
-    foreach ($line in (& git -C $r diff --cached --name-only)) {
-        [void]$paths.Add($line)
-    }
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+foreach ($line in (& git -C $r diff --name-only)) {
+    [void]$paths.Add($line)
+}
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    foreach ($line in (& git -C $r ls-files --others --exclude-standard)) {
-        [void]$paths.Add($line)
-    }
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+foreach ($line in (& git -C $r diff --cached --name-only)) {
+    [void]$paths.Add($line)
+}
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    $paths | Sort-Object -Unique
-    ' 2>&1 | tr -d '
-' > "$OUT/source-dirty-paths.txt"
+foreach ($line in (& git -C $r ls-files --others --exclude-standard)) {
+    [void]$paths.Add($line)
+}
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    path_status=${PIPESTATUS[0]}
+$paths | Sort-Object -Unique
+' 2>&1 | tr -d '\r' > "$OUT/source-dirty-paths.txt"
+
+    path_status=${PIPESTATUS[1]}
 
     if [[ "$path_status" -ne 0 ]]; then
         cat "$OUT/source-dirty-paths.txt"
@@ -312,12 +312,6 @@ dirty = {
         errors="replace",
     ).splitlines()
     if line.strip()
-}
-
-# Explicitly preserved local work unrelated to the frozen Test-2 SHA.
-allowed_exact = {
-    "scripts/wait-for-010-and-run-inverted.ps1",
-    "scripts/wait-for-010-and-run-inverted.ps1.backup",
 }
 
 
@@ -341,33 +335,30 @@ def generated(path: str) -> bool:
 ignored = sorted(
     path
     for path in dirty
-    if path in allowed_exact or generated(path)
+    if generated(path)
 )
 
 relevant = sorted(
     path
     for path in dirty
-    if path not in allowed_exact and not generated(path)
+    if not generated(path)
 )
 
 print("WINDOWS GIT DIRTY CLASSIFICATION")
 print("=" * 48)
 
-print("
-IGNORED / NON-TEST2:")
+print("\nIGNORED / GENERATED:")
 for path in ignored:
     print(path)
 
-print("
-TIER-A RELEVANT:")
+print("\nTIER-A RELEVANT:")
 for path in relevant:
     print(path)
 
 if relevant:
     raise SystemExit(1)
 
-print("
-SOURCE EXACT-SHA SAFETY: PASS")
+print("\nSOURCE EXACT-SHA SAFETY: PASS")
 PY
 
         if [[ $? -ne 0 ]]; then
@@ -1199,9 +1190,23 @@ fi
 # ============================================================
 
 # Remove mutation-tool scratch artifacts from consideration.
-rm -rf     mutants     .mutmut-cache     build     .pytest_cache     .hypothesis     .ruff_cache     htmlcov     src/inverted_ai_benchmark.egg-info     2>/dev/null || true
+rm -rf \
+    mutants \
+    .mutmut-cache \
+    build \
+    .pytest_cache \
+    .hypothesis \
+    .ruff_cache \
+    htmlcov \
+    src/inverted_ai_benchmark.egg-info \
+    2>/dev/null || true
 
-find src tests     -type d     -name __pycache__     -prune     -exec rm -rf {} +     2>/dev/null || true
+find src tests \
+    -type d \
+    -name __pycache__ \
+    -prune \
+    -exec rm -rf {} + \
+    2>/dev/null || true
 
 rm -f .coverage .coverage.* 2>/dev/null || true
 
