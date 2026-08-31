@@ -304,14 +304,16 @@ def run_arm(arm: Arm, task: TaskCase, model: Any, executor_quality: float, seed:
                 context["mock_text"] = _mock_executor_text(model, task, trial_id, attempt)
             try:
                 res = model.complete(messages, role="executor", context=context)
-                actions, err = _append_call(trial, res, _parse_actions)
             except ModelCallError as exc:
-                actions, err = _append_call(trial, exc, _parse_actions)
+                # Infrastructure failure is not model-task evidence. Preserve the
+                # failed call in the exception and abort the uncompleted trial.
+                raise
+            actions, err = _append_call(trial, res, _parse_actions)
             if _budget_hit(trial, budget):
                 trial.failure_reasons = tuple(sorted(set(trial.failure_reasons + ("budget_exhausted",))))
                 break
             if err is not None or actions is None:
-                trial.failure_reasons = tuple(sorted(set(trial.failure_reasons + (("model_error" if isinstance(err, ModelCallError) else "parser_failure"),))))
+                trial.failure_reasons = tuple(sorted(set(trial.failure_reasons + ("parser_failure",))))
                 feedback = "model/parser error"
                 if arm == Arm.A_DIRECT:
                     break
@@ -373,16 +375,18 @@ def run_arm(arm: Arm, task: TaskCase, model: Any, executor_quality: float, seed:
                     context["mock_text"] = _mock_auditor_text(model, task, cand, trial_id, attempt)
                 try:
                     res = model.complete(messages, role="auditor", context=context)
-                    audit, err = _append_call(trial, res, _parse_audit)
-                except ModelCallError as exc:
-                    audit, err = _append_call(trial, exc, _parse_audit)
+                except ModelCallError:
+                    # Same rule as direct execution: an unrecovered provider/
+                    # transport failure aborts without becoming auditor evidence.
+                    raise
+                audit, err = _append_call(trial, res, _parse_audit)
                 if _budget_hit(trial, budget):
                     trial.failure_reasons = tuple(sorted(set(trial.failure_reasons + ("budget_exhausted",))))
                     break
                 if err is not None or audit is None:
-                    trial.failure_reasons = tuple(sorted(set(trial.failure_reasons + (("model_error" if isinstance(err, ModelCallError) else "parser_failure"),))))
+                    trial.failure_reasons = tuple(sorted(set(trial.failure_reasons + ("parser_failure",))))
                     trial.rejections += 1
-                    trial.candidate_events.append(_candidate_event(task, cand, attempt, oracle.success, "error", audit_reason="model/parser error"))
+                    trial.candidate_events.append(_candidate_event(task, cand, attempt, oracle.success, "error", audit_reason="parser error"))
                     continue
                 accept = bool(audit["accept"])
                 audit_reason = str(audit.get("reason", ""))
