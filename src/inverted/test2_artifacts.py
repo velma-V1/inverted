@@ -6,7 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .test2_postanalysis import candidate_independence_strata, retry_repair_thresholds
+from .test2_postanalysis import (
+    candidate_independence_strata,
+    failure_streak_quality_posterior,
+    retry_repair_thresholds,
+)
 
 
 _JSONL_FILES = {
@@ -40,6 +44,7 @@ _CSV_FILES = {
         "candidate_saturation": "order/candidate-saturation.csv",
         "candidate_independence_strata": "order/candidate-independence-strata.csv",
         "retry_repair_thresholds": "order/retry-repair-thresholds.csv",
+        "failure_streak_quality_posterior": "order/failure-streak-quality-posterior.csv",
     },
     "models": {
         "model_task_capability_matrix": "models/model-task-capability-matrix.csv",
@@ -169,6 +174,7 @@ def _augment_postanalysis(evidence: dict[str, Any]) -> None:
     order = evidence.setdefault("order", {})
     order["candidate_independence_strata"] = candidate_independence_strata(trials)
     order["retry_repair_thresholds"] = retry_repair_thresholds(trials)
+    order["failure_streak_quality_posterior"] = failure_streak_quality_posterior(trials)
 
 
 class Test2ArtifactWriter:
