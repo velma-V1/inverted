@@ -275,10 +275,19 @@ def main(argv: list[str] | None = None) -> int:
 
     progress_callback = None
     if args.progress:
+        from .progress import ProgressTracker
+
+        initial_completed = len(checkpoint.load_trials()) if args.resume and checkpoint is not None else 0
+        tracker = ProgressTracker(initial_completed=initial_completed)
+
         def render_progress(completed: int, total: int, item: TrialPlan) -> None:
-            pct = 100.0 * completed / total if total else 100.0; width = 30; filled = min(width, int(round(width * completed / total))) if total else width
             model = getattr(models[item.model_index], "model", "none") if item.arm in _MODEL_DEPENDENT_ARMS else "CONTROL"
-            print(f"PROGRESS [{'#' * filled}{'-' * (width - filled)}] {completed}/{total} {pct:6.2f}% model={model} arm={item.arm} family={item.family} complexity={item.complexity} quality={item.quality:.2f} seed={item.seed} epoch={item.epoch}", flush=True)
+            current = (
+                f"model={model} arm={item.arm} family={item.family} complexity={item.complexity} "
+                f"quality={item.quality:.2f} seed={item.seed} epoch={item.epoch}"
+            )
+            print(tracker.render(completed, total, current), flush=True)
+
         progress_callback = render_progress
 
     stage_callback = None
