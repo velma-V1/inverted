@@ -10,14 +10,18 @@ from typing import Any
 
 import yaml
 
+from .arms import _auditor_messages, _executor_messages, _parse_actions, _parse_audit
 from .artifacts import ArtifactWriter, collect_provenance
 from .checkpoint import CheckpointStore
 from .models import ModelCallError, MockModelAdapter, OllamaAdapter, OpenAICompatibleAdapter
 from .runner import ExperimentConfig, TrialPlan, run_experiment
 from .statistics import aggregate_trials
+from .system_executor import generate_candidate
+from .tasks import generate_task
 from .verdict import decide_verdict
 
 _ENV_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
+_MODEL_DEPENDENT_ARMS = {"A_DIRECT", "B_DIRECT_CHECKED", "D_INVERTED"}
 
 
 def _expand_env(value: Any) -> Any:
@@ -146,18 +150,66 @@ def _build_models(raw: dict[str, Any], capture_content: bool) -> list[Any]:
 
 
 def _preflight_models(models: list[Any]) -> list[dict[str, Any]]:
+    """Exercise the actual executor and auditor JSON contracts before a long real run."""
     evidence: list[dict[str, Any]] = []
+    probe_task = generate_task("reconciliation", 4, 20260831)
+    probe_candidate = generate_candidate(probe_task, 0.60, 20260831)
+    executor_messages = _executor_messages(probe_task)
+    auditor_messages = _auditor_messages(probe_task, probe_candidate)
+    executor_chars = sum(len(m["content"]) for m in executor_messages)
+    auditor_chars = sum(len(m["content"]) for m in auditor_messages)
+
     for model in models:
         provider = str(getattr(model, "provider", ""))
-        if provider == "mock":
+        if provider == "mock" or provider != "ollama":
             continue
-        if provider != "ollama":
-            continue
-        preflight = getattr(model, "preflight", None)
-        if not callable(preflight):
-            raise ValueError(f"Ollama adapter {getattr(model, 'model', 'unknown')} does not expose preflight")
-        result = preflight()
-        evidence.append(dict(result))
+        model_name = str(getattr(model, "model", "unknown"))
+
+        exec_result = model.complete(
+            executor_messages,
+            role="preflight_executor",
+            context={
+                "run_id": "preflight",
+                "trial_id": f"preflight-executor-{model_name}",
+                "call_id": f"preflight-executor-{model_name}",
+            },
+        )
+        try:
+            _parse_actions(exec_result.text)
+        except Exception as exc:
+            raise ValueError(f"preflight executor JSON contract failed for {model_name}: {type(exc).__name__}: {exc}") from exc
+
+        audit_result = model.complete(
+            auditor_messages,
+            role="preflight_auditor",
+            context={
+                "run_id": "preflight",
+                "trial_id": f"preflight-auditor-{model_name}",
+                "call_id": f"preflight-auditor-{model_name}",
+                "candidate_id": probe_candidate.id,
+            },
+        )
+        try:
+            _parse_audit(audit_result.text)
+        except Exception as exc:
+            raise ValueError(f"preflight auditor JSON contract failed for {model_name}: {type(exc).__name__}: {exc}") from exc
+
+        evidence.append({
+            "model": model_name,
+            "provider": provider,
+            "executor_parse_ok": True,
+            "auditor_parse_ok": True,
+            "executor_prompt_chars": executor_chars,
+            "auditor_prompt_chars": auditor_chars,
+            "max_prompt_chars": max(executor_chars, auditor_chars),
+            "executor_latency_s": exec_result.record.latency_s,
+            "auditor_latency_s": audit_result.record.latency_s,
+            "executor_retry_number": exec_result.record.retry_number,
+            "auditor_retry_number": audit_result.record.retry_number,
+            "context_limit": getattr(model, "context_limit", None),
+            "think": getattr(model, "think", None),
+            "format_json": getattr(model, "format_json", None),
+        })
     return evidence
 
 
@@ -195,8 +247,11 @@ def main(argv: list[str] | None = None) -> int:
 
     preflight_evidence = _preflight_models(models)
     for item in preflight_evidence:
+        latency = float(item.get("executor_latency_s", 0.0)) + float(item.get("auditor_latency_s", 0.0))
+        retries = int(item.get("executor_retry_number", 0)) + int(item.get("auditor_retry_number", 0))
         print(
-            f"PREFLIGHT OK model={item.get('model')} latency_s={float(item.get('latency_s', 0.0)):.3f} retries={item.get('retry_number', 0)}",
+            f"PREFLIGHT OK model={item.get('model')} executor_json=OK auditor_json=OK "
+            f"max_prompt_chars={item.get('max_prompt_chars')} latency_s={latency:.3f} retries={retries}",
             flush=True,
         )
 
@@ -207,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
             width = 30
             filled = min(width, int(round(width * completed / total))) if total else width
             bar = "#" * filled + "-" * (width - filled)
-            model = getattr(models[item.model_index], "model", "none")
+            model = getattr(models[item.model_index], "model", "none") if item.arm in _MODEL_DEPENDENT_ARMS else "CONTROL"
             print(
                 f"PROGRESS [{bar}] {completed}/{total} {pct:6.2f}% "
                 f"model={model} arm={item.arm} family={item.family} complexity={item.complexity} "
