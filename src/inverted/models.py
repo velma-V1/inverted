@@ -147,6 +147,43 @@ class OllamaAdapter:
         "cuda error",
         "rocm error",
     )
+    _EXECUTOR_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "actions": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "op": {"type": "string", "enum": ["set", "resolve", "delete"]},
+                        "path": {"type": "string"},
+                        "value": {"type": ["string", "number", "boolean", "object", "array", "null"]},
+                    },
+                    "required": ["op", "path"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["actions"],
+        "additionalProperties": False,
+    }
+    _AUDITOR_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "accept": {"type": "boolean"},
+            "failed_requirements": {"type": "array", "items": {"type": "string"}, "maxItems": 64},
+            "reason": {"type": "string", "maxLength": 1024},
+        },
+        "required": ["accept", "failed_requirements", "reason"],
+        "additionalProperties": False,
+    }
+    _PREFLIGHT_SCHEMA = {
+        "type": "object",
+        "properties": {"ok": {"const": True}},
+        "required": ["ok"],
+        "additionalProperties": False,
+    }
 
     def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", timeout_s: float = 120.0, capture_content: bool = True, temperature: float = 0.0, max_tokens: int = 1024, max_retries: int = 0, retry_backoff_s: float = 1.0, think: bool | str | None = None, format_json: bool = False, context_limit: int | None = None):
         self.model = model
@@ -207,15 +244,28 @@ class OllamaAdapter:
         except json.JSONDecodeError:
             return {"status_code": response.status_code, "text": response.text}
 
-    def _payload(self, messages: list[dict[str, str]]) -> dict[str, Any]:
+    def _format_for_role(self, role: str) -> str | dict[str, Any] | None:
+        if not self.format_json:
+            return None
+        normalized = role.removeprefix("preflight_")
+        if normalized == "executor":
+            return self._EXECUTOR_SCHEMA
+        if normalized == "auditor":
+            return self._AUDITOR_SCHEMA
+        if role == "preflight":
+            return self._PREFLIGHT_SCHEMA
+        return "json"
+
+    def _payload(self, messages: list[dict[str, str]], role: str) -> dict[str, Any]:
         options: dict[str, Any] = {"temperature": self.temperature, "num_predict": self.max_tokens}
         if self.context_limit is not None:
             options["num_ctx"] = self.context_limit
         payload: dict[str, Any] = {"model": self.model, "messages": messages, "stream": False, "options": options}
         if self.think is not None:
             payload["think"] = self.think
-        if self.format_json:
-            payload["format"] = "json"
+        response_format = self._format_for_role(role)
+        if response_format is not None:
+            payload["format"] = response_format
         return payload
 
     def _attempt_from_raw(self, raw: dict[str, Any], attempt: int, status_code: int | None = 200) -> dict[str, Any]:
@@ -263,7 +313,7 @@ class OllamaAdapter:
 
     def complete(self, messages: list[dict[str, str]], *, role: str, context: dict[str, Any]) -> CompletionResult:
         start_ts, overall_start = _now(), time.perf_counter()
-        payload = self._payload(messages)
+        payload = self._payload(messages, role)
         attempts: list[dict[str, Any]] = []
         context = dict(context)
         context["_prompt"] = messages
