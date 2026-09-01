@@ -1,0 +1,139 @@
+{
+  "capture_content": true,
+  "captured_at": "2026-08-31T13:03:39.627681+00:00",
+  "checkpoint_path": "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-054125.checkpoint.jsonl",
+  "completed_seed_count": 5,
+  "completed_trial_units": 6480,
+  "config_path": "[REDACTED_USER_PROFILE]\\inverted\\configs\\decisive.yaml",
+  "cwd": "[REDACTED_USER_PROFILE]",
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "httpx": "0.28.1",
+    "pytest": null
+  },
+  "failure_log": "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-054125.call-failures.jsonl",
+  "git_commit": null,
+  "include_raw_rows": true,
+  "machine": "AMD64",
+  "models": [
+    {
+      "base_url": "http://127.0.0.1:11434",
+      "context_limit": 8192,
+      "format_json": true,
+      "max_retries": 2,
+      "max_tokens": 1024,
+      "model": "qwen3.5:9b-q8_0",
+      "provider": "ollama",
+      "retry_backoff_s": 5,
+      "temperature": 0.0,
+      "think": false,
+      "timeout_s": 600
+    },
+    {
+      "base_url": "http://127.0.0.1:11434",
+      "context_limit": 8192,
+      "format_json": true,
+      "max_retries": 2,
+      "max_tokens": 1024,
+      "model": "llama3.1:8b",
+      "provider": "ollama",
+      "retry_backoff_s": 5,
+      "temperature": 0.0,
+      "think": false,
+      "timeout_s": 600
+    },
+    {
+      "base_url": "http://127.0.0.1:11434",
+      "context_limit": 8192,
+      "format_json": true,
+      "max_retries": 2,
+      "max_tokens": 1024,
+      "model": "phi4-mini:3.8b",
+      "provider": "ollama",
+      "retry_backoff_s": 5,
+      "temperature": 0.0,
+      "think": false,
+      "timeout_s": 600
+    }
+  ],
+  "planned_trial_units": 6480,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "preflight": [
+    {
+      "auditor_parse_failures": 0,
+      "auditor_parse_ok": true,
+      "cells_attempted": 12,
+      "censorship_policy": "ZERO_CENSORSHIP",
+      "context_limit": 8192,
+      "executor_parse_failures": 0,
+      "executor_parse_ok": true,
+      "format_json": true,
+      "generation_censored": 0,
+      "max_generation_censored": 0,
+      "max_prompt_chars": 6112,
+      "model": "qwen3.5:9b-q8_0",
+      "provider": "ollama",
+      "think": false,
+      "total_latency_s": 38.24443880020408,
+      "total_retries": 0
+    },
+    {
+      "auditor_parse_failures": 0,
+      "auditor_parse_ok": true,
+      "cells_attempted": 12,
+      "censorship_policy": "ZERO_CENSORSHIP",
+      "context_limit": 8192,
+      "executor_parse_failures": 0,
+      "executor_parse_ok": true,
+      "format_json": true,
+      "generation_censored": 0,
+      "max_generation_censored": 0,
+      "max_prompt_chars": 6112,
+      "model": "llama3.1:8b",
+      "provider": "ollama",
+      "think": false,
+      "total_latency_s": 19.12509359989781,
+      "total_retries": 0
+    },
+    {
+      "auditor_parse_failures": 0,
+      "auditor_parse_ok": true,
+      "cells_attempted": 12,
+      "censorship_policy": "ZERO_CENSORSHIP",
+      "context_limit": 8192,
+      "executor_parse_failures": 0,
+      "executor_parse_ok": true,
+      "format_json": true,
+      "generation_censored": 0,
+      "max_generation_censored": 0,
+      "max_prompt_chars": 6112,
+      "model": "phi4-mini:3.8b",
+      "provider": "ollama",
+      "think": false,
+      "total_latency_s": 15.163467899896204,
+      "total_retries": 0
+    }
+  ],
+  "preflight_call_log": "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-054125.preflight-model-calls.jsonl",
+  "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+  "python": "3.14.6 (tags/v3.14.6:c63aec6, Jun 10 2026, 10:26:10) [MSC v.1944 64 bit (AMD64)]",
+  "python_executable": "C:\\Python314\\python.exe",
+  "resumed": true,
+  "run_ended_at": "2026-08-31T13:03:38.596569+00:00",
+  "run_started_at": "2026-08-31T12:30:23.987192+00:00",
+  "sequential_decision": null,
+  "sequential_interim_confidence": [
+    0.995,
+    0.99
+  ],
+  "sequential_seed_stages": [
+    3,
+    4,
+    5
+  ],
+  "stopped_early": false,
+  "value_checkpoint_seed_stages": [
+    1,
+    2
+  ]
+}

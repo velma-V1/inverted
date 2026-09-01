@@ -1,0 +1,6 @@
+component,n,successes,success_rate,blocked,catastrophic,wins_created,wins_destroyed,net_wins,failures_repaired,failures_prevented,failures_displaced,catastrophics_removed,catastrophics_added,wins_preserved,failures_unchanged,removed,stack
+FULL_MINUS_requirement_validator,1200,1200,1.0,0,0,0,0,0,0,0,0,0,0,1200,0,requirement_validator,retry -> targeted_repair -> oracle_auditor -> final_validator
+FULL_MINUS_retry,1200,1200,1.0,0,0,0,0,0,0,0,0,0,0,1200,0,retry,requirement_validator -> targeted_repair -> oracle_auditor -> final_validator
+FULL_MINUS_targeted_repair,1200,861,0.7175,339,0,0,339,-339,0,0,0,0,0,861,0,targeted_repair,requirement_validator -> retry -> oracle_auditor -> final_validator
+FULL_MINUS_oracle_auditor,1200,1200,1.0,0,0,0,0,0,0,0,0,0,0,1200,0,oracle_auditor,requirement_validator -> retry -> targeted_repair -> final_validator
+FULL_MINUS_final_validator,1200,1200,1.0,0,0,0,0,0,0,0,0,0,0,1200,0,final_validator,requirement_validator -> retry -> targeted_repair -> oracle_auditor

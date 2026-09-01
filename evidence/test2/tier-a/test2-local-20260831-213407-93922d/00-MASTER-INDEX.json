@@ -1,0 +1,34 @@
+{
+  "cache_hits": 56,
+  "hard_call_limit": 480,
+  "mode": "local",
+  "model_free_trial_units": 175200,
+  "models": [
+    "qwen3.5:9b-q8_0",
+    "llama3.1:8b",
+    "ministral-3:3b-instruct-2512-q8_0",
+    "cogito:3b-v1-preview-llama-q8_0",
+    "granite4:7b-a1b-h"
+  ],
+  "phase_limits": {
+    "atomic_audit": 20,
+    "auditing": 100,
+    "execution": 60,
+    "formalization": 60,
+    "progressive_holdout": 100,
+    "repair_factorial": 100,
+    "reserve": 0,
+    "stability": 40
+  },
+  "physical_model_calls": 396,
+  "residual_bottlenecks": [
+    {
+      "count": 2,
+      "failure_class": "auditor_block",
+      "fraction_of_all_cases": 0.5,
+      "perfect_component_ceiling_gain": 0.5
+    }
+  ],
+  "run_id": "test2-local-20260831-213407-93922d",
+  "verdict": "INCONCLUSIVE"
+}

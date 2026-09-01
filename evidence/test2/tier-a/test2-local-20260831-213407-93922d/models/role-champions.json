@@ -1,0 +1,6 @@
+{
+  "auditor": "qwen3.5:9b-q8_0",
+  "executor": "llama3.1:8b",
+  "formalizer": "qwen3.5:9b-q8_0",
+  "repairer": "cogito:3b-v1-preview-llama-q8_0"
+}

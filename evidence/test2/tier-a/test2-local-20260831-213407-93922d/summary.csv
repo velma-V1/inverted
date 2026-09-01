@@ -1,0 +1,8 @@
+metric,value
+run_id,test2-local-20260831-213407-93922d
+mode,local
+physical_model_calls,396
+hard_call_limit,480
+verdict,INCONCLUSIVE
+verdict_reason,Material evidence-integrity contamination prevents a decisive Tier-A interpretation.
+material_contamination_blockers,"[""non_unique_physical_model_call_identity""]"

@@ -1,0 +1,36 @@
+{
+  "local": {
+    "early_stop": false,
+    "hard_call_limit": 480,
+    "models": [
+      "qwen3.5:9b-q8_0",
+      "llama3.1:8b",
+      "ministral-3:3b-instruct-2512-q8_0",
+      "cogito:3b-v1-preview-llama-q8_0",
+      "granite4:7b-a1b-h"
+    ],
+    "ollama": {
+      "base_url": "http://127.0.0.1:11434",
+      "context_limit": 8192,
+      "max_tokens": 1024,
+      "retry_backoff_s": 0,
+      "temperature": 0,
+      "think": false,
+      "timeout_s": 600,
+      "transport_retries": 0
+    },
+    "phase_limits": {
+      "atomic_audit": 20,
+      "auditing": 100,
+      "execution": 60,
+      "formalization": 60,
+      "progressive_holdout": 100,
+      "repair_factorial": 100,
+      "reserve": 0,
+      "stability": 40
+    }
+  },
+  "model_free": {
+    "seed_count_for_local": 10
+  }
+}

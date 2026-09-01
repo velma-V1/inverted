@@ -1,0 +1,7 @@
+step,stack,success_rate,marginal_gain
+0,BASELINE,0.55,
+1,requirement_validator,0.55,0.0
+2,requirement_validator -> retry,0.7175,0.16749999999999998
+3,requirement_validator -> retry -> targeted_repair,1.0,0.2825
+4,requirement_validator -> retry -> targeted_repair -> oracle_auditor,1.0,0.0
+5,requirement_validator -> retry -> targeted_repair -> oracle_auditor -> final_validator,1.0,0.0

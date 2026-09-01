@@ -1,0 +1,78 @@
+{
+  "architecture_claim_guardrail": "The four-task progressive holdout is diagnostic Tier-A evidence but is not powered to support a universal layered-architecture claim. Any global architecture verdict from that block alone is INCONCLUSIVE; it is used to preregister the next confirmatory campaign.",
+  "builds_on": "Test 1 refuted universal inversion and exposed validator/retry/auditor confounds; the model-free Test-2 atlas is Tier C hypothesis generation only.",
+  "change_my_mind": "A future preregistered Tier-A replication with the same causal contrast and adequate power whose confidence interval reverses the current conclusion, without a >=2pp catastrophic-rate increase.",
+  "evidence_contract": [
+    "events.jsonl",
+    "model_calls.jsonl",
+    "trials.csv",
+    "trials.jsonl",
+    "failures.csv",
+    "summary.json",
+    "summary.csv",
+    "report.txt",
+    "config.json",
+    "provenance.json",
+    "preregistration.json",
+    "verdict.json",
+    "SHA256SUMS.csv",
+    "TEST2-NEXT-STRIDE-REPORT.txt",
+    "TEST2-COMPLETE-EVIDENCE.txt"
+  ],
+  "evidence_tier": "A",
+  "experiment": "VELMA Inverted Test 2 — bounded local causal specialization/repair campaign",
+  "failure_gates": {
+    "catastrophic_increase_pp": 2.0,
+    "paired_effect_bootstrap_ci95_upper_lte_pp": 0.0,
+    "structured_targeted_wilson_upper_lte": 0.3431
+  },
+  "hard_physical_call_ceiling": 480,
+  "if_inconclusive_next": "Increase only the matched primary repair sample required to narrow the confidence interval; preserve models, prompts, conditions, scoring, and gates.",
+  "if_refuted_next": "Do not prompt-tune the failed repair arm. Use the recorded failure taxonomy to test the highest residual causal mechanism: alternate repair model, fault-specific routing, or additional fresh candidate generation depending on measured break-even headroom.",
+  "if_supported_next": "Confirm the winning repair mechanism inside a larger matched progressive architecture campaign, preserving mutation-boundary deterministic validation and testing whether repair gains survive role-specialized routing.",
+  "phase_budgets": {
+    "atomic_audit": 20,
+    "auditing": 100,
+    "execution": 60,
+    "formalization": 60,
+    "progressive_holdout": 100,
+    "repair_factorial": 100,
+    "reserve": 0,
+    "stability": 40
+  },
+  "primary_hypothesis": {
+    "confidence_level": 0.95,
+    "control": "raw failure IDs + full regeneration",
+    "equal_budget": "18 distinct physical calls per primary condition: same 3 selected repair models × same 6 fixed failing candidates; one uncached physical call per model/candidate/condition.",
+    "matched_factorial_cells_per_condition": 18,
+    "minimum_effect_pp": 10.0,
+    "paired_uncertainty": "95% paired bootstrap over the six task clusters after averaging the three matched model-level treatment-control contrasts within each task.",
+    "primary_failure_candidates": 6,
+    "repair_model_selection": "Select the top 3 repair models on a disjoint 4-candidate selection-only screen. Every model receives exactly one call in each of the four feedback×strategy cells; selection candidates never appear in the primary factorial.",
+    "selected_repair_models": 3,
+    "statement": "On matched deterministic failures, structured-feedback targeted repair increases hidden-gold recovery by at least 10 percentage points over equal-budget raw-feedback full regeneration, exceeds the preregistered 34.31% third-blind-retry break-even, and does not increase catastrophic failures by 2 percentage points or more.",
+    "third_retry_break_even": 0.3431,
+    "treatment": "structured feedback + targeted repair"
+  },
+  "secondary_estimands": [
+    "model × role × family × complexity × representation capability with confidence intervals",
+    "holistic versus atomic auditor false-accept and false-reject behavior on matched decision-sensitive cases",
+    "repair feedback main effect, repair strategy main effect, and feedback×strategy interaction",
+    "S0→S4 progressive specialization wins created/destroyed on four untouched hard holdouts",
+    "alternate audit-before-repair ordering versus repair-before-audit",
+    "model complementarity, unique wins, disagreement risk, router regret, and oracle routing headroom",
+    "tokens, wall latency, load latency, prompt-eval latency, eval latency, and physical calls per recovered win"
+  ],
+  "stopping_rule": "FIXED_BUDGET_NO_SEQUENTIAL_EARLY_STOP",
+  "success_gates": {
+    "all_primary_cells_are_distinct_physical_calls": true,
+    "all_required": true,
+    "catastrophic_increase_pp_lt": 2.0,
+    "complete_matched_primary_cells": true,
+    "paired_effect_bootstrap_ci95_lower_gt_pp": 0.0,
+    "paired_effect_point_estimate_pp_gte": 10.0,
+    "repair_selection_screen_disjoint_and_condition_balanced": true,
+    "structured_targeted_wilson_lower_gt": 0.3431,
+    "three_model_by_six_task_cartesian_grid": true
+  }
+}

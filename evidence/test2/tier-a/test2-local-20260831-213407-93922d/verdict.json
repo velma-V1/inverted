@@ -1,0 +1,58 @@
+{
+  "material_contamination_blockers": [
+    "non_unique_physical_model_call_identity"
+  ],
+  "primary_statistical_verdict": {
+    "bootstrap_iterations": 20000,
+    "bootstrap_seed": 20260831,
+    "bootstrap_unit": "task_cluster",
+    "catastrophic_delta_pp": 0.0,
+    "failure_checks": {
+      "catastrophic increase reached >=2pp failure gate": false,
+      "paired task-cluster effect 95% upper CI is <=0pp": false,
+      "structured targeted repair 95% upper CI is <= third-retry break-even": false
+    },
+    "failure_reasons": [],
+    "hypothesis": "On matched deterministic failures, structured-feedback targeted repair increases hidden-gold recovery by at least 10 percentage points over equal-budget raw-feedback full regeneration, exceeds the preregistered 34.31% third-blind-retry break-even, and does not increase catastrophic failures by 2 percentage points or more.",
+    "minimum_effect_pp": 10.0,
+    "models": 3,
+    "n_matched": 18,
+    "paired_effect_ci95_high_pp": 11.11111111111111,
+    "paired_effect_ci95_low_pp": -44.44444444444444,
+    "paired_effect_pp": -16.666666666666664,
+    "primary_physical_cells": 36,
+    "raw_regenerate": {
+      "catastrophic": 1,
+      "catastrophic_rate": 0.05555555555555555,
+      "ci95_high": 0.6628358435795723,
+      "ci95_low": 0.24559518127005633,
+      "n": 18,
+      "rate": 0.4444444444444444,
+      "successes": 8
+    },
+    "structured_targeted": {
+      "catastrophic": 1,
+      "catastrophic_rate": 0.05555555555555555,
+      "ci95_high": 0.5087265656029745,
+      "ci95_low": 0.12499753379553996,
+      "n": 18,
+      "rate": 0.2777777777777778,
+      "successes": 5
+    },
+    "success_checks": {
+      "catastrophic_delta_below_failure_gate": true,
+      "paired_effect_ci_positive": false,
+      "paired_effect_point_estimate": false,
+      "recovery_ci_clears_third_retry_break_even": false
+    },
+    "success_reasons": [
+      "catastrophic_delta_below_failure_gate"
+    ],
+    "task_clusters": 6,
+    "tasks": 6,
+    "third_retry_break_even": 0.3431,
+    "verdict": "INCONCLUSIVE"
+  },
+  "reason": "Material evidence-integrity contamination prevents a decisive Tier-A interpretation.",
+  "verdict": "INCONCLUSIVE"
+}

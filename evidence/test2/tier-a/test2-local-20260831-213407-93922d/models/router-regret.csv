@@ -1,0 +1,5 @@
+router_level,successes,model,assignments,regret_to_oracle_successes
+best_single_model,32,qwen3.5:9b-q8_0,,4
+best_static_role_assignment,34,,"{""auditor"": ""qwen3.5:9b-q8_0"", ""executor"": ""llama3.1:8b"", ""formalizer"": ""qwen3.5:9b-q8_0"", ""repairer"": ""llama3.1:8b""}",2
+best_task_type_router,34,,"{""auditor|policy"": ""qwen3.5:9b-q8_0"", ""auditor|reconciliation"": ""qwen3.5:9b-q8_0"", ""auditor|state"": ""qwen3.5:9b-q8_0"", ""executor|policy"": ""llama3.1:8b"", ""executor|reconciliation"": ""granite4:7b-a1b-h"", ""executor|state"": ""cogito:3b-v1-preview-llama-q8_0"", ""formalizer|policy"": ""qwen3.5:9b-q8_0"", ""formalizer|reconciliation"": ""granite4:7b-a1b-h"", ""formalizer|state"": ""cogito:3b-v1-preview-llama-q8_0"", ""repairer|policy"": ""llama3.1:8b"", ""repairer|reconciliation"": ""cogito:3b-v1-preview-llama-q8_0"", ""repairer|state"": ""cogito:3b-v1-preview-llama-q8_0""}",2
+oracle_per_task,36,,,0

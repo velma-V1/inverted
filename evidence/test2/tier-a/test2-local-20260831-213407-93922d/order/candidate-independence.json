@@ -1,0 +1,12 @@
+{
+  "attempt_1_success_rate": 0.55,
+  "attempt_2_success_rate": 0.54,
+  "attempt_3_success_rate": 0.5875,
+  "independent_expected_no_success_in_3_rate": 0.08538749999999998,
+  "n": 1200,
+  "observed_no_success_in_3_rate": 0.1675,
+  "observed_to_independent_failure_ratio": 1.9616454399063101,
+  "success_correlation_attempt_1_2": 0.3044973758464855,
+  "success_correlation_attempt_1_3": 0.22202187009935506,
+  "success_correlation_attempt_2_3": 0.2761325426138279
+}

@@ -1,0 +1,4 @@
+attempts_available,cumulative_successes,cumulative_success_rate,marginal_recoveries,marginal_gain_pp,conditional_recovery_rate,remaining_failures
+1,660,0.55,660,55.00000000000001,0.55,540
+2,861,0.7175,201,16.75,0.37222222222222223,339
+3,999,0.8325,138,11.5,0.40707964601769914,201

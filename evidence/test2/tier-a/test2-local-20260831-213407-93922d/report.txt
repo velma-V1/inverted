@@ -1,0 +1,9 @@
+VELMA TEST 2 — REPORT
+=====================
+Run ID: test2-local-20260831-213407-93922d
+Mode: local
+Physical model calls: 396
+Hard call limit: 480
+Verdict: INCONCLUSIVE
+Reason: Material evidence-integrity contamination prevents a decisive Tier-A interpretation.
+Material contamination blockers: non_unique_physical_model_call_identity

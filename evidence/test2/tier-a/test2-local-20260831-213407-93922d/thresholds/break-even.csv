@@ -1,0 +1,6 @@
+component,target_pp,required_net_recoveries,recoverable_baseline_failures,required_fraction_of_baseline_failures,observed_net_wins,observed_gain,observed_fraction_of_required_recoveries,target_already_met,globally_feasible_if_failures_are_recoverable,max_possible_gain_pp
+requirement_validator,0.0,0,540,0.0,0,0.0,,True,True,45.0
+retry,0.0,0,540,0.0,189,0.16749999999999998,,True,True,45.0
+targeted_repair,0.0,0,540,0.0,501,0.44999999999999996,,True,True,45.0
+oracle_auditor,0.0,0,540,0.0,0,0.0,,True,True,45.0
+final_validator,0.0,0,540,0.0,0,0.0,,True,True,45.0

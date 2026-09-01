@@ -1,0 +1,36 @@
+﻿{
+    "schema_version":  1,
+    "purpose":  "Frozen empirical source evidence for Inverted Test-3",
+    "created_utc":  "2026-09-01T14:17:09.9741163Z",
+    "sources":  [
+                    {
+                        "source_id":  "test1",
+                        "source_class":  "test1",
+                        "run_id":  "decisive-20260831-054125",
+                        "repo_path":  "evidence/test1/decisive-20260831-054125-COMPLETE-DATA-PACKET",
+                        "original_run_path":  "[REDACTED_USER_PROFILE]\\inverted-runs\\decisive-20260831-054125-COMPLETE-DATA-PACKET\\final",
+                        "copied_from":  "[REDACTED_USER_PROFILE]\\inverted\\test3-s0-sources\\test1",
+                        "physical_model_evidence":  true,
+                        "note":  "This is the exact S0 Test-1 source copy. SHA256SUMS.csv is the previously disclosed post-hoc integrity wrapper and is not claimed to have existed during the original Test-1 run."
+                    },
+                    {
+                        "source_id":  "test2-tier-a",
+                        "source_class":  "test2_tier_a",
+                        "run_id":  "test2-local-20260831-213407-93922d",
+                        "repo_path":  "evidence/test2/tier-a/test2-local-20260831-213407-93922d",
+                        "original_run_path":  "[REDACTED_USER_PROFILE]\\inverted\\test2-runs\\test2-local-20260831-213407-93922d",
+                        "copied_from":  "[REDACTED_USER_PROFILE]\\inverted\\test2-runs\\test2-local-20260831-213407-93922d",
+                        "physical_model_evidence":  true,
+                        "note":  "Accepted Test-2 Tier-A real-model evidence bundle used by Test-3 S0."
+                    },
+                    {
+                        "source_id":  "test2-model-free",
+                        "source_class":  "test2_model_free",
+                        "repo_path":  null,
+                        "physical_model_evidence":  false,
+                        "committed":  false,
+                        "regeneration":  "python -m inverted.test2_cli model-free --config configs/test2-model-free.yaml --output-dir \u003coutput\u003e --run-id test2-model-free",
+                        "note":  "Not committed because it is deterministic, regenerable from repository code, and requires zero model calls."
+                    }
+                ]
+}

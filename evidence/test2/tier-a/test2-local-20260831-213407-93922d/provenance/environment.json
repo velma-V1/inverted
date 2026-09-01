@@ -1,0 +1,15 @@
+{
+  "captured_at": "2026-08-31T21:52:35.253705+00:00",
+  "cwd": "/mnt/c/Users/Matt/inverted",
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "httpx": "0.28.1",
+    "pytest": "9.1.1"
+  },
+  "git_commit": "ac17c75fea03987a0e4cce4d404fa71b269a773e",
+  "machine": "x86_64",
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+  "processor": "",
+  "python": "3.14.4 (main, Jun 18 2026, 14:25:02) [GCC 15.2.0]",
+  "python_executable": "/home/xxthatguyxx/.velma-preflight/venv/bin/python"
+}

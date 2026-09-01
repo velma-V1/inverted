@@ -1,0 +1,17 @@
+VELMA TEST 2 — NEXT STRIDE REPORT
+=================================
+Run ID: test2-local-20260831-213407-93922d
+Physical model calls: 396
+Cache hits: 56
+
+ROLE CHAMPIONS
+auditor: qwen3.5:9b-q8_0
+executor: llama3.1:8b
+formalizer: qwen3.5:9b-q8_0
+repairer: cogito:3b-v1-preview-llama-q8_0
+
+REMAINING BOTTLENECKS IN S4 FULL SPECIALIZATION
+1. auditor_block count=2 perfect-component ceiling gain=0.500000
+
+NEXT EXPERIMENT
+Target the highest residual recoverable failure class after checking whether its required component is already saturated, redundant, or router-sensitive.

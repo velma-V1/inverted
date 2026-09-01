@@ -1,0 +1,10 @@
+fault,total,formalizer,formalizer_rate,executor,executor_rate,validator,validator_rate,repair,repair_rate,revalidation,revalidation_rate,auditor,auditor_rate,final_validator,final_validator_rate,escaped,escaped_rate
+forbidden_procedure,28,0,0.0,0,0.0,28,1.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0
+forbidden_procedure+forced_requirement_violation,11,0,0.0,0,0.0,11,1.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0
+none,660,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0
+omitted_requirement,180,0,0.0,0,0.0,180,1.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0
+ordering_violation,26,0,0.0,0,0.0,26,1.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0
+ordering_violation+forced_requirement_violation,10,0,0.0,0,0.0,10,1.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0
+unintended_side_effect+forced_requirement_violation,155,0,0.0,0,0.0,155,1.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0
+wrong_value,124,0,0.0,0,0.0,124,1.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0
+wrong_value+forced_requirement_violation,6,0,0.0,0,0.0,6,1.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0

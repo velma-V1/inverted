@@ -1,0 +1,56 @@
+{
+  "arms": [
+    "A_DIRECT",
+    "B_DIRECT_CHECKED",
+    "C_SYSTEM",
+    "D_INVERTED",
+    "E_RANDOM_AUDITOR",
+    "F_ORACLE_AUDITOR"
+  ],
+  "bootstrap_samples": 10000,
+  "bootstrap_seed": 20260830,
+  "complexities": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "decisive": true,
+  "epochs": 3,
+  "families": [
+    "state",
+    "policy",
+    "reconciliation"
+  ],
+  "max_candidates": 3,
+  "max_tokens_per_trial": 4096,
+  "metadata": {},
+  "minimum_primary_trials": 180,
+  "qualities": [
+    0.2,
+    0.4,
+    0.6,
+    0.8,
+    0.95
+  ],
+  "seeds": [
+    101,
+    211,
+    307,
+    401,
+    503
+  ],
+  "sequential_interim_confidence": [
+    0.995,
+    0.99
+  ],
+  "sequential_seed_stages": [
+    3,
+    4,
+    5
+  ],
+  "value_checkpoint_seed_stages": [
+    1,
+    2
+  ]
+}

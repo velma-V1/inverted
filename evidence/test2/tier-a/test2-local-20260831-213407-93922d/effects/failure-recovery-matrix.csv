@@ -1,0 +1,9 @@
+fault,total_failures,first_blocked_by_requirement_validator,first_blocked_by_requirement_validator_rate,recovered_by_retry,recovered_by_retry_rate,recovered_by_targeted_repair,recovered_by_targeted_repair_rate
+forbidden_procedure,28,28,1.0,9,0.32142857142857145,19,0.6785714285714286
+forbidden_procedure+forced_requirement_violation,11,11,1.0,3,0.2727272727272727,8,0.7272727272727273
+omitted_requirement,180,180,1.0,81,0.45,99,0.55
+ordering_violation,26,26,1.0,5,0.19230769230769232,21,0.8076923076923077
+ordering_violation+forced_requirement_violation,10,10,1.0,4,0.4,6,0.6
+unintended_side_effect+forced_requirement_violation,155,155,1.0,54,0.34838709677419355,101,0.6516129032258065
+wrong_value,124,124,1.0,42,0.3387096774193548,82,0.6612903225806451
+wrong_value+forced_requirement_violation,6,6,1.0,3,0.5,3,0.5
