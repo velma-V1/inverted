@@ -1,0 +1,57 @@
+name: test3-s1-validation
+
+on:
+  push:
+    branches:
+      - design/test3-adaptive-evidence-discovery
+      - build/test3-s1-fixed-stack-order
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test3-s1-mock-validation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Full pytest suite
+        run: python -m pytest -q
+      - name: Run Section 1 mock smoke
+        run: >-
+          python -m inverted.test3_s1_cli mock-smoke
+          --output-dir test3-s1-ci/mock-validation
+          --run-id test3-s1-mock
+      - name: Verify mock-only evidence contract
+        run: |
+          python - <<'PY'
+          import csv
+          import json
+          from pathlib import Path
+
+          p = Path("test3-s1-ci/mock-validation")
+          verdict = json.loads((p / "verdict.json").read_text(encoding="utf-8"))
+          assert verdict["verdict"] == "MOCK_VALIDATION_ONLY", verdict
+          assert verdict["tier_a_architecture_claim"] is False, verdict
+          assert verdict["real_model_inference"] is False, verdict
+          calls = [json.loads(line) for line in (p / "model_calls.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+          assert calls, "mock validation must exercise the call path"
+          assert all((row.get("telemetry") or {}).get("provider") == "mock" for row in calls)
+          assert all(row.get("cache_hit") is False for row in calls)
+          prereg = json.loads((p / "preregistration.json").read_text(encoding="utf-8"))
+          assert prereg["exact_budget"] == 80
+          assert prereg["arm_count"] == 4
+          assert prereg["physical_call_cap_per_arm"] == 20
+          with (p / "SHA256SUMS.csv").open(encoding="utf-8", newline="") as handle:
+              hashes = list(csv.DictReader(handle))
+          assert hashes and all((p / row["path"]).is_file() for row in hashes)
+          PY
+      - name: Upload Section 1 mock validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: test3-s1-validation-evidence
+          path: test3-s1-ci/mock-validation
+          if-no-files-found: error
