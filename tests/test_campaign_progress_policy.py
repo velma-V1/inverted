@@ -1,8 +1,8 @@
 from pathlib import Path
 
 
-def test_readme_freezes_universal_campaign_progress_rule():
-    text = Path("README.md").read_text(encoding="utf-8").lower()
+def test_testing_policy_freezes_universal_campaign_progress_rule():
+    text = Path("TESTING.md").read_text(encoding="utf-8").lower()
 
     assert "universal campaign progress rule" in text
     assert "every future campaign section" in text
