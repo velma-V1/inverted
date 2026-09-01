@@ -62,6 +62,26 @@ def test_s2_writer_emits_complete_hash_verified_forensic_packet(tmp_path):
     assert all(row["fixture_seed"] for row in manifest)
     assert all(row["initial_failed_requirements"] for row in manifest)
 
+    with (tmp_path / "shadow_counterfactuals.csv").open(encoding="utf-8", newline="") as handle:
+        shadow = list(csv.DictReader(handle))
+    assert shadow
+    required_shadow_fields = {
+        "candidate_before_id",
+        "candidate_before_state",
+        "candidate_before_actions",
+        "proposed_candidate_id",
+        "proposed_candidate_state",
+        "proposed_candidate_actions",
+        "proposed_success",
+        "proposed_catastrophic",
+        "proposed_failed_requirements",
+        "counterfactual_evaluated",
+    }
+    assert required_shadow_fields.issubset(set(shadow[0]))
+    assert all(row["counterfactual_evaluated"].lower() == "true" for row in shadow)
+    assert all(row["proposed_candidate_state"] for row in shadow)
+    assert all(row["proposed_candidate_actions"] for row in shadow)
+
     complete = (tmp_path / "COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
     for name in REQUIRED_S2_FILES:
         if name not in {"SHA256SUMS.csv", "COMPLETE-EVIDENCE.txt"}:
