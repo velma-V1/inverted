@@ -28,11 +28,16 @@ def _smoke_config():
                 "cases_per_class": 1,
                 "arms": ["DIRECT", "CHECKED", "INVERTED"],
             },
+            "ground_truth_isolation": {
+                "call_cap": 1080,
+                "cases_per_regime": 1,
+                "arms": ["DIRECT", "CHECKED", "INVERTED"],
+            },
         }
     }
 
 
-@pytest.mark.parametrize("test_name", ["long_horizon", "evidence_trust", "authority"])
+@pytest.mark.parametrize("test_name", ["long_horizon", "evidence_trust", "authority", "ground_truth_isolation"])
 def test_mock_smoke_run_writes_complete_lossless_packet(tmp_path, test_name):
     model = MockModelAdapter(model="mock-rule", seed=7, capture_content=True)
     result = run_assistant_value_test(
