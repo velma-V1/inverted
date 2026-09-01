@@ -40,6 +40,7 @@ jobs:
           verdict = json.loads((p / "verdict.json").read_text(encoding="utf-8"))
           failures = json.loads((p / "protocol_failures.json").read_text(encoding="utf-8"))
           policy = json.loads((p / "router_policy_snapshot.json").read_text(encoding="utf-8"))
+          provenance = json.loads((p / "provenance.json").read_text(encoding="utf-8"))
           calls = [json.loads(line) for line in (p / "model_calls.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
           snapshots = [json.loads(line) for line in (p / "routing_state_snapshots.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
           with (p / "trials.csv").open(encoding="utf-8", newline="") as handle:
@@ -56,7 +57,7 @@ jobs:
           assert master["protocol_valid_for_primary_claim"] is True, master
           assert master["physical_model_calls"] == 720, master
           assert master["combined_external_actions"] == 720, master
-          assert master["combined_action_limit"] == 720, master
+          assert master["combined_action_limit"] == 732, master
           assert master["trial_rows"] == 360, master
           assert master["matched_case_count"] == 72, master
           assert master["arm_count"] == 5, master
@@ -64,7 +65,8 @@ jobs:
           assert master["perturbation_count"] == 3, master
 
           assert prereg["exact_budget"] == 720, prereg
-          assert prereg["combined_action_budget"] == 720, prereg
+          assert prereg["combined_action_budget"] == 732, prereg
+          assert prereg["provenance_api_call_budget"] == 12, prereg
           assert prereg["absolute_action_ceiling"] == 1000, prereg
           assert prereg["arm_count"] == 5, prereg
           assert prereg["physical_call_cap_per_arm"] == 144, prereg
@@ -80,6 +82,7 @@ jobs:
               "cogito:3b-v1-preview-llama-q8_0",
               "llama3.1:8b",
           }, prereg
+          assert provenance["external_provenance_api_calls"] == 0, provenance
 
           assert failures == [], failures
           assert verdict["protocol_valid_for_primary_claim"] is True, verdict
@@ -126,12 +129,16 @@ jobs:
           assert policy["arms"]["S2-B0"]["sequence"] == ["retry_qwen", "repair_cogito"], policy
           assert set(policy["intervention_library"]) == {"retry_qwen", "repair_cogito", "switch_llama"}, policy
 
-          combined = next(row for row in action_budget if row["kind"] == "combined_total")
-          model_calls = next(row for row in action_budget if row["kind"] == "model_call")
-          assert int(combined["used"]) == 720 and int(combined["limit"]) == 720, combined
+          budget_by_kind = {row["kind"]: row for row in action_budget}
+          combined = budget_by_kind["combined_total"]
+          model_calls = budget_by_kind["model_call"]
+          assert int(combined["used"]) == 720, combined
+          assert int(combined["limit"]) == 732, combined
+          assert int(combined["remaining"]) == 12, combined
           assert int(model_calls["used"]) == 720, model_calls
+          assert "provenance_api_call" not in budget_by_kind, action_budget
 
-          # The file exists even when mock determinism produces zero divergences.
+          # The files exist even when mock determinism produces zero rows.
           assert (p / "stochastic_divergence.csv").is_file()
           assert (p / "routing_decisions.csv").is_file()
           assert (p / "shadow_counterfactuals.csv").is_file()
