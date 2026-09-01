@@ -1,9 +1,15 @@
 s1:
   section: S1_FIXED_STACK_ORDER
-  holdout: A
+  protocol_revision: S1-R1
+  holdout: A-R1
   hard_call_limit: 80
   arm_count: 4
   per_arm_call_cap: 20
+  matched_tasks: 10
+  calls_per_arm_task: 2
+  intervention_start: deterministic_verified_failure
+  predecessor_invalid_run: test3-s1-20260901-111233
+  predecessor_invalidation: INTERVENTION_EXPOSURE_COLLAPSE
   no_outcome_dependent_early_stopping: true
   large_signal_rule:
     min_net_wins_vs_baseline: 2
