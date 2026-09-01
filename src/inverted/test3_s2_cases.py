@@ -77,13 +77,14 @@ def build_holdout_b() -> list[S2ExecutionCase]:
     return cases
 
 
-def _fixture_seed(case: S2ExecutionCase) -> int:
+def fixture_seed_s2(case: S2ExecutionCase) -> int:
+    """Return the deterministic seed used to construct the known-valid pre-fault candidate."""
     base = sum(ord(ch) for ch in str(case.metadata["base_task_id"]))
     return S2_FIXTURE_SEED_OFFSET + base
 
 
 def _valid_candidate(case: S2ExecutionCase) -> Candidate:
-    candidate = generate_candidate(case.task, 1.0, _fixture_seed(case))
+    candidate = generate_candidate(case.task, 1.0, fixture_seed_s2(case))
     result = evaluate_task(case.task, candidate.state, candidate.actions)
     if not result.success:
         raise AssertionError(f"S2 base fixture unexpectedly invalid: {case.case_id}")
@@ -207,8 +208,10 @@ def build_seed_failure_s2(case: S2ExecutionCase) -> Candidate:
             "source_case_id": case.case_id,
             "base_task_id": case.metadata["base_task_id"],
             "private_fixture_label": perturbation,
+            "fixture_seed": fixture_seed_s2(case),
             "fixture_selected_seed": case.metadata.get("selected_seed"),
             "fixture_seed_scan_offset": case.metadata.get("seed_scan_offset"),
+            "fixture_requirement_count": case.metadata.get("requirement_count"),
             "public_evidence": public_evidence,
         },
     )
