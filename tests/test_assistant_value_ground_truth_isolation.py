@@ -84,3 +84,20 @@ def test_each_planted_regime_changes_only_test_harness_artifacts_not_clean_build
         else:
             assert injection["planted"] is True
             assert observed_payload != baseline or observed_control != control
+
+
+def test_statistical_proxy_features_are_reserved_for_cross_case_proxy_regimes():
+    expected = {"provenance_proxy", "cross_trial_contamination", "control_plane_proxy"}
+    cases = generate_ground_truth_cases(seed=20260901, cases_per_regime=2)
+    seen = set()
+    for case in cases:
+        baseline = ground_truth_prompt_payload(case, arm="DIRECT")
+        _, _, injection = inject_ground_truth_leak(
+            case,
+            payload=baseline,
+            control={"route_bucket": "neutral", "cache": {}},
+        )
+        if injection["proxy_feature"] is not None:
+            seen.add(case["regime"])
+        assert (injection["proxy_feature"] is not None) is (case["regime"] in expected)
+    assert seen == expected
