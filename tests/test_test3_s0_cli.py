@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from inverted.test3_s0_cli import _flatten_validator_results, _verify_sources, main
+from inverted.test3_s0_cli import _flatten_validator_results, _metadata_edge_cases, _verify_sources, main
 from inverted.test3_s0_normalize import normalize_test2_event
 from inverted.test3_s0_types import EvidenceSource
 
@@ -90,6 +90,33 @@ def test_validator_results_are_flattened_with_raw_disagreement_metadata():
     assert {row["verifier"] for row in rows} == {"schema", "semantic"}
     assert {row["result"] for row in rows} == {"pass", "fail"}
     assert all("raw" in row for row in rows)
+
+
+def test_lifecycle_metadata_is_promoted_to_rich_edge_case_record():
+    metadata = [{
+        "source_id": "test1",
+        "source_file": "events.jsonl",
+        "record_type": "lifecycle_event",
+        "line": 1,
+        "value": {
+            "event": "run_started",
+            "run_id": "decisive-20260831-054125",
+            "timestamp": "2026-08-31T12:30:23.987192+00:00",
+        },
+    }]
+    rows = _metadata_edge_cases(metadata)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["kind"] == "normalization_schema_boundary"
+    assert row["classification"] == "valid_run_lifecycle_metadata_not_task_transition"
+    assert row["event"] == "run_started"
+    assert row["run_id"] == "decisive-20260831-054125"
+    assert row["source_file"] == "events.jsonl"
+    assert row["line"] == 1
+    assert row["task_identity_present"] is False
+    assert row["raw_record_hash"]
+    assert row["raw"]["event"] == "run_started"
+    assert "previously misclassified" in row["discovery_reason"]
 
 
 def test_cli_source_does_not_import_model_adapter():
