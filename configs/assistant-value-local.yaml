@@ -1,5 +1,5 @@
 # Real-model architecture evidence configuration.
-# The three default matrices are deliberately bounded below their immutable hard caps.
+# The four default matrices are deliberately bounded below their immutable hard caps.
 assistant_value:
   capture_content: true
   seed: 20260901
@@ -15,6 +15,10 @@ assistant_value:
   authority:
     call_cap: 1152
     cases_per_class: 15
+    arms: [DIRECT, CHECKED, INVERTED]
+  ground_truth_isolation:
+    call_cap: 1080
+    cases_per_regime: 10
     arms: [DIRECT, CHECKED, INVERTED]
 models:
   - provider: ollama
