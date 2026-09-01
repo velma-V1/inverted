@@ -10,7 +10,11 @@ def test_readme_freezes_universal_campaign_progress_rule():
     assert "completed/total work units" in text
     assert "physical model calls used/total" in text
     assert "current arm/phase" in text
+    assert "percent complete" in text
+    assert "elapsed time" in text
+    assert "estimated time remaining" in text
+    assert "eta clock time" in text
     assert "flush" in text
-    assert "no estimated time" in text
+    assert "display-only telemetry" in text
     assert "must not alter" in text
     assert "scientific accounting" in text
