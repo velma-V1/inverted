@@ -156,7 +156,7 @@ def _policy_snapshot() -> dict[str, Any]:
             "S2-B1": {"router": "task_family", "features": ["family"]},
             "S2-B2": {"router": "failure_signature", "features": ["failed_requirement_ids", "failed_requirement_kinds", "failed_count", "failure_signature", "deterministic_success", "catastrophic"]},
             "S2-B3": {"router": "rich_evidence_state", "features": ["family", "complexity", "failed_requirement_ids", "failed_requirement_kinds", "failed_count", "failure_signature", "deterministic_success", "catastrophic", "previous_action", "previous_model", "retry_count", "budget_spent", "budget_remaining"]},
-            "S2-B4": {"router": "seeded_random_negative_control", "features": ["failed_count", "failure_signature"], "rng": "sha256 frozen seed stream"},
+            "S2-B4": {"router": "seeded_random_negative_control", "features": [], "rng": "sha256 outcome-independent frozen seed stream"},
         },
         "forbidden_features": ["target_state", "hidden_gold", "injected_faults", "perturbation_class", "future_outcome", "oracle_selected_action"],
     }
