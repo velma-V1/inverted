@@ -308,6 +308,12 @@ def _pick_existing(root: Path, candidates: tuple[str, ...]) -> Path | None:
     return next((root / rel for rel in candidates if (root / rel).is_file()), None)
 
 
+def _is_test1_lifecycle_event(row: dict[str, Any]) -> bool:
+    event = str(row.get("event") or "")
+    has_task_identity = any(row.get(key) not in (None, "") for key in ("case_id", "task_id", "trial_id", "id"))
+    return event in {"run_started", "run_ended"} and not has_task_identity
+
+
 def normalize_bundle(source_id: str, source_class: str, bundle: str | Path) -> NormalizationResult:
     root = Path(bundle)
     result = NormalizationResult()
@@ -343,7 +349,18 @@ def normalize_bundle(source_id: str, source_class: str, bundle: str | Path) -> N
         else:
             rows = _read_jsonl(path, local_errors.append)
         normalized = 0
+        metadata_rows = 0
         for index, row in enumerate(rows, start=1):
+            if source_class == "test1" and record_type == "events.jsonl" and _is_test1_lifecycle_event(row):
+                result.metadata_records.append({
+                    "source_id": source_id,
+                    "source_file": path.relative_to(root).as_posix(),
+                    "record_type": "lifecycle_event",
+                    "line": index,
+                    "value": dict(row),
+                })
+                metadata_rows += 1
+                continue
             try:
                 result.transitions.append(adapter(source_id, row))
                 normalized += 1
@@ -357,6 +374,7 @@ def normalize_bundle(source_id: str, source_class: str, bundle: str | Path) -> N
             "path": path.relative_to(root).as_posix(),
             "input_rows": len(rows) + sum(1 for e in local_errors if e.get("raw") is not None and str(e.get("raw", "")).startswith("{bad")),
             "normalized_rows": normalized,
+            "metadata_rows": metadata_rows,
             "dropped_rows": len(local_errors),
             "unknown_fields": [],
             "errors": [e.get("error") for e in local_errors],
