@@ -7,8 +7,8 @@ from pathlib import Path
 
 import yaml
 
-from inverted.test3_s0_artifacts import Test3S0ArtifactWriter, _metadata_edge_cases
-from inverted.test3_s0_cli import _analysis_edge_cases, _flatten_validator_results, _verify_sources, main
+from inverted.test3_s0_artifacts import Test3S0ArtifactWriter, _analysis_edge_cases, _metadata_edge_cases
+from inverted.test3_s0_cli import _flatten_validator_results, _verify_sources, main
 from inverted.test3_s0_normalize import normalize_test2_event
 from inverted.test3_s0_types import EvidenceSource
 
@@ -155,7 +155,8 @@ def test_component_outcome_summary_is_persisted_separately(tmp_path: Path):
     })
     path = packet / "component_outcome_summary.csv"
     assert path.exists()
-    rows = list(csv.DictReader(path.open(encoding="utf-8", newline="")))
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
     assert rows[0]["candidate"] == "retry"
 
 
