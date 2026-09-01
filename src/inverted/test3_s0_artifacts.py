@@ -7,6 +7,8 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from .test3_s0_analysis import score_component_outcomes
+
 
 STANDARD_PACKET_FILES = (
     "preregistration.json",
@@ -37,6 +39,7 @@ S0_PACKET_FILES = (
     "normalization_coverage.csv",
     "normalization_errors.csv",
     "fixed_policy_candidates.csv",
+    "component_outcome_summary.csv",
     "adaptive_policy_candidates.csv",
     "control_results.csv",
     "pareto_frontier.csv",
@@ -102,6 +105,7 @@ _CSV_FILES = {
     "normalization_coverage": "normalization_coverage.csv",
     "normalization_errors": "normalization_errors.csv",
     "fixed_policy_candidates": "fixed_policy_candidates.csv",
+    "component_outcome_summary": "component_outcome_summary.csv",
     "adaptive_policy_candidates": "adaptive_policy_candidates.csv",
     "control_results": "control_results.csv",
     "pareto_frontier": "pareto_frontier.csv",
@@ -241,6 +245,48 @@ def _metadata_edge_cases(records: Iterable[dict[str, Any]]) -> list[dict[str, An
     return rows
 
 
+def _analysis_edge_cases(
+    fixed_policies: Iterable[dict[str, Any]],
+    component_summary: Iterable[dict[str, Any]],
+    controls: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Promote measurement-system boundary discoveries into the forensic ledger."""
+    fixed = [dict(row) for row in fixed_policies]
+    components = [dict(row) for row in component_summary]
+    control_rows = [dict(row) for row in controls]
+    rows: list[dict[str, Any]] = []
+
+    if components and not fixed:
+        rows.append({
+            "kind": "analysis_schema_boundary",
+            "classification": "single_component_summary_not_fixed_stack_policy",
+            "component_count": len(components),
+            "discovery_reason": (
+                "Historical transition rows expose single actions/components but no explicit fixed-policy/order identity. "
+                "A previous scorer incorrectly promoted component outcome summaries into fixed-stack candidates."
+            ),
+        })
+
+    for control in control_rows:
+        identity_rows = int(control.get("identity_subset_replayable_rows") or 0)
+        if identity_rows <= 0:
+            continue
+        rows.append({
+            "kind": "counterfactual_replay_boundary",
+            "classification": "identity_subset_not_negative_control_effect",
+            "control": control.get("control"),
+            "causal_status": control.get("causal_status"),
+            "identity_subset_replayable_rows": identity_rows,
+            "identity_subset_success_rate": control.get("identity_subset_success_rate"),
+            "identity_actions": control.get("identity_actions"),
+            "discovery_reason": (
+                "Only historical rows where the proposed control action equals the observed action are replayable. "
+                "Those rows are no-op identity matches and cannot estimate the effect of the intended negative-control intervention."
+            ),
+        })
+    return rows
+
+
 def _derive_master_index(evidence: dict[str, Any]) -> dict[str, Any]:
     verdict = dict(evidence.get("verdict") or {})
     transitions = list(evidence.get("transitions") or [])
@@ -259,6 +305,8 @@ def _derive_master_index(evidence: dict[str, Any]) -> dict[str, Any]:
         "requires_new_inference_count": len(evidence.get("requires_new_inference") or []),
         "invalid_counterfactual_count": len(evidence.get("invalid_counterfactuals") or []),
         "comparison_evidence_count": len(evidence.get("comparison_evidence") or []),
+        "component_outcome_summary_count": len(evidence.get("component_outcome_summary") or []),
+        "fixed_policy_candidate_count": len(evidence.get("fixed_policy_candidates") or []),
         "source_metadata_count": len(evidence.get("source_metadata") or []),
         "validator_result_count": len(evidence.get("validator_results") or []),
         "edge_case_count": len(evidence.get("edge_cases") or []),
@@ -282,6 +330,8 @@ def _derive_data_quality(evidence: dict[str, Any]) -> dict[str, Any]:
         "normalization_dropped_rows": dropped_rows,
         "normalization_retention_rate": ((input_rows - dropped_rows) / input_rows) if input_rows else None,
         "comparison_evidence_rows": len(evidence.get("comparison_evidence") or []),
+        "component_outcome_summary_rows": len(evidence.get("component_outcome_summary") or []),
+        "fixed_policy_candidate_rows": len(evidence.get("fixed_policy_candidates") or []),
         "source_metadata_rows": len(evidence.get("source_metadata") or []),
         "validator_result_rows": len(evidence.get("validator_results") or []),
         "edge_case_rows": len(evidence.get("edge_cases") or []),
@@ -300,9 +350,46 @@ class Test3S0ArtifactWriter:
 
     def write_all(self, evidence: dict[str, Any]) -> dict[str, str]:
         data = dict(evidence)
+
+        if not data.get("component_outcome_summary"):
+            data["component_outcome_summary"] = score_component_outcomes(data.get("trials") or [])
+
+        fixed = list(data.get("fixed_policy_candidates") or [])
+        components = list(data.get("component_outcome_summary") or [])
+        controls = list(data.get("control_results") or [])
         metadata_edges = _metadata_edge_cases(data.get("source_metadata") or [])
-        if metadata_edges:
-            data["edge_cases"] = metadata_edges + list(data.get("edge_cases") or [])
+        analysis_edges = _analysis_edge_cases(fixed, components, controls)
+        if metadata_edges or analysis_edges:
+            data["edge_cases"] = metadata_edges + analysis_edges + list(data.get("edge_cases") or [])
+
+        candidate_s1 = dict(data.get("candidate_section1_preregistration") or {})
+        if candidate_s1:
+            candidate_s1["fixed_policy_candidate_count"] = len(fixed)
+            candidate_s1["component_summary_count"] = len(components)
+            candidate_s1["arm_freeze_ready"] = bool(fixed)
+            if components and not fixed:
+                candidate_s1["arm_freeze_blocker"] = (
+                    "Historical transitions do not carry explicit fixed-policy/order identity. "
+                    "Component outcome summaries cannot be substituted for fixed-stack candidates."
+                )
+            data["candidate_section1_preregistration"] = candidate_s1
+
+        unresolved = list(data.get("unresolved_causal_questions") or [])
+        if components and not fixed:
+            unresolved.append({
+                "question": "Which explicit fixed stack/order identities should enter Section 1?",
+                "count": len(components),
+                "reason": "historical rows expose components but not fixed-policy/order identity",
+            })
+        incomplete_component_costs = sum(row.get("fully_costed") is False for row in components)
+        if incomplete_component_costs:
+            unresolved.append({
+                "question": "How does component-level ranking change with complete token/latency cost telemetry?",
+                "count": incomplete_component_costs,
+                "reason": "historical component costs missing",
+            })
+        data["unresolved_causal_questions"] = unresolved
+
         if not data.get("master_index"):
             data["master_index"] = _derive_master_index(data)
         if not data.get("data_quality"):
