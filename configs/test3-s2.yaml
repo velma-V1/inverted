@@ -1,0 +1,52 @@
+s2:
+  section: S2_ADAPTIVE_ROUTING
+  protocol_revision: S2-R1
+  holdout: B-R1
+  hard_call_limit: 720
+  combined_action_budget: 720
+  absolute_action_ceiling: 1000
+  arm_count: 5
+  per_arm_call_cap: 144
+  matched_cases: 72
+  calls_per_arm_task: 2
+  execution_mode: balanced_task_blocks
+  intervention_start: deterministic_verified_failure
+  perturbation_classes:
+    - localized
+    - compound
+    - structural
+  intervention_library:
+    - retry_qwen
+    - repair_cogito
+    - switch_llama
+  models:
+    qwen: qwen3.5:9b-q8_0
+    repair: cogito:3b-v1-preview-llama-q8_0
+    llama: llama3.1:8b
+  no_outcome_dependent_early_stopping: true
+  adaptive_signal_rule:
+    min_net_wins_vs_fixed: 4
+    min_net_wins_vs_random: 4
+    min_success_rate_delta_vs_fixed: 0.05
+    max_catastrophes_added_vs_fixed: 0
+    min_supported_strata: 3
+    min_stratum_net_wins: 2
+    require_lower_oracle_regret: true
+    require_divergence_exclusion_survival: true
+  failure_evidence_incremental_rule:
+    min_net_wins_b2_vs_b1: 3
+    max_catastrophes_added_b2_vs_b1: 0
+  harmful_rule:
+    max_net_wins_vs_fixed: -4
+    catastrophe_condition_min_added: 2
+    catastrophe_condition_require_nonpositive_net_wins: true
+  ollama:
+    base_url: http://127.0.0.1:11434
+    temperature: 0
+    max_tokens: 1024
+    timeout_s: 600
+    transport_retries: 0
+    retry_backoff_s: 0
+    think: false
+    format_json: true
+    context_limit: 8192
