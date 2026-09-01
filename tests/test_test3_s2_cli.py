@@ -1,5 +1,5 @@
 from inverted.test3_s2_artifacts import REQUIRED_S2_FILES
-from inverted.test3_s2_cli import S2OllamaAdapter, main
+from inverted.test3_s2_cli import S2OllamaAdapter, _policy_snapshot, main
 
 
 def test_s2_dry_plan_freezes_exact_720_diverse_contract(capsys):
@@ -29,6 +29,14 @@ def test_s2_dry_plan_freezes_exact_720_diverse_contract(capsys):
 def test_s2_executor_schema_does_not_cripple_dependency_order_actions():
     allowed = S2OllamaAdapter._EXECUTOR_SCHEMA["properties"]["actions"]["items"]["properties"]["op"]["enum"]
     assert set(allowed) == {"set", "resolve", "delete", "grant", "start"}
+
+
+def test_s2_random_control_policy_snapshot_declares_zero_outcome_features():
+    snapshot = _policy_snapshot()
+    b4 = snapshot["arms"]["S2-B4"]
+    assert b4["router"] == "seeded_random_negative_control"
+    assert b4["features"] == []
+    assert "outcome-independent" in b4["rng"]
 
 
 def test_s2_real_run_requires_explicit_tier_a_authorization(tmp_path, capsys):
