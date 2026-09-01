@@ -211,15 +211,58 @@ def _mock_executor_payload(model: MockModelAdapter, case: dict[str, Any], step: 
     return {"action_id": chosen, "confidence": confidence, "reason": "deterministic mock executor judgment"}
 
 
-def _system_candidate(case: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
-    actions = step["public"]["actions"]
-    correct = step["oracle"]["action_id"]
-    inject_fault = stable_int("lh-system", case["case_id"], step["step_index"]) % 5 == 0
-    selected_id = correct
-    if inject_fault:
-        wrong = [a["action_id"] for a in actions if a["action_id"] != correct]
-        selected_id = wrong[stable_int("lh-system-wrong", case["case_id"], step["step_index"]) % len(wrong)]
-    return deepcopy(next(a for a in actions if a["action_id"] == selected_id))
+def derive_system_candidate(
+    case: dict[str, Any],
+    step: dict[str, Any],
+    *,
+    inject_fault: bool | None = None,
+) -> dict[str, Any]:
+    """Derive the deterministic candidate exclusively from model-visible public facts."""
+    public = step["public"]
+    actions = list(public["actions"])
+    requirement = public["requirement"]
+    preservation = list(public.get("preservation_constraints") or [])
+
+    eligible = [
+        action
+        for action in actions
+        if action.get("operation") == "set"
+        and action.get("path") == requirement.get("path")
+        and action.get("value") == requirement.get("expected")
+        and action.get("scope") == "required-only"
+        and action.get("reversible") is True
+    ]
+    if preservation:
+        eligible = [action for action in eligible if action.get("operation") != "set-and-touch-protected"]
+
+    if eligible:
+        nominal = min(eligible, key=lambda action: str(action.get("action_id", "")))
+    else:
+        deferrals = [action for action in actions if action.get("operation") == "defer"]
+        if deferrals:
+            nominal = min(deferrals, key=lambda action: str(action.get("action_id", "")))
+        elif actions:
+            nominal = min(actions, key=lambda action: str(action.get("action_id", "")))
+        else:
+            raise ValueError("long-horizon step exposes no public actions")
+
+    should_fault = (
+        stable_int("lh-system", case["case_id"], step["step_index"]) % 5 == 0
+        if inject_fault is None
+        else bool(inject_fault)
+    )
+    if not should_fault:
+        return deepcopy(nominal)
+
+    alternatives = [
+        action for action in actions if action.get("action_id") != nominal.get("action_id")
+    ]
+    if not alternatives:
+        return deepcopy(nominal)
+    selected = alternatives[
+        stable_int("lh-system-wrong", case["case_id"], step["step_index"]) % len(alternatives)
+    ]
+    return deepcopy(selected)
 
 
 def _mock_auditor_payload(
@@ -354,7 +397,7 @@ def run_long_horizon(
                                 selected = None
                                 deterministic_blocks += 1
                     else:
-                        candidate = _system_candidate(case, step)
+                        candidate = derive_system_candidate(case, step)
                         payload = long_horizon_prompt_payload(case, step_index=step_index, state=state, arm=arm, candidate=candidate)
                         mock = _mock_auditor_payload(model, case, step, candidate) if isinstance(model, MockModelAdapter) else None
                         call_id = stable_id("call", trial_id, step_index)
