@@ -18,6 +18,7 @@ REQUIRED_S2_FILES = (
     "model_calls.jsonl",
     "events.jsonl",
     "routing_state_snapshots.jsonl",
+    "holdout_manifest.csv",
     "trials.csv",
     "validator_results.csv",
     "arm_accounting.csv",
@@ -241,6 +242,7 @@ class Test3S2ArtifactWriter:
         data.setdefault("protocol_failures", [])
         data.setdefault("events", [])
         data.setdefault("routing_state_snapshots", [])
+        data.setdefault("holdout_manifest", [])
         data.setdefault("validator_results", [])
         data.setdefault("arm_accounting", [])
         data.setdefault("arm_summaries", [])
@@ -295,6 +297,7 @@ class Test3S2ArtifactWriter:
             "routing_state_snapshots.jsonl": data["routing_state_snapshots"],
         }
         csv_files = {
+            "holdout_manifest.csv": data["holdout_manifest"],
             "trials.csv": trials,
             "validator_results.csv": data["validator_results"],
             "arm_accounting.csv": data["arm_accounting"],
