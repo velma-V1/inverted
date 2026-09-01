@@ -121,7 +121,7 @@ def test_r3_config_rejects_frozen_verdict_threshold_drift_before_execution(tmp_p
         main(["dry-plan", "--s0-dir", str(_frozen_packet(tmp_path)), "--config", str(drifted)])
 
 
-def test_s1_progress_rewrites_one_short_terminal_line_for_200_call_r3_and_finishes_once():
+def test_s1_progress_rewrites_one_bounded_rich_terminal_line_for_200_call_r3_and_finishes_once():
     stream = io.StringIO()
     progress = InPlaceS1Progress(stream=stream, width=16)
 
@@ -147,6 +147,10 @@ def test_s1_progress_rewrites_one_short_terminal_line_for_200_call_r3_and_finish
     updates = [chunk for chunk in text.split("\r") if chunk and chunk != "\n"]
     assert text.count("\n") == 1
     assert text.count("\r") == 2
+    assert "100.0%" in text
     assert "100/100" in text
     assert "200/200 calls" in text
-    assert all(len(update.rstrip("\n")) <= 63 for update in updates)
+    assert "elapsed" in text.lower()
+    assert "left" in text.lower()
+    assert "ETA" in text
+    assert all(len(update.rstrip("\n")) <= 112 for update in updates)
