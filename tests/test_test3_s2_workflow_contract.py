@@ -17,8 +17,11 @@ def test_s2_validation_workflow_enforces_exact_720_mock_contract():
     assert 'prereg["exact_budget"] == 720' in text
     assert 'prereg["combined_action_budget"] == 732' in text
     assert 'prereg["provenance_api_call_budget"] == 12' in text
-    assert 'int(combined["used"]) == 720 and int(combined["limit"]) == 732' in text
+    assert 'int(combined["used"]) == 720' in text
+    assert 'int(combined["limit"]) == 732' in text
+    assert 'int(combined["remaining"]) == 12' in text
     assert 'int(model_calls["used"]) == 720' in text
+    assert '"provenance_api_call" not in budget_by_kind' in text
     assert "360" in text
     assert "stochastic_divergence.csv" in text
     assert "routing_decisions.csv" in text
