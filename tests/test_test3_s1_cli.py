@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from inverted.test3_s1_cli import InPlaceS1Progress, main
 
@@ -112,6 +113,16 @@ def test_r2_config_rejects_stale_r1_protocol(tmp_path: Path):
     )
     with pytest.raises(ValueError, match="S1-R2 config protocol_revision"):
         main(["dry-plan", "--s0-dir", str(_frozen_packet(tmp_path)), "--config", str(stale)])
+
+
+def test_r2_config_rejects_frozen_verdict_threshold_drift_before_execution(tmp_path: Path):
+    config = yaml.safe_load(Path("configs/test3-s1.yaml").read_text(encoding="utf-8"))
+    config["s1"]["large_signal_rule"]["min_net_wins_vs_baseline"] = 4
+    drifted = tmp_path / "threshold-drift.yaml"
+    drifted.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="S1-R2 config large_signal_rule"):
+        main(["dry-plan", "--s0-dir", str(_frozen_packet(tmp_path)), "--config", str(drifted)])
 
 
 def test_s1_progress_rewrites_one_short_terminal_line_for_200_call_r2_and_finishes_once():
