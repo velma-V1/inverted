@@ -134,7 +134,7 @@ def test_artifact_writer_promotes_production_order_rankings_and_records_oracle_s
     edges = list(csv.DictReader((packet / "edge_cases.csv").open(encoding="utf-8", newline="")))
     boundary = [row for row in edges if row.get("classification") == "oracle_inclusive_order_atlas_not_production_candidate_source"]
     assert boundary
-    assert int(boundary[0]["oracle_inclusive_order_rows"]) == 1
+    assert int(boundary[0]["source_row_count"]) == 1
 
 
 def test_artifact_writer_emits_final_non_oracle_four_arm_s1_screen(tmp_path: Path):
