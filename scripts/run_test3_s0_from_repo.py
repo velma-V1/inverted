@@ -7,7 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from inverted.test3_repo_evidence import repo_s0_source_specs, verify_repo_evidence
+from inverted.test3_repo_evidence import (
+    materialize_repo_empirical_sources,
+    repo_s0_source_specs,
+    verify_repo_evidence,
+)
 
 
 def _run(args: list[str], *, cwd: Path) -> None:
@@ -36,9 +40,24 @@ def main() -> int:
     work.mkdir(parents=True, exist_ok=True)
 
     sources_root = work / "sources"
+    rehydrated_root = work / "rehydrated-empirical-sources"
     manifest = work / "source-manifest.json"
     output = work / "scientific-s0"
     generated_model_free = sources_root / "test2-model-free"
+
+    try:
+        empirical_paths, normalization_report = materialize_repo_empirical_sources(
+            evidence_root,
+            rehydrated_root,
+        )
+    except ValueError as exc:
+        print(f"REPO_EVIDENCE_REHYDRATION_FAILED: {exc}", file=sys.stderr)
+        return 3
+
+    (work / "repo-evidence-normalization.json").write_text(
+        json.dumps(normalization_report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     _run(
         [
@@ -56,7 +75,11 @@ def main() -> int:
         cwd=repo,
     )
 
-    specs = repo_s0_source_specs(evidence_root, generated_model_free)
+    specs = repo_s0_source_specs(
+        evidence_root,
+        generated_model_free,
+        empirical_paths=empirical_paths,
+    )
     manifest_args = [
         sys.executable,
         "-m",
@@ -113,6 +136,12 @@ def main() -> int:
 
     summary = {
         "repo_evidence_verified": True,
+        "repo_evidence_verification_policy": normalization_report["verification_policy"],
+        "repo_evidence_exact_files": normalization_report["exact_files"],
+        "repo_evidence_git_newline_rehydrated_files": normalization_report[
+            "git_newline_rehydrated_files"
+        ],
+        "repo_evidence_unverified_files": normalization_report["unverified_files"],
         "s0_verdict": verdict.get("verdict"),
         "physical_model_calls": verdict.get("physical_model_calls"),
         "attempted_model_calls": verdict.get("attempted_model_calls"),
