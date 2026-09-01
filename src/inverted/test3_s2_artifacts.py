@@ -26,6 +26,9 @@ REQUIRED_S2_FILES = (
     "family_summaries.csv",
     "perturbation_summaries.csv",
     "complexity_summaries.csv",
+    "execution_position_summaries.csv",
+    "action_model_summaries.csv",
+    "recovery_efficiency.csv",
     "pairwise_effects.csv",
     "routing_decisions.csv",
     "action_transition_matrix.csv",
@@ -263,6 +266,9 @@ class Test3S2ArtifactWriter:
         data.setdefault("family_summaries", [])
         data.setdefault("perturbation_summaries", [])
         data.setdefault("complexity_summaries", [])
+        data.setdefault("execution_position_summaries", [])
+        data.setdefault("action_model_summaries", [])
+        data.setdefault("recovery_efficiency", [])
         data.setdefault("pairwise_effects", [])
         data.setdefault("routing_decisions", [])
         data.setdefault("action_transition_matrix", [])
@@ -319,6 +325,9 @@ class Test3S2ArtifactWriter:
             "family_summaries.csv": data["family_summaries"],
             "perturbation_summaries.csv": data["perturbation_summaries"],
             "complexity_summaries.csv": data["complexity_summaries"],
+            "execution_position_summaries.csv": data["execution_position_summaries"],
+            "action_model_summaries.csv": data["action_model_summaries"],
+            "recovery_efficiency.csv": data["recovery_efficiency"],
             "pairwise_effects.csv": data["pairwise_effects"],
             "routing_decisions.csv": data["routing_decisions"],
             "action_transition_matrix.csv": data["action_transition_matrix"],
