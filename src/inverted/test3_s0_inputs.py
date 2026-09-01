@@ -238,6 +238,25 @@ def verify_evidence_bundle(root: str | Path, claims_complete: bool = True) -> Bu
     return result
 
 
+def verify_source_against_manifest(source: EvidenceSource, verification: BundleVerification) -> list[str]:
+    """Verify immutable manifest identity fields against the observed bundle."""
+    checks = (
+        ("bundle_sha256", source.bundle_sha256, verification.metadata.get("inventory_sha256")),
+        ("git_sha", source.git_sha, verification.metadata.get("git_sha")),
+        ("run_id", source.run_id, verification.metadata.get("run_id")),
+    )
+    errors: list[str] = []
+    for field_name, expected, observed in checks:
+        if expected in (None, ""):
+            continue
+        if observed in (None, ""):
+            errors.append(f"{field_name} expected {expected!r} but observed value is missing")
+            continue
+        if str(expected) != str(observed):
+            errors.append(f"{field_name} mismatch: expected {expected!r}, observed {observed!r}")
+    return errors
+
+
 def _coerce_source(row: dict[str, Any]) -> EvidenceSource:
     allowed = {
         "source_id", "source_class", "path", "required", "bundle_sha256",
