@@ -60,3 +60,18 @@ def test_rich_router_second_decision_uses_post_first_call_verified_state():
     assert len(rows) == 72
     assert all(row["evidence_state"].get("previous_action") for row in rows)
     assert all(row["evidence_state"].get("previous_model") for row in rows)
+
+
+def test_s2_runtime_preserves_holdout_seed_scan_and_fixture_provenance():
+    result = run_s2_screen(cases=build_holdout_b(), model_by_name=_models(), run_id="s2-provenance")
+    manifest = result["holdout_manifest"]
+    assert len(manifest) == 72
+    assert len({row["task_id"] for row in manifest}) == 72
+    assert all(isinstance(row["selected_seed"], int) for row in manifest)
+    assert all(isinstance(row["seed_scan_offset"], int) and row["seed_scan_offset"] >= 0 for row in manifest)
+    assert all(int(row["requirement_count"]) >= 2 for row in manifest)
+    assert all(isinstance(row["fixture_seed"], int) for row in manifest)
+    assert all(row["initial_failed_requirements"] for row in manifest)
+    compound = [row for row in manifest if row["perturbation_class"] == "compound"]
+    assert len(compound) == 24
+    assert all(len(set(row["initial_failed_requirements"])) >= 2 for row in compound)
