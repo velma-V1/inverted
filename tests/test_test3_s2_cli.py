@@ -1,7 +1,5 @@
-from pathlib import Path
-
 from inverted.test3_s2_artifacts import REQUIRED_S2_FILES
-from inverted.test3_s2_cli import main
+from inverted.test3_s2_cli import S2OllamaAdapter, main
 
 
 def test_s2_dry_plan_freezes_exact_720_diverse_contract(capsys):
@@ -25,6 +23,11 @@ def test_s2_dry_plan_freezes_exact_720_diverse_contract(capsys):
     )
     for item in required:
         assert item in out
+
+
+def test_s2_executor_schema_does_not_cripple_dependency_order_actions():
+    allowed = S2OllamaAdapter._EXECUTOR_SCHEMA["properties"]["actions"]["items"]["properties"]["op"]["enum"]
+    assert set(allowed) == {"set", "resolve", "delete", "grant", "start"}
 
 
 def test_s2_real_run_requires_explicit_tier_a_authorization(tmp_path, capsys):
