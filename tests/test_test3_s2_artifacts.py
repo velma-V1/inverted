@@ -42,6 +42,9 @@ def test_s2_writer_emits_complete_hash_verified_forensic_packet(tmp_path):
     written = Test3S2ArtifactWriter(tmp_path).write_all(evidence)
 
     assert "holdout_manifest.csv" in REQUIRED_S2_FILES
+    assert "action_model_summaries.csv" in REQUIRED_S2_FILES
+    assert "execution_position_summaries.csv" in REQUIRED_S2_FILES
+    assert "recovery_efficiency.csv" in REQUIRED_S2_FILES
     assert set(REQUIRED_S2_FILES).issubset(set(written))
     assert all((tmp_path / name).is_file() for name in REQUIRED_S2_FILES)
 
@@ -81,6 +84,27 @@ def test_s2_writer_emits_complete_hash_verified_forensic_packet(tmp_path):
     assert all(row["counterfactual_evaluated"].lower() == "true" for row in shadow)
     assert all(row["proposed_candidate_state"] for row in shadow)
     assert all(row["proposed_candidate_actions"] for row in shadow)
+
+    with (tmp_path / "action_model_summaries.csv").open(encoding="utf-8", newline="") as handle:
+        action_model = list(csv.DictReader(handle))
+    assert action_model
+    assert sum(int(row["calls"]) for row in action_model) == 720
+    assert {"proposal_success_rate", "recovery_rate", "would_break_success"}.issubset(action_model[0])
+
+    with (tmp_path / "execution_position_summaries.csv").open(encoding="utf-8", newline="") as handle:
+        positions = list(csv.DictReader(handle))
+    assert len(positions) == 25
+    assert sum(int(row["trials"]) for row in positions) == 360
+
+    with (tmp_path / "recovery_efficiency.csv").open(encoding="utf-8", newline="") as handle:
+        efficiency = list(csv.DictReader(handle))
+    assert len(efficiency) == 5
+    assert sum(int(row["physical_calls"]) for row in efficiency) == 720
+
+    with (tmp_path / "transitions.csv").open(encoding="utf-8", newline="") as handle:
+        transitions = list(csv.DictReader(handle))
+    assert transitions
+    assert {"resolved_failures", "newly_introduced_failures", "resolved_failure_count", "newly_introduced_failure_count"}.issubset(transitions[0])
 
     complete = (tmp_path / "COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
     for name in REQUIRED_S2_FILES:
