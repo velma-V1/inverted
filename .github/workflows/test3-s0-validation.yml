@@ -3,10 +3,11 @@ name: test3-s0-validation
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  test3-s0-model-free:
-    runs-on: ubuntu-latest
+  test3-s0-repo-replay:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -14,36 +15,42 @@ jobs:
           python-version: "3.14"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[test]"
+
       - name: Full pytest suite
         run: python -m pytest -q
-      - name: Generate fresh Test2 model-free evidence
-        run: >-
-          python -m inverted.test2_cli model-free
-          --config configs/test2-model-free.yaml
-          --output-dir test3-s0-ci/sources
-          --run-id test2-model-free
-      - name: Build partial Test3 S0 source manifest
-        run: >-
-          python -m inverted.test3_s0_cli build-manifest
-          --output test3-s0-ci/source-manifest.json
-          --source test2-model-free test2_model_free test3-s0-ci/sources/test2-model-free
-      - name: Validate Test3 S0 instrument
-        run: >-
-          python -m inverted.test3_s0_cli validate-instrument
-          --config configs/test3-s0.yaml
-          --manifest test3-s0-ci/source-manifest.json
-          --output-dir test3-s0-ci/instrument-validation
-      - name: Verify Test3 S0 zero-call evidence contract
+
+      - name: Reproduce scientific S0 from committed evidence
+        run: python scripts/run_test3_s0_from_repo.py --work-dir test3-s0-ci
+
+      - name: Verify full S0 forensic evidence contract
         run: |
           python - <<'PY'
           import csv
           import json
           from pathlib import Path
 
-          p = Path("test3-s0-ci/instrument-validation")
-          verdict = json.loads((p / "verdict.json").read_text(encoding="utf-8"))
-          assert verdict["verdict"] == "PARTIAL_INPUT_EVIDENCE", verdict
+          root = Path("test3-s0-ci")
+          p = root / "scientific-s0"
+          summary = json.loads((root / "repo-replay-summary.json").read_text(encoding="utf-8"))
+          verdict = json.loads((p / "verdict.json").read_text(encoding="utf-8-sig"))
+          prereg = json.loads((p / "candidate_section1_preregistration.json").read_text(encoding="utf-8-sig"))
+
+          assert summary["repo_evidence_verified"] is True, summary
+          assert summary["s0_verdict"] == "DISCOVERY_COMPLETE_MODEL_FREE", summary
+          assert verdict["verdict"] == "DISCOVERY_COMPLETE_MODEL_FREE", verdict
           assert verdict["physical_model_calls"] == 0, verdict
+          assert verdict["attempted_model_calls"] == 0, verdict
+          assert (p / "model_calls.jsonl").read_text(encoding="utf-8") == ""
+
+          assert prereg["arm_freeze_ready"] is True, prereg
+          assert prereg["exact_budget"] == 80, prereg
+          assert prereg["budget_unit"] == "physical_model_calls", prereg
+          assert prereg["arm_count"] == 4, prereg
+          assert prereg["physical_call_cap_per_arm"] == 20, prereg
+          assert prereg["tier_a_inference_authorized"] is False, prereg
+          assert len(prereg["selected_fixed_orders"]) >= 2, prereg
+          assert all("oracle_auditor" not in str(arm.get("order") or "") for arm in prereg["arms"]), prereg
+
           required = [
               "preregistration.json", "config.json", "provenance.json",
               "model_calls.jsonl", "events.jsonl", "trials.csv",
@@ -52,31 +59,32 @@ jobs:
               "tokens.csv", "cache.csv", "failure_atlas.json", "effect_sizes.json",
               "verdict.json", "report.txt", "source_manifest.json", "source_integrity.csv",
               "normalization_coverage.csv", "normalization_errors.csv",
-              "fixed_policy_candidates.csv", "adaptive_policy_candidates.csv",
-              "control_results.csv", "pareto_frontier.csv", "unresolved_causal_questions.csv",
-              "requires_new_inference.csv", "invalid_counterfactuals.csv",
-              "power_variance.json", "candidate_section1_preregistration.json",
-              "00-MASTER-INDEX.json", "instrumentation_anomalies.csv", "metadata_catalog.csv",
-              "field_provenance.csv", "source_file_inventory.csv", "decision_trace.csv",
-              "unknown_fields.csv", "edge_cases.csv", "comparison_evidence.csv",
-              "source_metadata.jsonl", "data_quality.json",
-              "COMPLETE-EVIDENCE.txt", "SHA256SUMS.csv",
+              "fixed_policy_candidates.csv", "component_outcome_summary.csv",
+              "adaptive_policy_candidates.csv", "control_results.csv", "pareto_frontier.csv",
+              "unresolved_causal_questions.csv", "requires_new_inference.csv",
+              "invalid_counterfactuals.csv", "power_variance.json",
+              "candidate_section1_preregistration.json", "00-MASTER-INDEX.json",
+              "instrumentation_anomalies.csv", "metadata_catalog.csv", "field_provenance.csv",
+              "source_file_inventory.csv", "decision_trace.csv", "unknown_fields.csv",
+              "edge_cases.csv", "comparison_evidence.csv", "source_metadata.jsonl",
+              "data_quality.json", "COMPLETE-EVIDENCE.txt", "SHA256SUMS.csv",
           ]
-          missing = [name for name in required if not (p / name).exists()]
+          missing = [name for name in required if not (p / name).is_file()]
           assert not missing, missing
-          assert (p / "model_calls.jsonl").read_text(encoding="utf-8") == ""
+
           master = (p / "COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
           assert "PHYSICAL MODEL CALLS: 0" in master
-          quality = json.loads((p / "data_quality.json").read_text(encoding="utf-8"))
-          assert quality["zero_model_call_invariant"] is True
-          assert quality["data_loss_policy"]
           with (p / "SHA256SUMS.csv").open(encoding="utf-8", newline="") as handle:
               rows = list(csv.DictReader(handle))
-          assert rows and all((p / row["path"]).exists() for row in rows)
+          assert rows and all((p / row["path"]).is_file() for row in rows)
           PY
-      - name: Upload Test3 S0 instrument validation evidence
+
+      - name: Upload reproducible S0 scientific evidence
         uses: actions/upload-artifact@v4
         with:
-          name: test3-s0-instrument-validation-evidence
-          path: test3-s0-ci/instrument-validation
+          name: test3-s0-repo-replay-evidence
+          path: |
+            test3-s0-ci/scientific-s0
+            test3-s0-ci/source-manifest.json
+            test3-s0-ci/repo-replay-summary.json
           if-no-files-found: error
