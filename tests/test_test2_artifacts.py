@@ -27,7 +27,15 @@ def _minimal_evidence():
             "failure_kill_matrix": [],
             "synergy_matrix": [],
         },
-        "order": {"every_valid_order": [], "order_ranking": [], "saturation": []},
+        "order": {
+            "every_valid_order": [],
+            "order_ranking": [],
+            "order_slice_ranking": [],
+            "every_valid_production_order": [{"order": "validator -> retry -> repair -> final", "production_eligible": True}],
+            "production_order_ranking": [{"rank": 1, "order": "validator -> retry -> repair -> final", "production_eligible": True}],
+            "production_order_slice_ranking": [],
+            "saturation": [],
+        },
         "models": {
             "model_task_capability_matrix": [],
             "model_family_matrix": [],
@@ -62,6 +70,9 @@ def test_test2_writer_creates_required_forensic_bundle_and_master_contains_every
         "raw/every-prompt.jsonl",
         "raw/every-response.jsonl",
         "effects/outcome-transitions.csv",
+        "order/every-valid-production-order.csv",
+        "order/order-ranking-production.csv",
+        "order/order-slice-ranking-production.csv",
         "models/role-champions.json",
         "models/router-policy.json",
         "TEST2-COMPLETE-EVIDENCE.txt",
@@ -70,11 +81,16 @@ def test_test2_writer_creates_required_forensic_bundle_and_master_contains_every
     }
     assert required <= {str(Path(p).relative_to(run_dir)).replace("\\", "/") for p in paths.values()}
 
+    production = list(csv.DictReader((run_dir / "order/order-ranking-production.csv").open(encoding="utf-8")))
+    assert production
+    assert production[0]["production_eligible"] == "True"
+
     master = (run_dir / "TEST2-COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
     assert "PROMPT-SENTINEL" in master
     assert "RESPONSE-SENTINEL" in master
     assert "NEXT-STRIDE-SENTINEL" in master
     assert "FAIL_TO_SUCCESS" in master
+    assert "order/order-ranking-production.csv" in master
 
 
 def test_test2_writer_hash_inventory_is_complete_and_deterministically_sorted(tmp_path):
@@ -84,5 +100,6 @@ def test_test2_writer_hash_inventory_is_complete_and_deterministically_sorted(tm
     paths = [row["path"] for row in rows]
     assert paths == sorted(paths)
     assert "TEST2-COMPLETE-EVIDENCE.txt" in paths
+    assert "order/order-ranking-production.csv" in paths
     assert all(len(row["sha256"]) == 64 for row in rows)
     json.loads((run_dir / "00-MASTER-INDEX.json").read_text(encoding="utf-8"))
