@@ -12,6 +12,8 @@ REQUIRED_S1_FILES = (
     "preregistration.json",
     "config.json",
     "provenance.json",
+    "intervention_exposure.json",
+    "protocol_failures.json",
     "model_calls.jsonl",
     "events.jsonl",
     "trials.csv",
@@ -108,6 +110,8 @@ def _telemetry_rows(model_calls: list[dict[str, Any]], field: str, output_field:
             "task_id": call.get("task_id"),
             "component": call.get("component"),
             "model": call.get("model"),
+            "active_intervention": bool(call.get("active_intervention")),
+            "shadow_only": bool(call.get("shadow_only")),
             "call_identity": call.get("call_identity"),
             output_field: value,
         })
@@ -119,18 +123,27 @@ def _derive_master_index(data: dict[str, Any]) -> dict[str, Any]:
     physical = sum(not bool(row.get("cache_hit")) for row in calls)
     verdict = dict(data.get("verdict") or {})
     provenance = dict(data.get("provenance") or {})
+    prereg = dict(data.get("preregistration") or {})
+    protocol_revision = verdict.get("protocol_revision") or provenance.get("protocol_revision") or prereg.get("protocol_revision")
+    holdout = verdict.get("holdout") or provenance.get("execution_holdout") or prereg.get("holdout")
     return {
         "experiment": "test3-section1-fixed-stack-order",
         "section": "S1",
         "mode": "tier-a" if data.get("real_model_inference") else "mock-validation",
         "run_id": provenance.get("run_id"),
+        "protocol_revision": protocol_revision,
+        "holdout": holdout,
+        "protocol_valid_for_primary_claim": bool(verdict.get("protocol_valid_for_primary_claim", False)),
         "physical_model_calls": int(verdict.get("physical_model_calls", physical) or 0),
         "architecture_claims_authorized": bool(verdict.get("tier_a_architecture_claim", False)),
         "verdict": verdict.get("verdict"),
         "trial_rows": len(data.get("trials") or []),
         "matched_task_count": verdict.get("matched_task_count"),
+        "active_inference_calls": sum(bool(row.get("active_intervention")) for row in calls),
+        "shadow_inference_calls": sum(bool(row.get("shadow_only")) for row in calls),
         "edge_case_count": len(data.get("edge_cases") or []),
         "instrumentation_anomaly_count": len(data.get("instrumentation_anomalies") or []),
+        "protocol_failure_count": len(data.get("protocol_failures") or []),
     }
 
 
@@ -150,8 +163,12 @@ class Test3S1ArtifactWriter:
         data.setdefault("latency", _telemetry_rows(model_calls, "latency_s", "latency_s"))
         data.setdefault("tokens", _telemetry_rows(model_calls, "total_tokens", "total_tokens"))
         data.setdefault("cache", [{
-            "arm_id": row.get("arm_id"), "task_id": row.get("task_id"),
-            "call_identity": row.get("call_identity"), "cache_hit": bool(row.get("cache_hit")),
+            "arm_id": row.get("arm_id"),
+            "task_id": row.get("task_id"),
+            "call_identity": row.get("call_identity"),
+            "active_intervention": bool(row.get("active_intervention")),
+            "shadow_only": bool(row.get("shadow_only")),
+            "cache_hit": bool(row.get("cache_hit")),
         } for row in model_calls])
         data.setdefault("edge_cases", [])
         data.setdefault("instrumentation_anomalies", [])
@@ -161,7 +178,9 @@ class Test3S1ArtifactWriter:
         data.setdefault("transitions", [])
         data.setdefault("validator_results", [])
         data.setdefault("events", [])
-        data.setdefault("report", "VELMA TEST 3 — SECTION 1\nNo report text supplied.\n")
+        data.setdefault("intervention_exposure", {})
+        data.setdefault("protocol_failures", [])
+        data.setdefault("report", "VELMA TEST 3 — SECTION 1 R1\nNo report text supplied.\n")
         data.setdefault("master_index", _derive_master_index(data))
 
         json_files = {
@@ -169,6 +188,8 @@ class Test3S1ArtifactWriter:
             "preregistration.json": data.get("preregistration", {}),
             "config.json": data.get("config", {}),
             "provenance.json": data.get("provenance", {}),
+            "intervention_exposure.json": data["intervention_exposure"],
+            "protocol_failures.json": data["protocol_failures"],
             "verdict.json": data.get("verdict", {}),
         }
         jsonl_files = {
@@ -211,8 +232,11 @@ class Test3S1ArtifactWriter:
 
         master = self.run_dir / "COMPLETE-EVIDENCE.txt"
         with master.open("w", encoding="utf-8", newline="\n") as handle:
-            handle.write("VELMA TEST 3 — SECTION 1 COMPLETE EVIDENCE\n")
-            handle.write("================================================\n")
+            handle.write("VELMA TEST 3 — SECTION 1 R1 COMPLETE EVIDENCE\n")
+            handle.write("===================================================\n")
+            handle.write(f"PROTOCOL: {data['master_index'].get('protocol_revision')}\n")
+            handle.write(f"HOLDOUT: {data['master_index'].get('holdout')}\n")
+            handle.write(f"PROTOCOL VALID FOR PRIMARY CLAIM: {str(bool(data['master_index'].get('protocol_valid_for_primary_claim'))).lower()}\n")
             handle.write(f"PHYSICAL MODEL CALLS: {data['master_index'].get('physical_model_calls', 0)}\n")
             handle.write(f"ARCHITECTURE CLAIMS AUTHORIZED: {str(bool(data['master_index'].get('architecture_claims_authorized'))).lower()}\n")
             for path in sorted(written, key=lambda item: item.name):
