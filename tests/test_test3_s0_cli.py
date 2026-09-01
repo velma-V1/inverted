@@ -140,7 +140,7 @@ def test_analysis_schema_boundaries_are_promoted_to_edge_cases():
         "identity_actions": ["final_validator", "retry"],
         "reason": "identity subset is not the intervention",
     }]
-    rows = _analysis_edge_cases([], component_summary, controls)
+    rows = _analysis_edge_cases([], component_summary, controls, [])
     classifications = {row["classification"] for row in rows}
     assert "single_component_summary_not_fixed_stack_policy" in classifications
     assert "identity_subset_not_negative_control_effect" in classifications
