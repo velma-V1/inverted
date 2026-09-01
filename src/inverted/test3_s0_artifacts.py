@@ -250,11 +250,13 @@ def _analysis_edge_cases(
     fixed_policies: Iterable[dict[str, Any]],
     component_summary: Iterable[dict[str, Any]],
     controls: Iterable[dict[str, Any]],
+    comparison_evidence: Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Promote measurement-system boundary discoveries into the forensic ledger."""
     fixed = [dict(row) for row in fixed_policies]
     components = [dict(row) for row in component_summary]
     control_rows = [dict(row) for row in controls]
+    comparison_rows = [dict(row) for row in comparison_evidence]
     rows: list[dict[str, Any]] = []
 
     fixed_from_comparison_evidence = bool(fixed) and all(
@@ -288,6 +290,30 @@ def _analysis_edge_cases(
             }),
             "discovery_reason": (
                 "Order rankings containing oracle/analysis-only components are retained as ceiling evidence but cannot enter production S1 arms."
+            ),
+        })
+
+    oracle_ceiling_rows = [
+        row
+        for row in comparison_rows
+        if str(row.get("source_file") or "").replace("\\", "/").endswith("order/order-ranking.csv")
+        and "oracle_auditor" in str(row.get("order") or "")
+    ]
+    if oracle_ceiling_rows:
+        rows.append({
+            "kind": "analysis_ceiling_boundary",
+            "classification": "oracle_inclusive_order_atlas_not_production_candidate_source",
+            "source_row_count": len(oracle_ceiling_rows),
+            "source_ids": sorted({str(row.get("source_id") or "") for row in oracle_ceiling_rows}),
+            "source_files": sorted({
+                str(row.get("source_file") or "").replace("\\", "/")
+                for row in oracle_ceiling_rows
+            }),
+            "analysis_only_components": ["oracle_auditor"],
+            "discovery_reason": (
+                "The legacy order atlas permutes the oracle_auditor analysis ceiling with production components. "
+                "Those rows remain preserved as ceiling evidence, but S1 arm selection is sourced only from the "
+                "separate production-order ranking that excludes oracle_auditor."
             ),
         })
 
@@ -385,8 +411,9 @@ class Test3S0ArtifactWriter:
         fixed = list(data.get("fixed_policy_candidates") or [])
         components = list(data.get("component_outcome_summary") or [])
         controls = list(data.get("control_results") or [])
+        comparison_evidence = list(data.get("comparison_evidence") or [])
         metadata_edges = _metadata_edge_cases(data.get("source_metadata") or [])
-        analysis_edges = _analysis_edge_cases(fixed, components, controls)
+        analysis_edges = _analysis_edge_cases(fixed, components, controls, comparison_evidence)
         if metadata_edges or analysis_edges:
             data["edge_cases"] = metadata_edges + analysis_edges + list(data.get("edge_cases") or [])
 
