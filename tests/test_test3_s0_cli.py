@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from inverted.test3_s0_artifacts import Test3S0ArtifactWriter, _metadata_edge_cases
-from inverted.test3_s0_cli import _flatten_validator_results, _verify_sources, main
+from inverted.test3_s0_cli import _analysis_edge_cases, _flatten_validator_results, _verify_sources, main
 from inverted.test3_s0_normalize import normalize_test2_event
 from inverted.test3_s0_types import EvidenceSource
 
@@ -128,6 +128,35 @@ def test_lifecycle_metadata_is_promoted_to_rich_edge_case_record(tmp_path: Path)
     assert persisted[0]["event"] == "run_started"
     assert persisted[0]["raw_record_hash"] == row["raw_record_hash"]
     assert json.loads(persisted[0]["raw"])["run_id"] == "decisive-20260831-054125"
+
+
+def test_analysis_schema_boundaries_are_promoted_to_edge_cases():
+    component_summary = [{"candidate": "retry", "rows": 12000, "verified_success_rate": 0.75375}]
+    controls = [{
+        "control": "random_action_switch",
+        "causal_status": "REQUIRES_NEW_INFERENCE",
+        "identity_subset_replayable_rows": 24000,
+        "identity_subset_success_rate": 0.876875,
+        "identity_actions": ["final_validator", "retry"],
+        "reason": "identity subset is not the intervention",
+    }]
+    rows = _analysis_edge_cases([], component_summary, controls)
+    classifications = {row["classification"] for row in rows}
+    assert "single_component_summary_not_fixed_stack_policy" in classifications
+    assert "identity_subset_not_negative_control_effect" in classifications
+
+
+def test_component_outcome_summary_is_persisted_separately(tmp_path: Path):
+    packet = tmp_path / "packet"
+    Test3S0ArtifactWriter(packet).write_all({
+        "component_outcome_summary": [
+            {"summary_type": "historical_component_outcome", "candidate": "retry", "rows": 12}
+        ]
+    })
+    path = packet / "component_outcome_summary.csv"
+    assert path.exists()
+    rows = list(csv.DictReader(path.open(encoding="utf-8", newline="")))
+    assert rows[0]["candidate"] == "retry"
 
 
 def test_cli_source_does_not_import_model_adapter():
