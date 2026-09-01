@@ -11,9 +11,14 @@ def test_s2_validation_workflow_enforces_exact_720_mock_contract():
     assert "python -m inverted.test3_s2_cli mock-run" in text
     assert "--config configs/test3-s2.yaml" in text
     assert "test3-s2-ci/mock-validation" in text
-    assert "physical_model_calls" in text
-    assert "combined_external_actions" in text
-    assert "720" in text
+    assert 'master["physical_model_calls"] == 720' in text
+    assert 'master["combined_external_actions"] == 720' in text
+    assert 'master["combined_action_limit"] == 732' in text
+    assert 'prereg["exact_budget"] == 720' in text
+    assert 'prereg["combined_action_budget"] == 732' in text
+    assert 'prereg["provenance_api_call_budget"] == 12' in text
+    assert 'int(combined["used"]) == 720 and int(combined["limit"]) == 732' in text
+    assert 'int(model_calls["used"]) == 720' in text
     assert "360" in text
     assert "stochastic_divergence.csv" in text
     assert "routing_decisions.csv" in text
