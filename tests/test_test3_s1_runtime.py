@@ -11,6 +11,7 @@ from inverted.test3_s1_cases import build_holdout_a_r1
 from inverted.test3_s1_runtime import (
     S1_CALLS_PER_ARM_TASK,
     matched_task_limit,
+    public_failure_feedback,
     run_arm_task,
     run_s1_screen,
     worst_case_calls_for_arm,
@@ -47,6 +48,18 @@ def test_r1_budget_contract_is_two_calls_per_arm_task_and_ten_matched_tasks():
     assert S1_CALLS_PER_ARM_TASK == 2
     assert all(worst_case_calls_for_arm(arm) == 2 for arm in arms)
     assert matched_task_limit(arms, available_cases=10) == 10
+
+
+def test_public_failure_feedback_strips_internal_requirement_fields():
+    case = next(case for case in build_holdout_a_r1() if any(req.critical for req in case.task.requirements))
+    critical_id = next(req.id for req in case.task.requirements if req.critical)
+    candidate = generate_candidate(case.task, 0.0, 991000)
+    feedback = public_failure_feedback(case.task, candidate, [critical_id])
+    text = json.dumps(feedback, sort_keys=True)
+    assert '"critical"' not in text
+    assert "hidden_gold" not in text
+    assert "target_state" not in text
+    assert critical_id in text
 
 
 def test_retry_success_keeps_result_when_remaining_repair_call_is_shadow_only():
