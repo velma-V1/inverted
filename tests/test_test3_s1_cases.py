@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from inverted.oracle import evaluate_task
 from inverted.test2_cases import build_holdout_cases
 from inverted.test3_s1_cases import build_holdout_a, build_holdout_a_r1, build_seed_failure
@@ -34,10 +36,10 @@ def test_holdout_a_r1_is_fresh_deterministic_and_exactly_ten_cases():
 
 def test_s1_r1_seed_failure_is_verified_bad_and_does_not_mutate_task():
     for case in build_holdout_a_r1():
-        before = case.task.to_dict()
+        before = asdict(case.task)
         candidate = build_seed_failure(case)
         result = evaluate_task(case.task, candidate.state, candidate.actions)
         assert result.success is False
         assert candidate.injected_faults
         assert candidate.metadata.get("s1_r1_seed_failure") is True
-        assert case.task.to_dict() == before
+        assert asdict(case.task) == before
