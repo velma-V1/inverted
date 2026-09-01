@@ -177,3 +177,7 @@ API-key values are read from the environment and are never written to benchmark 
 `REFUTED` requires adequately powered evidence for a preregistered failure condition. Anything between those standards is `INCONCLUSIVE` rather than being forced into a yes/no claim.
 
 See `docs/superpowers/specs/2026-08-30-inverted-architecture-benchmark-design.md` and `docs/superpowers/specs/2026-08-31-hybrid-validation-and-local-handoff-design.md` for the preregistration and hybrid-validation design.
+
+## Experimental idea lab
+
+Potential Qwen/Codex mentoring, sleep/consolidation, failure-learning, telemetry, and model-surgery experiments are kept separate from the preregistered benchmark. See [IDEAS.md](IDEAS.md). Each concept has its own file under `ideas/` so it can be designed and judged independently before any implementation is considered.
