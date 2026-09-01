@@ -24,6 +24,7 @@ from .test3_s0_inputs import (
     SourceAvailability,
     load_source_manifest,
     verify_evidence_bundle,
+    verify_source_against_manifest,
     write_source_manifest,
 )
 from .test3_s0_normalize import NormalizationResult, normalize_bundle
@@ -73,6 +74,7 @@ def _verify_sources(sources: list[EvidenceSource]) -> tuple[list[dict[str, Any]]
             "scientific_blocker": availability.scientific_blocker,
             "integrity_ok": False,
             "claims_complete": source.complete_claim if source.complete_claim is not None else True,
+            "bundle_sha256": source.bundle_sha256,
             "git_sha": source.git_sha,
             "run_id": source.run_id,
             "evidence_tier": source.evidence_tier,
@@ -86,8 +88,10 @@ def _verify_sources(sources: list[EvidenceSource]) -> tuple[list[dict[str, Any]]
             source.path,
             claims_complete=bool(source.complete_claim if source.complete_claim is not None else True),
         )
+        identity_errors = verify_source_against_manifest(source, verification)
+        effective_integrity_ok = bool(verification.integrity_ok and not identity_errors)
         row.update({
-            "integrity_ok": verification.integrity_ok,
+            "integrity_ok": effective_integrity_ok,
             "sha_inventory_present": verification.sha_inventory_present,
             "hashed_file_count": len(verification.hashed_files),
             "unhashed_extra_count": len(verification.unhashed_extras),
@@ -95,13 +99,18 @@ def _verify_sources(sources: list[EvidenceSource]) -> tuple[list[dict[str, Any]]
             "missing_hashed_files": verification.missing_hashed_files,
             "mismatched_hashes": verification.mismatched_hashes,
             "byte_mismatches": verification.byte_mismatches,
-            "errors": verification.errors,
+            "errors": list(verification.errors) + identity_errors,
+            "manifest_identity_errors": identity_errors,
+            "observed_bundle_sha256": verification.metadata.get("inventory_sha256"),
             "observed_run_id": verification.metadata.get("run_id"),
             "observed_git_sha": verification.metadata.get("git_sha"),
             "observed_physical_model_calls": verification.metadata.get("physical_model_calls"),
         })
         rows.append(row)
-        details[source.source_id] = verification.to_dict()
+        detail = verification.to_dict()
+        detail["manifest_identity_errors"] = identity_errors
+        detail["effective_integrity_ok"] = effective_integrity_ok
+        details[source.source_id] = detail
     return rows, details
 
 
@@ -190,6 +199,8 @@ def _empty_evidence(
         "decision_trace": [],
         "unknown_fields": [],
         "edge_cases": [],
+        "comparison_evidence": [],
+        "source_metadata": [],
         "data_quality": {},
         "verdict": {
             "verdict": verdict,
@@ -241,6 +252,37 @@ def _flatten_field_provenance(transitions: Iterable[TransitionRecord]) -> list[d
                 "transition_id": transition.transition_id,
                 "task_id": transition.state_before.task_id,
                 **asdict(feature),
+            })
+    return rows
+
+
+def _flatten_validator_results(transitions: Iterable[TransitionRecord]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for transition in transitions:
+        raw_outcome = transition.state_after.metadata.get("raw_outcome_fields", {})
+        values: Any = None
+        phase = "state_after"
+        if isinstance(raw_outcome, dict):
+            values = raw_outcome.get("verifier_results")
+            if not isinstance(values, list):
+                values = raw_outcome.get("validator_results")
+        if not isinstance(values, list):
+            values = list(transition.state_before.verifier_results)
+            phase = "state_before"
+        for index, value in enumerate(values):
+            raw = dict(value) if isinstance(value, dict) else {"value": value}
+            rows.append({
+                "transition_id": transition.transition_id,
+                "task_id": transition.state_before.task_id,
+                "source_id": transition.source_id,
+                "phase": phase,
+                "validator_index": index,
+                "verifier": raw.get("verifier") or raw.get("validator") or raw.get("name") or raw.get("type"),
+                "result": raw.get("result") or raw.get("verdict") or raw.get("status"),
+                "confidence": raw.get("confidence"),
+                "transition_validator_count": transition.state_after.validator_count,
+                "transition_validator_disagreements": transition.state_after.validator_disagreements,
+                "raw": raw,
             })
     return rows
 
@@ -304,7 +346,9 @@ def _run_discovery(config: dict[str, Any], sources: list[EvidenceSource], integr
     normalization_errors = [row for result in results for row in result.errors]
     source_file_inventory = [row for result in results for row in result.source_file_inventory]
     comparisons = [row for result in results for row in result.comparisons]
+    source_metadata = [row for result in results for row in result.metadata_records]
     analysis_rows = [_transition_analysis_row(transition) for transition in transitions]
+    validator_results = _flatten_validator_results(transitions)
 
     counterfactuals = enumerate_replay_candidates(transitions)
     counterfactual_audit = audit_counterfactuals(counterfactuals)
@@ -348,6 +392,8 @@ def _run_discovery(config: dict[str, Any], sources: list[EvidenceSource], integr
     for error in normalization_errors:
         anomalies.append({"kind": "normalization_error", **error})
     for row in integrity_rows:
+        for error in row.get("manifest_identity_errors") or []:
+            anomalies.append({"kind": "manifest_identity_error", "source_id": row.get("source_id"), "detail": error})
         for extra in row.get("unhashed_extras") or []:
             anomalies.append({"kind": "unhashed_extra", "source_id": row.get("source_id"), "detail": extra})
     for transition in transitions:
@@ -408,7 +454,7 @@ def _run_discovery(config: dict[str, Any], sources: list[EvidenceSource], integr
         "model_calls": model_calls,
         "events": events,
         "trials": analysis_rows,
-        "validator_results": [],
+        "validator_results": validator_results,
         "failures": failures,
         "wins": wins,
         "losses": losses,
@@ -445,6 +491,8 @@ def _run_discovery(config: dict[str, Any], sources: list[EvidenceSource], integr
         "decision_trace": [{"counterfactual_id": row.counterfactual_id, "status": row.status.value, "reason": row.reason, "source_transition_ids": row.source_transition_ids} for row in counterfactuals],
         "unknown_fields": unknown_fields,
         "edge_cases": rare_edges + [{"kind": "comparison_evidence", "source_file": row.get("source_file"), "record_type": row.get("record_type")} for row in comparisons[:1000]],
+        "comparison_evidence": comparisons,
+        "source_metadata": source_metadata,
         "data_quality": {},
         "verdict": {
             "verdict": verdict,
@@ -465,6 +513,9 @@ def _run_discovery(config: dict[str, Any], sources: list[EvidenceSource], integr
             f"INVALID_COUNTERFACTUAL: {counterfactual_audit['counts']['INVALID_COUNTERFACTUAL']}\n"
             f"Normalization errors retained: {len(normalization_errors)}\n"
             f"Instrumentation anomalies retained: {len(anomalies)}\n"
+            f"Comparison evidence rows retained: {len(comparisons)}\n"
+            f"Source metadata records retained: {len(source_metadata)}\n"
+            f"Validator result rows retained: {len(validator_results)}\n"
             "Physical model calls: 0\n"
             "Architecture claims authorized: false\n"
         ),
