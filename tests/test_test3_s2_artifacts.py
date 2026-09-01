@@ -41,6 +41,7 @@ def test_s2_writer_emits_complete_hash_verified_forensic_packet(tmp_path):
     }
     written = Test3S2ArtifactWriter(tmp_path).write_all(evidence)
 
+    assert "holdout_manifest.csv" in REQUIRED_S2_FILES
     assert set(REQUIRED_S2_FILES).issubset(set(written))
     assert all((tmp_path / name).is_file() for name in REQUIRED_S2_FILES)
 
@@ -52,6 +53,14 @@ def test_s2_writer_emits_complete_hash_verified_forensic_packet(tmp_path):
     assert master["combined_external_actions"] == 720
     assert master["trial_rows"] == 360
     assert master["matched_case_count"] == 72
+
+    with (tmp_path / "holdout_manifest.csv").open(encoding="utf-8", newline="") as handle:
+        manifest = list(csv.DictReader(handle))
+    assert len(manifest) == 72
+    assert all(row["selected_seed"] for row in manifest)
+    assert all(row["seed_scan_offset"] != "" for row in manifest)
+    assert all(row["fixture_seed"] for row in manifest)
+    assert all(row["initial_failed_requirements"] for row in manifest)
 
     complete = (tmp_path / "COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
     for name in REQUIRED_S2_FILES:
