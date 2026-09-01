@@ -50,7 +50,18 @@ Exact planned Tier-A model calls:
 
 `72 cases × 5 real arms × 2 calls = 720 physical model calls`.
 
-The test declares a single combined external/AI action budget of 720 for Tier-A execution. CI/mock validation must use mock calls only. The repository-wide absolute ceiling remains 1000 combined actions per test. The 720 budget is not a quota for extra redundant work; it exists to buy orthogonal causal coverage.
+S2 also performs bounded model-identity/provenance acquisition around the real run. Each Ollama provenance snapshot performs 6 external API requests: `/api/version`, `/api/tags`, `/api/ps`, plus one `/api/show` request for each of the 3 frozen models. A healthy Tier-A run takes one snapshot before inference and one after inference, for exactly 12 provenance API calls.
+
+Therefore the frozen budgets are:
+
+- scientific inference budget: **720 physical model calls**;
+- provenance/API allowance: **12 external API calls**;
+- combined external/AI action budget: **732 total actions**;
+- repository absolute per-test ceiling: **1000 combined actions**.
+
+The mock/CI run consumes 720 mock model actions and zero external provenance API calls, leaving 12 declared actions unused. A healthy real Tier-A run consumes 720 model calls plus 12 provenance API calls = 732 combined actions. If provenance collection fails before all 12 requests complete, actual use is retained exactly and the architecture claim is withheld rather than inventing missing usage.
+
+The 732 combined budget is a ceiling for the frozen S2 execution, not a quota for redundant work. Its purpose is the 720-call orthogonal causal design plus the minimum provenance needed to prove which frozen models actually ran.
 
 No outcome-dependent early stopping is permitted.
 
@@ -199,7 +210,7 @@ S2 must retain the standard campaign evidence plus:
 - `COMPLETE-EVIDENCE.txt`
 - `SHA256SUMS.csv`
 
-Every raw prompt/response, candidate/action state, validation result, active/shadow status, provenance field, edge case, anomaly, token count, latency, and hash required to reconstruct the causal path must be retained.
+Every raw prompt/response, candidate/action state, validation result, active/shadow status, provenance field, edge case, anomaly, token count, latency, model/settings identity, action-class count, and hash required to reconstruct the causal path must be retained.
 
 ## 15. Progress contract
 
@@ -212,6 +223,9 @@ Implementation follows TDD. Before Tier-A authorization:
 - all S2 regression/contract tests are GREEN;
 - full repository pytest is GREEN;
 - S2 mock validation completes exactly 720 mock physical calls;
+- mock evidence reports combined action limit 732 and actual combined use 720;
+- real execution is fail-closed above 732 combined external/AI actions;
+- provenance transport accounting proves each real provenance API request consumes the same shared action budget;
 - evidence packet completeness/hashes pass;
 - public-boundary leakage tests pass;
 - stochastic-divergence tests pass;
