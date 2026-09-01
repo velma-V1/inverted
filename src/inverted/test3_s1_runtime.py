@@ -395,6 +395,11 @@ def _finalize_trial(
     if active_calls < 1:
         raise AssertionError(f"{revision} arm-task must expose at least one active model intervention")
 
+    requirement_kinds = {
+        str(row["id"]): str(row["kind"])
+        for row in task.metadata.get("public_requirements", [])
+        if isinstance(row, dict) and row.get("id") and row.get("kind")
+    }
     return {
         "protocol_revision": revision,
         "holdout": contract["holdout"],
@@ -410,6 +415,7 @@ def _finalize_trial(
         "seed_failed_requirements": list(seed_status["failed_requirements"]),
         "final_passed_requirements": list(current["passed_requirements"]),
         "final_failed_requirements": list(current["failed_requirements"]),
+        "requirement_kinds": requirement_kinds,
         "first_active_component": first_active_component,
         "active_inference_calls": active_calls,
         "shadow_inference_calls": shadow_calls,
