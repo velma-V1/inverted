@@ -119,6 +119,13 @@ def run_assistant_value_test(
     for model in models:
         if getattr(model, "capture_content", True) is not True:
             raise ValueError("assistant-value experiments require capture_content=true for every model")
+        internal_retries = int(getattr(model, "max_retries", 0) or 0)
+        if internal_retries != 0:
+            raise ValueError(
+                "assistant-value experiments prohibit adapter internal retries; "
+                f"{getattr(model, 'provider', 'unknown')}:{getattr(model, 'model', 'unknown')} "
+                f"has max_retries={internal_retries}"
+            )
 
     root_config, section = _section(config, test_name)
     planned, params = _plan(test_name, section, len(models))
