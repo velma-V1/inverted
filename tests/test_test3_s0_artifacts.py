@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 from pathlib import Path
 
 from inverted.test3_s0_artifacts import REQUIRED_PACKET_FILES, Test3S0ArtifactWriter
@@ -50,7 +51,9 @@ def test_writer_emits_complete_packet_and_preserves_edge_metadata(tmp_path: Path
     writer.write_all(_minimal_evidence())
     missing = [name for name in REQUIRED_PACKET_FILES if not (tmp_path / name).exists()]
     assert missing == []
-    assert '"unknown_field":7' in (tmp_path / "transitions.csv").read_text(encoding="utf-8").replace(" ", "")
+    with (tmp_path / "transitions.csv").open(encoding="utf-8", newline="") as handle:
+        transition_rows = list(csv.DictReader(handle))
+    assert json.loads(transition_rows[0]["metadata"])["unknown_field"] == 7
     assert "{bad}" in (tmp_path / "normalization_errors.csv").read_text(encoding="utf-8")
 
 
