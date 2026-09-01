@@ -7,10 +7,8 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from .test3_s0_analysis import (
-    derive_fixed_policy_candidates_from_comparisons,
-    score_component_outcomes,
-)
+from .test3_s0_analysis import score_component_outcomes
+from .test3_s1_freeze import derive_s1_order_candidates, finalize_s1_preregistration
 
 
 STANDARD_PACKET_FILES = (
@@ -276,6 +274,23 @@ def _analysis_edge_cases(
             ),
         })
 
+    excluded = [row for row in fixed if row.get("production_eligible") is False]
+    if excluded:
+        rows.append({
+            "kind": "analysis_ceiling_boundary",
+            "classification": "analysis_only_order_excluded_from_s1",
+            "excluded_order_count": len(excluded),
+            "excluded_orders": [row.get("candidate") for row in excluded],
+            "analysis_only_components": sorted({
+                str(component)
+                for row in excluded
+                for component in (row.get("analysis_only_components") or [])
+            }),
+            "discovery_reason": (
+                "Order rankings containing oracle/analysis-only components are retained as ceiling evidence but cannot enter production S1 arms."
+            ),
+        })
+
     for control in control_rows:
         identity_rows = int(control.get("identity_subset_replayable_rows") or 0)
         if identity_rows <= 0:
@@ -363,12 +378,9 @@ class Test3S0ArtifactWriter:
         if not data.get("component_outcome_summary"):
             data["component_outcome_summary"] = score_component_outcomes(data.get("trials") or [])
 
-        if not data.get("fixed_policy_candidates"):
-            recovered_fixed = derive_fixed_policy_candidates_from_comparisons(
-                data.get("comparison_evidence") or []
-            )
-            if recovered_fixed:
-                data["fixed_policy_candidates"] = recovered_fixed
+        recovered_fixed = derive_s1_order_candidates(data.get("comparison_evidence") or [])
+        if recovered_fixed:
+            data["fixed_policy_candidates"] = recovered_fixed
 
         fixed = list(data.get("fixed_policy_candidates") or [])
         components = list(data.get("component_outcome_summary") or [])
@@ -380,27 +392,20 @@ class Test3S0ArtifactWriter:
 
         candidate_s1 = dict(data.get("candidate_section1_preregistration") or {})
         if candidate_s1:
-            candidate_s1["fixed_policy_candidate_count"] = len(fixed)
+            candidate_s1 = finalize_s1_preregistration(candidate_s1, fixed)
             candidate_s1["component_summary_count"] = len(components)
-            candidate_s1["arm_freeze_ready"] = bool(fixed)
-            if fixed:
-                candidate_s1.pop("arm_freeze_blocker", None)
-                candidate_s1["fixed_policy_evidence_basis"] = sorted({
-                    str(row.get("evidence_basis")) for row in fixed if row.get("evidence_basis")
-                })
-            elif components:
-                candidate_s1["arm_freeze_blocker"] = (
-                    "Historical transitions do not carry explicit fixed-policy/order identity. "
-                    "Component outcome summaries cannot be substituted for fixed-stack candidates."
-                )
+            candidate_s1["fixed_policy_evidence_basis"] = sorted({
+                str(row.get("evidence_basis")) for row in fixed if row.get("evidence_basis")
+            })
             data["candidate_section1_preregistration"] = candidate_s1
 
         unresolved = list(data.get("unresolved_causal_questions") or [])
-        if components and not fixed:
+        production_eligible_fixed = [row for row in fixed if row.get("production_eligible") is not False]
+        if components and not production_eligible_fixed:
             unresolved.append({
-                "question": "Which explicit fixed stack/order identities should enter Section 1?",
+                "question": "Which production-eligible explicit fixed stack/order identities should enter Section 1?",
                 "count": len(components),
-                "reason": "historical rows expose components but not fixed-policy/order identity",
+                "reason": "historical rows expose components but no production-eligible fixed-policy/order identity",
             })
         incomplete_component_costs = sum(row.get("fully_costed") is False for row in components)
         if incomplete_component_costs:
