@@ -22,6 +22,10 @@ def test_s2_validation_workflow_enforces_exact_720_mock_contract():
     assert 'int(combined["remaining"]) == 12' in text
     assert 'int(model_calls["used"]) == 720' in text
     assert '"provenance_api_call" not in budget_by_kind' in text
+    assert 'elif row["arm_id"] == "S2-B4":' in text
+    assert "assert view == {}, view" in text
+    assert 'policy["arms"]["S2-B4"]["features"] == []' in text
+    assert '"outcome-independent" in policy["arms"]["S2-B4"]["rng"]' in text
     assert "360" in text
     assert "stochastic_divergence.csv" in text
     assert "routing_decisions.csv" in text
