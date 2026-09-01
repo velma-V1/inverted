@@ -5,11 +5,11 @@ from typing import Any, TextIO
 
 
 class InPlaceS1Progress:
-    """Render S1 progress by rewriting one terminal line with carriage returns."""
+    """Render a deliberately short S1 progress line using carriage returns."""
 
-    def __init__(self, *, stream: TextIO | None = None, width: int = 28):
+    def __init__(self, *, stream: TextIO | None = None, width: int = 16):
         self.stream = stream if stream is not None else sys.stdout
-        self.width = max(10, int(width))
+        self.width = min(20, max(10, int(width)))
         self._last_width = 0
         self._finished = False
 
@@ -23,6 +23,7 @@ class InPlaceS1Progress:
         arm_id: str = "",
         task_id: str = "",
     ) -> None:
+        del task_id  # Full task IDs can wrap Windows terminals and create fake new bars.
         if self._finished:
             return
         total = max(1, int(total_tasks))
@@ -30,13 +31,15 @@ class InPlaceS1Progress:
         ratio = completed / total
         filled = min(self.width, int(self.width * ratio))
         bar = "#" * filled + "-" * (self.width - filled)
-        location = " ".join(part for part in (str(arm_id).strip(), str(task_id).strip()) if part)
+        arm = str(arm_id).strip()
         line = (
-            f"S1 [{bar}] {completed}/{total} tasks | "
-            f"calls {max(0, int(physical_calls))}/{max(0, int(call_budget))}"
+            f"S1 [{bar}] {completed}/{total} | "
+            f"{max(0, int(physical_calls))}/{max(0, int(call_budget))} calls"
         )
-        if location:
-            line += f" | {location}"
+        if arm:
+            line += f" | {arm[:8]}"
+        # Guard against accidental future growth that would reintroduce line wrapping.
+        line = line[:63]
         padded = line.ljust(max(self._last_width, len(line)))
         self.stream.write("\r" + padded)
         self.stream.flush()
@@ -51,7 +54,7 @@ class InPlaceS1Progress:
 
 
 class S1ProgressTracker:
-    """Translate sequential model calls into task-completion and call-budget progress."""
+    """Translate sequential physical calls into arm-task completion progress."""
 
     def __init__(self, progress: InPlaceS1Progress, *, total_tasks: int, call_budget: int):
         self.progress = progress
