@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build Section 0 as a strictly model-free causal discovery pipeline that ingests existing Test-1/Test-2 evidence, normalizes historical transitions, classifies every counterfactual, eliminates weak hypotheses, estimates variance/power for later sections, and emits a complete evidence packet plus a candidate Section-1 preregistration without authorizing Tier-A inference.
+**Goal:** Build Section 0 as a strictly model-free causal discovery pipeline that ingests existing Test-1/Test-2 evidence, normalizes historical transitions, classifies every counterfactual, eliminates weak hypotheses, estimates later-section variance/power, and emits a complete evidence packet plus a candidate Section-1 preregistration without authorizing Tier-A inference.
 
-**Architecture:** Add a separate `test3_s0_*` namespace next to the frozen Test-2 implementation. Prior evidence bundles are immutable inputs: verify their hashes, normalize them into one transition schema, then evaluate only replay-safe fixed/adaptive policies. Any comparison requiring an unobserved model response or changed upstream model input is queued as `REQUIRES_NEW_INFERENCE`; leaky/impossible comparisons are retained as `INVALID_COUNTERFACTUAL` data rather than discarded.
+**Architecture:** Add a separate `test3_s0_*` namespace beside the frozen Test-2 implementation. Historical evidence bundles are immutable inputs: verify hashes first, normalize observed transitions second, then score only replay-safe fixed/adaptive policies. Any comparison requiring an unobserved model response or changed model input becomes `REQUIRES_NEW_INFERENCE`; impossible, temporally invalid, or hidden-gold-leaking comparisons remain recorded as `INVALID_COUNTERFACTUAL`.
 
-**Tech Stack:** Python 3.11+, stdlib (`dataclasses`, `enum`, `csv`, `json`, `hashlib`, `math`, `random`, `pathlib`), existing PyYAML, pytest. No Ollama/model-adapter import is allowed on the Section-0 execution path.
+**Tech Stack:** Python 3.11+, stdlib (`dataclasses`, `enum`, `csv`, `json`, `hashlib`, `math`, `random`, `pathlib`), existing PyYAML, pytest. The S0 execution path must not import Ollama or any model adapter.
 
 **Spec:** `docs/superpowers/specs/2026-09-01-adaptive-evidence-discovery-campaign-design.md`
 
@@ -14,35 +14,35 @@
 
 - Section 0 uses exactly **0 physical model calls**.
 - Section 0 makes **no Tier-A architecture claim**.
-- Existing Test-1/Test-2 source/evidence semantics are inputs, not code to rewrite.
+- Test-1/Test-2 code and evidence semantics are historical inputs, not targets for refactoring.
 - Every counterfactual is exactly one of `CAUSAL_REPLAY`, `REQUIRES_NEW_INFERENCE`, or `INVALID_COUNTERFACTUAL`.
-- Hidden gold is permitted only for retrospective scoring or an explicitly analysis-only oracle ceiling; it is forbidden as a production-policy feature.
+- Hidden gold may be used only for retrospective outcome scoring or explicitly analysis-only oracle ceilings; it is forbidden as a production-policy feature.
 - Missing historical fields remain explicit unknowns; normalization never invents values.
 - Bad routing, bad verification, stale memory, failed mentoring, unused calls, cache/accounting defects, provenance defects, and instrumentation failures remain evidence.
 - Exact Tier-A budgets remain unfrozen. S0 may emit a recommended range, never an automatically frozen budget.
 - Random-extra-compute/context controls must be measured where replayable or queued for new inference.
-- The approved design baseline is `0db53efda83060af06a1984fe099d6d52fb515d7`.
+- Approved design baseline: `0db53efda83060af06a1984fe099d6d52fb515d7`.
 
 ---
 
 ## File Structure
 
-- `src/inverted/test3_s0_types.py` — canonical source/state/action/outcome/transition/counterfactual contracts and zero-call guard.
+- `src/inverted/test3_s0_types.py` — source/state/action/outcome/transition/counterfactual contracts and zero-call guard.
 - `src/inverted/test3_s0_inputs.py` — source manifest, bundle discovery, SHA verification, immutable readers.
 - `src/inverted/test3_s0_normalize.py` — Test-1/Test-2/model-free evidence adapters.
 - `src/inverted/test3_s0_counterfactuals.py` — replay admissibility and three-way classification.
 - `src/inverted/test3_s0_analysis.py` — fixed/adaptive policy search, controls, Pareto ranking, uncertainty, power.
-- `src/inverted/test3_s0_artifacts.py` — Section-0 evidence packet, master evidence stream, hashes.
+- `src/inverted/test3_s0_artifacts.py` — Section-0 packet, master evidence stream, hashes.
 - `src/inverted/test3_s0_cli.py` — `build-manifest`, `validate-instrument`, and `run` commands.
-- `configs/test3-s0.yaml` — Section-0 scientific guardrails; no final Tier-A budget.
+- `configs/test3-s0.yaml` — S0 scientific guardrails; no final Tier-A budget.
 - `tests/test_test3_s0_*.py` — unit/contract/regression coverage.
-- `.github/workflows/test3-s0-validation.yml` — zero-call instrument validation in GitHub Actions.
+- `.github/workflows/test3-s0-validation.yml` — zero-call GitHub instrument validation.
 
-Do **not** modify `src/inverted/test2_*.py` unless a regression proves a shared bug that prevents S0 from reading already-emitted evidence. Section 0 is supposed to analyze Test-2, not mutate its historical semantics.
+Do **not** modify `src/inverted/test2_*.py` unless a failing regression proves a shared reader defect that prevents S0 from consuming already-emitted evidence.
 
 ---
 
-### Task 1: Canonical Section-0 contracts and zero-call invariant
+### Task 1: Canonical contracts and zero-model-call invariant
 
 **Files:**
 - Create: `src/inverted/test3_s0_types.py`
@@ -84,6 +84,7 @@ Run: `python -m pytest tests/test_test3_s0_types.py -q`
 
 ```python
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -206,15 +207,16 @@ git commit -m "feat: add Test-3 Section-0 evidence contracts"
 ```python
 from pathlib import Path
 import hashlib
+
 from inverted.test3_s0_inputs import SourceAvailability, verify_file_hash
 
 
 def test_hash_mutation_is_detected(tmp_path: Path):
     p = tmp_path / "x.json"
-    p.write_text('{"x":1}\n', encoding="utf-8")
+    p.write_text("{\"x\":1}\n", encoding="utf-8")
     digest = hashlib.sha256(p.read_bytes()).hexdigest()
     assert verify_file_hash(p, digest)
-    p.write_text('{"x":2}\n', encoding="utf-8")
+    p.write_text("{\"x\":2}\n", encoding="utf-8")
     assert verify_file_hash(p, digest) is False
 
 
@@ -230,13 +232,7 @@ Run: `python -m pytest tests/test_test3_s0_inputs.py -q`
 
 - [ ] **Step 3: Implement bundle verification**
 
-`verify_evidence_bundle()` must:
-1. require `SHA256SUMS.csv` when a source claims completeness;
-2. recompute each listed hash;
-3. reject path traversal/out-of-root entries;
-4. list unhashed extra files instead of trusting them;
-5. extract git SHA/run ID/evidence tier when present;
-6. never modify source bytes.
+`verify_evidence_bundle()` must require `SHA256SUMS.csv` for sources claiming completeness, recompute each hash, reject path traversal/out-of-root entries, list unhashed extras, extract git SHA/run ID/evidence tier when available, and never alter source bytes.
 
 Recognize at minimum:
 
@@ -271,8 +267,6 @@ power:
   candidate_alpha: 0.05
   target_power: 0.80
 ```
-
-No S1-S6 exact call budget is stored here.
 
 - [ ] **Step 5: Verify GREEN and commit**
 
@@ -327,15 +321,11 @@ def test_model_free_event_normalizes_without_inventing_model_fields():
 
 Run: `python -m pytest tests/test_test3_s0_normalize.py -q`
 
-- [ ] **Step 3: Implement adapters in this order**
+- [ ] **Step 3: Implement adapters**
 
-1. Test-2 `events.jsonl` / `raw/every-event.jsonl`.
-2. Test-2 `trials.csv` attempt-to-attempt transitions.
-3. Test-2 order/effect rows as comparison evidence, not fabricated model transitions.
-4. Test-2 Tier-A model-call/repair/audit rows when present.
-5. Test-1 rows through a separate source-specific adapter.
+Implement in this order: Test-2 `events.jsonl`/`raw/every-event.jsonl`; Test-2 `trials.csv` attempt transitions; Test-2 order/effect rows as comparison evidence rather than fabricated model transitions; Test-2 Tier-A model-call/repair/audit rows; Test-1 source-specific rows.
 
-Each adapter also emits coverage:
+Each adapter emits coverage:
 
 ```python
 {
@@ -349,7 +339,7 @@ Each adapter also emits coverage:
 }
 ```
 
-Malformed rows go to `normalization_errors.csv`; they are not coerced.
+Malformed rows go to `normalization_errors.csv`; they are never coerced.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
@@ -370,7 +360,7 @@ git commit -m "feat: normalize Test-3 historical evidence"
 **Interfaces:**
 - Produces: `classify_counterfactual`, `enumerate_replay_candidates`, `audit_counterfactuals`.
 
-- [ ] **Step 1: Write tests for all three statuses**
+- [ ] **Step 1: Write all three classification tests**
 
 ```python
 from inverted.test3_s0_counterfactuals import classify_counterfactual
@@ -378,40 +368,21 @@ from inverted.test3_s0_types import CounterfactualStatus
 
 
 def test_recomposition_of_observed_outputs_is_causal_replay():
-    result = classify_counterfactual(
-        changes_model_input=False,
-        needs_unobserved_model_output=False,
-        uses_hidden_gold_as_feature=False,
-        violates_temporal_availability=False,
-        provenance_complete=True,
-        action_possible=True,
-    )
+    result = classify_counterfactual(False, False, False, False, True, True)
     assert result.status is CounterfactualStatus.CAUSAL_REPLAY
 
 
 def test_prompt_changing_repair_requires_new_inference():
-    result = classify_counterfactual(
-        changes_model_input=True,
-        needs_unobserved_model_output=True,
-        uses_hidden_gold_as_feature=False,
-        violates_temporal_availability=False,
-        provenance_complete=True,
-        action_possible=True,
-    )
+    result = classify_counterfactual(True, True, False, False, True, True)
     assert result.status is CounterfactualStatus.REQUIRES_NEW_INFERENCE
 
 
 def test_hidden_gold_router_is_invalid():
-    result = classify_counterfactual(
-        changes_model_input=False,
-        needs_unobserved_model_output=False,
-        uses_hidden_gold_as_feature=True,
-        violates_temporal_availability=False,
-        provenance_complete=True,
-        action_possible=True,
-    )
+    result = classify_counterfactual(False, False, True, False, True, True)
     assert result.status is CounterfactualStatus.INVALID_COUNTERFACTUAL
 ```
+
+The six positional arguments are, in order: `changes_model_input`, `needs_unobserved_model_output`, `uses_hidden_gold_as_feature`, `violates_temporal_availability`, `provenance_complete`, `action_possible`.
 
 - [ ] **Step 2: Verify RED**
 
@@ -427,7 +398,7 @@ INVALID_COUNTERFACTUAL
   OR action impossible in historical state
 
 REQUIRES_NEW_INFERENCE
-  any proposed action changes model input/context
+  proposed action changes model input/context
   OR requires an unobserved model/role/task output
   OR places an observed downstream step after a new model-producing mutation
 
@@ -435,11 +406,11 @@ CAUSAL_REPLAY
   all required outputs already exist and recomposition does not change model inputs
 ```
 
-An oracle ceiling is allowed only with `analysis_only_oracle=True`; it must never enter production-policy rankings.
+Oracle ceilings require `analysis_only_oracle=True` and are excluded from production-policy rankings.
 
-- [ ] **Step 4: Enumerate the spec search dimensions**
+- [ ] **Step 4: Enumerate all S0 search dimensions**
 
-Enumerate fixed permutations, ablations, model-role assignments, failure-conditioned switching, retry/regenerate/repair, verifier placement/type, cost/success frontiers, and replay-safe conditional policies. If a required output is absent, emit `REQUIRES_NEW_INFERENCE`; never synthesize it.
+Enumerate fixed permutations, ablations, model-role assignments, failure-conditioned switching, retry/regenerate/repair, verifier placement/type, cost/success frontiers, and replay-safe conditional policies. Missing required outputs create `REQUIRES_NEW_INFERENCE`; never synthesize model behavior.
 
 - [ ] **Step 5: Verify GREEN and commit**
 
@@ -451,7 +422,7 @@ git commit -m "feat: classify Section-0 causal counterfactuals"
 
 ---
 
-### Task 5: Fixed/adaptive policy discovery, negative controls, and Pareto ranking
+### Task 5: Fixed/adaptive policy discovery, controls, and Pareto ranking
 
 **Files:**
 - Create: `src/inverted/test3_s0_analysis.py`
@@ -466,7 +437,7 @@ git commit -m "feat: classify Section-0 causal counterfactuals"
 from inverted.test3_s0_analysis import choose_failure_conditioned_policy
 
 
-def test_conditional_policy_can_beat_best_fixed_action_without_extra_calls():
+def test_conditional_policy_beats_best_fixed_action_without_extra_calls():
     rows = [
         {"task_id": "a", "failure_signature": "wrong_value", "action": "repair", "success": True, "calls": 1},
         {"task_id": "a", "failure_signature": "wrong_value", "action": "retry", "success": False, "calls": 1},
@@ -483,33 +454,25 @@ def test_conditional_policy_can_beat_best_fixed_action_without_extra_calls():
 
 Run: `python -m pytest tests/test_test3_s0_analysis.py -q`
 
-- [ ] **Step 3: Implement grouped evaluation to prevent leakage**
+- [ ] **Step 3: Implement grouped evaluation**
 
-Use task/casual-twin groups, not individual rows. Deterministic fold assignment:
+Use task/causal-twin groups, never individual transition rows. Deterministic fold assignment:
 
 ```python
 def grouped_fold(task_id: str, folds: int = 5) -> int:
-    import hashlib
     digest = hashlib.sha256(task_id.encode("utf-8")).digest()
     return int.from_bytes(digest[:8], "big") % folds
 ```
 
-Derive a conditional mapping on four folds and score it on the fifth. Aggregate all held-out folds. This is hypothesis-generation evidence only, not the final Test-3 holdout.
+Derive conditional mappings on four folds and score on the fifth; aggregate only held-out-fold scores.
 
 - [ ] **Step 4: Score replayable negative controls**
 
-Use the fixed S0 RNG seed to score random model switch, random verifier, random retry, irrelevant retrieved record/skill where historical retrieval evidence exists, equal-call subsets, and equal-token subsets. If a control cannot be replayed from observed outputs, record it in `REQUIRES_NEW_INFERENCE`.
+Using seed `20260901`, score random model switch, random verifier, random retry, irrelevant retrieved item where historical retrieval evidence exists, equal-call subsets, and equal-token subsets. Non-replayable controls are retained in `REQUIRES_NEW_INFERENCE`.
 
 - [ ] **Step 5: Implement Pareto ranking**
 
-Order objectives:
-1. maximize verified success;
-2. minimize catastrophic escape;
-3. minimize physical calls;
-4. minimize tokens;
-5. minimize latency.
-
-Do not impute missing cost dimensions. Emit `cost_completeness` and separate fully-costed from outcome-only frontiers.
+Objectives, in order: maximize verified success; minimize catastrophic escape; minimize physical calls; minimize tokens; minimize latency. Never impute missing cost dimensions. Emit `cost_completeness` and separate fully-costed from outcome-only frontiers.
 
 - [ ] **Step 6: Verify GREEN and commit**
 
@@ -530,7 +493,7 @@ git commit -m "feat: discover replay-safe Section-0 policies"
 **Interfaces:**
 - Produces: `bootstrap_effect_ci`, `estimate_required_task_clusters`, `build_candidate_s1_preregistration`.
 
-- [ ] **Step 1: Write variance-sensitive power tests**
+- [ ] **Step 1: Write variance-sensitive power test**
 
 ```python
 from inverted.test3_s0_analysis import estimate_required_task_clusters
@@ -538,10 +501,10 @@ from inverted.test3_s0_analysis import estimate_required_task_clusters
 
 def test_required_n_rises_with_cluster_variance():
     low = estimate_required_task_clusters(
-        [0.10, 0.10, 0.11, 0.09, 0.10, 0.10], target_effect=0.10, alpha=0.05, power=0.80
+        [0.10, 0.10, 0.11, 0.09, 0.10, 0.10], 0.10, 0.05, 0.80
     )
     high = estimate_required_task_clusters(
-        [0.30, -0.10, 0.25, -0.05, 0.20, 0.00], target_effect=0.10, alpha=0.05, power=0.80
+        [0.30, -0.10, 0.25, -0.05, 0.20, 0.00], 0.10, 0.05, 0.80
     )
     assert high["recommended_clusters"] >= low["recommended_clusters"]
 ```
@@ -552,18 +515,20 @@ Run: `python -m pytest tests/test_test3_s0_power.py -q`
 
 - [ ] **Step 3: Implement conservative empirical estimation**
 
-Use task-cluster paired differences. Compute sample SD and:
+Use task-cluster paired differences and sample SD:
 
 ```python
-recommended_n = math.ceil(((1.959963984540054 + 0.8416212335729143) * sd / target_effect) ** 2)
+recommended_n = math.ceil(
+    ((1.959963984540054 + 0.8416212335729143) * sd / target_effect) ** 2
+)
 ```
 
-Also compute the configured 20,000-resample task-cluster bootstrap CI. If there are too few clusters or zero usable variance, return `status="INSUFFICIENT_VARIANCE_EVIDENCE"`; never invent a budget.
+Also compute a 20,000-resample task-cluster bootstrap CI. Too few clusters or unusable variance returns `status="INSUFFICIENT_VARIANCE_EVIDENCE"`; no budget is invented.
 
 - [ ] **Step 4: Emit candidate-only S1 preregistration**
 
 ```python
-{
+candidate = {
     "status": "CANDIDATE_ONLY_NOT_PREREGISTERED",
     "tier_a_inference_authorized": False,
     "question": "Does fixed component order have enough causal value to justify further fixed-stack optimization?",
@@ -580,7 +545,7 @@ Also compute the configured 20,000-resample task-cluster bootstrap CI. If there 
 }
 ```
 
-A separate `recommended_budget_range` may be populated from S0 evidence. `exact_budget` remains null until S1 is explicitly frozen.
+A separate `recommended_budget_range` may be emitted; `exact_budget` remains null until S1 is explicitly frozen.
 
 - [ ] **Step 5: Verify GREEN and commit**
 
@@ -648,37 +613,162 @@ candidate_section1_preregistration.json
 
 - [ ] **Step 1: Write artifact-contract tests**
 
-Assert every required file exists; `model_calls.jsonl` is byte-empty; every counterfactual has one allowed status; `COMPLETE-EVIDENCE.txt` embeds all generated JSON/JSONL/CSV/TXT files in deterministic path order; `SHA256SUMS.csv` hashes every generated artifact except itself; source hashes/provenance are present.
+Tests assert every required file exists; `model_calls.jsonl` is byte-empty; every counterfactual has exactly one allowed status; `COMPLETE-EVIDENCE.txt` embeds every generated JSON/JSONL/CSV/TXT file in deterministic relative-path order; `SHA256SUMS.csv` hashes every generated artifact except itself; source hashes/provenance are present.
 
 - [ ] **Step 2: Verify RED**
 
 Run: `python -m pytest tests/test_test3_s0_artifacts.py -q`
 
-- [ ] **Step 3: Implement dedicated writer**
+- [ ] **Step 3: Implement concrete writer helpers**
 
 ```python
+from __future__ import annotations
+
+import csv
+import hashlib
+import json
+from pathlib import Path
+from typing import Any
+
+
+def _write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
+
+
+def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = sorted({str(key) for row in rows for key in row}) or ["empty"]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: row.get(key) for key in fields})
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+```
+
+- [ ] **Step 4: Implement `Test3S0ArtifactWriter.write_all` with an explicit file map**
+
+```python
+JSON_FILES = {
+    "preregistration.json": "preregistration",
+    "config.json": "config",
+    "provenance.json": "provenance",
+    "failure_atlas.json": "failure_atlas",
+    "effect_sizes.json": "effect_sizes",
+    "verdict.json": "verdict",
+    "source_manifest.json": "source_manifest",
+    "power_variance.json": "power_variance",
+    "candidate_section1_preregistration.json": "candidate_section1_preregistration",
+}
+
+JSONL_FILES = {
+    "model_calls.jsonl": "model_calls",
+    "events.jsonl": "events",
+}
+
+CSV_FILES = {
+    "trials.csv": "trials",
+    "validator_results.csv": "validator_results",
+    "failures.csv": "failures",
+    "wins.csv": "wins",
+    "losses.csv": "losses",
+    "transitions.csv": "transitions",
+    "counterfactuals.csv": "counterfactuals",
+    "costs.csv": "costs",
+    "latency.csv": "latency",
+    "tokens.csv": "tokens",
+    "cache.csv": "cache",
+    "source_integrity.csv": "source_integrity",
+    "normalization_coverage.csv": "normalization_coverage",
+    "normalization_errors.csv": "normalization_errors",
+    "fixed_policy_candidates.csv": "fixed_policy_candidates",
+    "adaptive_policy_candidates.csv": "adaptive_policy_candidates",
+    "control_results.csv": "control_results",
+    "pareto_frontier.csv": "pareto_frontier",
+    "unresolved_causal_questions.csv": "unresolved_causal_questions",
+    "requires_new_inference.csv": "requires_new_inference",
+    "invalid_counterfactuals.csv": "invalid_counterfactuals",
+}
+
+
 class Test3S0ArtifactWriter:
     def __init__(self, run_dir: str | Path):
         self.run_dir = Path(run_dir)
 
     def write_all(self, evidence: dict[str, Any]) -> dict[str, str]:
-        ...
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        written: dict[str, Path] = {}
+
+        for relative, key in JSON_FILES.items():
+            path = self.run_dir / relative
+            _write_json(path, evidence.get(key, {}))
+            written[relative] = path
+
+        for relative, key in JSONL_FILES.items():
+            path = self.run_dir / relative
+            _write_jsonl(path, list(evidence.get(key, [])))
+            written[relative] = path
+
+        for relative, key in CSV_FILES.items():
+            path = self.run_dir / relative
+            _write_csv(path, list(evidence.get(key, [])))
+            written[relative] = path
+
+        report = self.run_dir / "report.txt"
+        report.write_text(str(evidence.get("report", "")), encoding="utf-8")
+        written["report.txt"] = report
+
+        master = self.run_dir / "COMPLETE-EVIDENCE.txt"
+        source_paths = sorted(written.values(), key=lambda p: p.relative_to(self.run_dir).as_posix())
+        with master.open("w", encoding="utf-8", newline="\n") as handle:
+            handle.write("VELMA TEST 3 SECTION 0 — COMPLETE EVIDENCE\n")
+            for path in source_paths:
+                rel = path.relative_to(self.run_dir).as_posix()
+                handle.write(f"\n===== BEGIN FILE: {rel} =====\n")
+                text = path.read_text(encoding="utf-8")
+                handle.write(text)
+                if text and not text.endswith("\n"):
+                    handle.write("\n")
+                handle.write(f"===== END FILE: {rel} =====\n")
+        written["COMPLETE-EVIDENCE.txt"] = master
+
+        hashes = self.run_dir / "SHA256SUMS.csv"
+        with hashes.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["path", "sha256", "bytes"])
+            writer.writeheader()
+            for path in sorted(written.values(), key=lambda p: p.relative_to(self.run_dir).as_posix()):
+                writer.writerow({
+                    "path": path.relative_to(self.run_dir).as_posix(),
+                    "sha256": _sha256(path),
+                    "bytes": path.stat().st_size,
+                })
+        written["SHA256SUMS.csv"] = hashes
+        return {key: str(path) for key, path in written.items()}
 ```
 
-The implementation step must replace the ellipsis with concrete file writes before committing; no ellipsis may remain in production code.
+The production implementation must also serialize nested CSV values deterministically, matching Test-2's existing behavior, before this task is considered GREEN.
 
-Allowed S0 verdicts:
+Allowed S0 verdicts are exactly `DISCOVERY_COMPLETE_MODEL_FREE`, `PARTIAL_INPUT_EVIDENCE`, `INSTRUMENTATION_FAILURE`, and `SOURCE_INTEGRITY_FAILURE`.
 
-```text
-DISCOVERY_COMPLETE_MODEL_FREE
-PARTIAL_INPUT_EVIDENCE
-INSTRUMENTATION_FAILURE
-SOURCE_INTEGRITY_FAILURE
-```
-
-None is a Tier-A architecture verdict.
-
-- [ ] **Step 4: Verify GREEN and commit**
+- [ ] **Step 5: Verify GREEN and commit**
 
 ```bash
 python -m pytest tests/test_test3_s0_artifacts.py -q
@@ -697,11 +787,11 @@ git commit -m "feat: write complete Test-3 Section-0 evidence"
 - Create: `tests/test_test3_s0_workflow_contract.py`
 
 **Interfaces:**
-- `python -m inverted.test3_s0_cli build-manifest ...`
-- `python -m inverted.test3_s0_cli validate-instrument ...`
-- `python -m inverted.test3_s0_cli run ...`
+- `python -m inverted.test3_s0_cli build-manifest`
+- `python -m inverted.test3_s0_cli validate-instrument`
+- `python -m inverted.test3_s0_cli run`
 
-- [ ] **Step 1: Write CLI zero-model tests**
+- [ ] **Step 1: Write CLI zero-model test**
 
 ```python
 def test_s0_cli_has_no_model_execution_dependency():
@@ -710,25 +800,15 @@ def test_s0_cli_has_no_model_execution_dependency():
     assert "run_local_campaign" not in cli.__dict__
 ```
 
-Also test that emitted master metadata contains `physical_model_calls == 0`.
+Also assert emitted master metadata contains `physical_model_calls == 0`.
 
 - [ ] **Step 2: Implement command semantics**
 
-`build-manifest` writes source entries and marks each required source class available/missing.
-
-`validate-instrument` permits partial historical inputs, exercises the full pipeline, and must end `PARTIAL_INPUT_EVIDENCE` unless all required source classes are present.
-
-`run` requires all declared source classes to pass integrity/normalization. A failure still writes a forensic packet, but cannot emit `DISCOVERY_COMPLETE_MODEL_FREE`.
+`build-manifest` writes source entries and marks each required source class available/missing. `validate-instrument` accepts partial inputs, exercises the entire S0 pipeline, and emits `PARTIAL_INPUT_EVIDENCE` unless all required source classes are verified. `run` requires all declared source classes to pass integrity and normalization; failures still emit a forensic packet but never `DISCOVERY_COMPLETE_MODEL_FREE`.
 
 - [ ] **Step 3: Write workflow-contract test**
 
-Assert the workflow:
-- runs full pytest;
-- generates fresh Test-2 model-free evidence;
-- builds a manifest through the S0 CLI;
-- runs `validate-instrument`, not scientific `run`, in ordinary CI;
-- contains no Ollama setup/API key/model download/Tier-A command;
-- uploads the S0 validation packet.
+Assert the workflow runs full pytest; generates fresh Test-2 model-free evidence; builds the S0 manifest through the CLI; runs `validate-instrument`, not scientific `run`; contains no Ollama setup/API key/model download/Tier-A command; and uploads the S0 packet.
 
 - [ ] **Step 4: Implement workflow**
 
@@ -778,7 +858,7 @@ jobs:
           if-no-files-found: error
 ```
 
-- [ ] **Step 5: Verify focused tests and commit**
+- [ ] **Step 5: Verify GREEN and commit**
 
 ```bash
 python -m pytest tests/test_test3_s0_cli.py tests/test_test3_s0_workflow_contract.py -q
@@ -797,7 +877,7 @@ git commit -m "ci: add zero-call Test-3 Section-0 validation"
 
 Run: `python -m pytest -q`
 
-Expected: all existing Test-1/Test-2 tests and all new S0 tests pass.
+Expected: all Test-1/Test-2 tests and all new S0 tests pass.
 
 - [ ] **Step 2: Run local instrument validation**
 
@@ -819,15 +899,15 @@ python -m inverted.test3_s0_cli validate-instrument \
   --run-id test3-s0-validation
 ```
 
-Expected: zero model calls, complete artifact contract, and `PARTIAL_INPUT_EVIDENCE` unless Test-1 and Test-2 Tier-A bundles have also been added to the manifest.
+Expected: zero model calls, complete artifact contract, and `PARTIAL_INPUT_EVIDENCE` until Test-1 and Test-2 Tier-A bundles are also verified in the manifest.
 
-- [ ] **Step 3: Audit required historical sources before scientific S0**
+- [ ] **Step 3: Audit required historical sources**
 
-For each source class (`test1`, `test2_tier_a`, `test2_model_free`), record source location, run ID, git SHA, bundle digest, evidence tier, completeness, and whether its historical evidence contract verifies. Missing Tier-A evidence is a blocker; never replace it with the model-free atlas and never infer its missing outcomes.
+For each source class (`test1`, `test2_tier_a`, `test2_model_free`), record exact source location, run ID, git SHA, bundle digest, evidence tier, completeness, and historical evidence-contract verification. Missing Tier-A evidence is a blocker; never replace it with model-free evidence and never infer missing outcomes.
 
-- [ ] **Step 4: Add verified Test-1/Test-2 Tier-A source entries to `test3-s0-inputs/source-manifest.json`**
+- [ ] **Step 4: Add the verified Test-1/Test-2 Tier-A sources to the manifest**
 
-Use the manifest writer/loader from Task 2. This step records the exact real evidence locations found in Step 3; it does not create synthetic substitutes.
+Use `write_source_manifest` from Task 2 with the exact locations and digests found in Step 3. No synthetic source entry is permitted.
 
 - [ ] **Step 5: Run scientific S0 only when the manifest is complete**
 
@@ -839,26 +919,14 @@ python -m inverted.test3_s0_cli run \
   --run-id test3-s0-discovery
 ```
 
-A complete S0 may nominate S1 arms and a recommended budget range. It still may not execute Tier-A inference or freeze S1's exact budget automatically.
+A complete S0 may nominate S1 arms and a recommended budget range. It may not execute Tier-A inference or freeze S1's exact budget automatically.
 
 - [ ] **Step 6: Run GitHub workflows**
 
-Required green workflows:
-- existing `test`;
-- existing `test2-validation`;
-- new `test3-s0-validation`.
+Required green workflows: existing `test`, existing `test2-validation`, and new `test3-s0-validation`.
 
-- [ ] **Step 7: Final forensic review before any Section-1 implementation**
+- [ ] **Step 7: Final forensic review before Section 1**
 
-Confirm:
-- every comparison has exactly one counterfactual status;
-- `REQUIRES_NEW_INFERENCE` and `INVALID_COUNTERFACTUAL` rows are preserved;
-- no hidden-gold feature leakage exists in production-policy candidates;
-- random/equal-compute controls are measured or explicitly queued;
-- conditional gains use task/causal-twin grouping rather than row leakage;
-- power estimates report uncertainty and refuse unsupported exact budgets;
-- candidate S1 preregistration remains `CANDIDATE_ONLY_NOT_PREREGISTERED`;
-- `model_calls.jsonl` is byte-empty and physical-call count is zero;
-- all generated and source hashes verify.
+Confirm every comparison has exactly one counterfactual status; `REQUIRES_NEW_INFERENCE` and `INVALID_COUNTERFACTUAL` rows are preserved; production-policy candidates contain no hidden-gold feature leakage; random/equal-compute controls are measured or queued; conditional gains use task/causal-twin grouping rather than row leakage; power estimates report uncertainty and refuse unsupported exact budgets; candidate S1 preregistration remains `CANDIDATE_ONLY_NOT_PREREGISTERED`; `model_calls.jsonl` is byte-empty and physical-call count is zero; and all generated/source hashes verify.
 
-Do not merge into Section 1 or authorize Tier-A calls until the S0 evidence packet has been reviewed as its own experimental result.
+Do not begin Section 1 or authorize Tier-A calls until the S0 evidence packet has been reviewed as its own experimental result.
