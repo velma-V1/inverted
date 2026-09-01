@@ -3,7 +3,8 @@ s2:
   protocol_revision: S2-R1
   holdout: B-R1
   hard_call_limit: 720
-  combined_action_budget: 720
+  combined_action_budget: 732
+  provenance_api_call_budget: 12
   absolute_action_ceiling: 1000
   arm_count: 5
   per_arm_call_cap: 144
