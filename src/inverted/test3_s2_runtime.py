@@ -14,7 +14,7 @@ from .test2_types import PhysicalCallBudget
 from .test3_s1_r3_runtime import compose_repair_patch
 from .test3_s1_runtime import _call_row, _candidate, _public_task, public_failure_feedback
 from .test3_s2_budget import CombinedActionBudget
-from .test3_s2_cases import S2ExecutionCase, S2_HOLDOUT, S2_PROTOCOL_REVISION, build_seed_failure_s2
+from .test3_s2_cases import S2ExecutionCase, S2_HOLDOUT, S2_PROTOCOL_REVISION, build_seed_failure_s2, fixture_seed_s2
 from .test3_s2_policy import INTERVENTION_LIBRARY, REAL_ARM_IDS, public_router_state, select_action
 
 
@@ -288,6 +288,39 @@ def _validate_inputs(cases: list[S2ExecutionCase], model_by_name: dict[str, Any]
             raise ValueError("S2 model adapters must disable transport retries")
 
 
+def _holdout_manifest(cases: list[S2ExecutionCase]) -> list[dict[str, Any]]:
+    """Preserve private fixture/selection provenance without exposing it to routers or prompts."""
+    manifest: list[dict[str, Any]] = []
+    for case in cases:
+        seed = build_seed_failure_s2(case)
+        status = _result(case.task, seed)
+        by_id = {req.id: req for req in case.task.requirements}
+        failed_ids = list(status.get("failed_requirements") or [])
+        manifest.append({
+            "task_id": case.case_id,
+            "base_task_id": case.metadata.get("base_task_id"),
+            "family": case.task.family,
+            "complexity": int(case.task.complexity),
+            "perturbation_class": case.metadata.get("perturbation_class"),
+            "selected_seed": int(case.metadata.get("selected_seed")),
+            "seed_scan_offset": int(case.metadata.get("seed_scan_offset")),
+            "requirement_count": int(case.metadata.get("requirement_count")),
+            "fixture_seed": int(seed.metadata.get("fixture_seed") or fixture_seed_s2(case)),
+            "fixture_candidate_id": seed.id,
+            "fixture_candidate_metadata": dict(seed.metadata),
+            "fixture_injected_faults": list(seed.injected_faults),
+            "fixture_actions": [action.to_dict() for action in seed.actions],
+            "fixture_state": seed.state.to_dict(),
+            "initial_success": bool(status.get("success")),
+            "initial_catastrophic": bool(status.get("catastrophic")),
+            "initial_passed_requirements": list(status.get("passed_requirements") or []),
+            "initial_failed_requirements": failed_ids,
+            "initial_failed_requirement_kinds": [by_id[item].kind if item in by_id else "parse_or_execution" for item in failed_ids],
+            "public_task": _public_task(case.task),
+        })
+    return manifest
+
+
 def run_s2_screen(
     *,
     cases: list[S2ExecutionCase],
@@ -303,6 +336,7 @@ def run_s2_screen(
     if combined.remaining < exact_budget:
         raise ValueError("S2 shared action budget does not have room for the exact 720 inference actions")
     action_start = combined.used
+    holdout_manifest = _holdout_manifest(cases)
     trials: list[dict[str, Any]] = []
     calls: list[dict[str, Any]] = []
     validators: list[dict[str, Any]] = []
@@ -428,6 +462,10 @@ def run_s2_screen(
                 "family": case.task.family,
                 "complexity": int(case.task.complexity),
                 "perturbation_class": case.metadata["perturbation_class"],
+                "selected_seed": case.metadata.get("selected_seed"),
+                "seed_scan_offset": case.metadata.get("seed_scan_offset"),
+                "requirement_count": case.metadata.get("requirement_count"),
+                "fixture_seed": seed.metadata.get("fixture_seed"),
                 "execution_position": execution_position,
                 "initial_success": bool(initial_status.get("success")),
                 "initial_catastrophic": bool(initial_status.get("catastrophic")),
@@ -474,6 +512,7 @@ def run_s2_screen(
         "physical_model_calls": physical.physical_calls,
         "inference_action_delta": inference_action_delta,
         "action_budget": combined.snapshot(),
+        "holdout_manifest": holdout_manifest,
         "trials": trials,
         "model_calls": calls,
         "validator_results": validators,
