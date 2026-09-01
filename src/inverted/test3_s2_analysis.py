@@ -129,8 +129,111 @@ def _stratum_support(trials: list[dict[str, Any]], dimension: str) -> tuple[list
     return out, support
 
 
+def _number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _action_model_summaries(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, int, str, str], list[dict[str, Any]]] = defaultdict(list)
+    arm_totals = Counter(str(row.get("arm_id")) for row in calls)
+    for row in calls:
+        grouped[(
+            str(row.get("arm_id")),
+            int(row.get("step_index") or 0),
+            str(row.get("action_selected")),
+            str(row.get("model")),
+        )].append(row)
+
+    rows: list[dict[str, Any]] = []
+    for (arm_id, step_index, action, model), group in sorted(grouped.items()):
+        active_calls = sum(bool(row.get("active_intervention")) for row in group)
+        shadow_calls = sum(bool(row.get("shadow_only")) for row in group)
+        proposal_successes = sum(bool(row.get("proposed_success")) for row in group)
+        proposal_catastrophes = sum(bool(row.get("proposed_catastrophic")) for row in group)
+        recovery_opportunities = sum(not bool(row.get("success_before")) for row in group)
+        proposed_recoveries = sum(
+            (not bool(row.get("success_before"))) and bool(row.get("proposed_success"))
+            for row in group
+        )
+        would_break_success = sum(
+            bool(row.get("success_before")) and not bool(row.get("proposed_success"))
+            for row in group
+        )
+        rows.append({
+            "arm_id": arm_id,
+            "step_index": step_index,
+            "action_selected": action,
+            "model": model,
+            "calls": len(group),
+            "selection_share_within_arm": len(group) / arm_totals[arm_id] if arm_totals[arm_id] else 0.0,
+            "active_calls": active_calls,
+            "shadow_calls": shadow_calls,
+            "proposal_successes": proposal_successes,
+            "proposal_success_rate": proposal_successes / len(group) if group else 0.0,
+            "proposal_catastrophes": proposal_catastrophes,
+            "proposal_catastrophe_rate": proposal_catastrophes / len(group) if group else 0.0,
+            "recovery_opportunities": recovery_opportunities,
+            "proposed_recoveries": proposed_recoveries,
+            "recovery_rate": proposed_recoveries / recovery_opportunities if recovery_opportunities else None,
+            "would_break_success": would_break_success,
+            "estimand_scope": "OBSERVATIONAL_PROPOSAL_OUTCOMES_NOT_RANDOMIZED_ACTION_EFFECT",
+        })
+    return rows
+
+
+def _recovery_efficiency(trials: list[dict[str, Any]], calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for arm_id in REAL_ARM_IDS:
+        arm_trials = [row for row in trials if row.get("arm_id") == arm_id]
+        arm_calls = [row for row in calls if row.get("arm_id") == arm_id]
+        recoveries = sum(bool(row.get("success")) for row in arm_trials)
+        total_tokens = 0.0
+        total_latency = 0.0
+        total_cost = 0.0
+        token_observed = latency_observed = cost_observed = 0
+        for call in arm_calls:
+            telemetry = call.get("telemetry") if isinstance(call.get("telemetry"), dict) else {}
+            token_value = _number(telemetry.get("total_tokens"))
+            latency_value = _number(telemetry.get("latency_s"))
+            cost_value = _number(telemetry.get("cost_usd"))
+            if token_value is not None:
+                total_tokens += token_value
+                token_observed += 1
+            if latency_value is not None:
+                total_latency += latency_value
+                latency_observed += 1
+            if cost_value is not None:
+                total_cost += cost_value
+                cost_observed += 1
+        rows.append({
+            "arm_id": arm_id,
+            "trials": len(arm_trials),
+            "physical_calls": len(arm_calls),
+            "active_calls": sum(bool(row.get("active_intervention")) for row in arm_calls),
+            "shadow_calls": sum(bool(row.get("shadow_only")) for row in arm_calls),
+            "successful_recoveries": recoveries,
+            "recovery_rate": recoveries / len(arm_trials) if arm_trials else 0.0,
+            "total_tokens": total_tokens if token_observed else None,
+            "token_observed_calls": token_observed,
+            "total_latency_s": total_latency if latency_observed else None,
+            "latency_observed_calls": latency_observed,
+            "total_cost_usd": total_cost if cost_observed else None,
+            "cost_observed_calls": cost_observed,
+            "tokens_per_recovery": total_tokens / recoveries if recoveries and token_observed else None,
+            "latency_s_per_recovery": total_latency / recoveries if recoveries and latency_observed else None,
+            "cost_usd_per_recovery": total_cost / recoveries if recoveries and cost_observed else None,
+        })
+    return rows
+
+
 def summarize_s2(runtime: dict[str, Any]) -> dict[str, Any]:
     trials = [dict(row) for row in runtime.get("trials") or []]
+    calls = [dict(row) for row in runtime.get("model_calls") or []]
     failures = _protocol_failures(runtime)
     by_arm = {arm: [row for row in trials if row.get("arm_id") == arm] for arm in REAL_ARM_IDS}
 
@@ -138,6 +241,9 @@ def summarize_s2(runtime: dict[str, Any]) -> dict[str, Any]:
     family_summaries = _summary_rows(trials, ("arm_id", "family"))
     perturbation_summaries = _summary_rows(trials, ("arm_id", "perturbation_class"))
     complexity_summaries = _summary_rows(trials, ("arm_id", "complexity"))
+    execution_position_summaries = _summary_rows(trials, ("arm_id", "execution_position"))
+    action_model_summaries = _action_model_summaries(calls)
+    recovery_efficiency = _recovery_efficiency(trials, calls)
 
     pairs: list[dict[str, Any]] = []
     for arm in REAL_ARM_IDS:
@@ -197,18 +303,35 @@ def summarize_s2(runtime: dict[str, Any]) -> dict[str, Any]:
     divergence_b0 = _pair(clean_by_arm["S2-B3"], clean_by_arm["S2-B0"], a_id="S2-B3", b_id="S2-B0")
     divergence_b4 = _pair(clean_by_arm["S2-B3"], clean_by_arm["S2-B4"], a_id="S2-B3", b_id="S2-B4")
 
-    transitions = [{
-        "arm_id": row.get("arm_id"),
-        "task_id": row.get("task_id"),
-        "initial_success": bool(row.get("initial_success")),
-        "final_success": bool(row.get("success")),
-        "initial_catastrophic": bool(row.get("initial_catastrophic")),
-        "final_catastrophic": bool(row.get("catastrophic")),
-        "classification": (
-            "FAIL_TO_SUCCESS" if not row.get("initial_success") and row.get("success")
-            else "FAIL_TO_FAIL"
-        ),
-    } for row in trials]
+    transitions: list[dict[str, Any]] = []
+    for row in trials:
+        initial_failed = {str(value) for value in (row.get("initial_failed_requirements") or [])}
+        final_failed = {str(value) for value in (row.get("final_failed_requirements") or [])}
+        resolved = sorted(initial_failed - final_failed)
+        introduced = sorted(final_failed - initial_failed)
+        transitions.append({
+            "arm_id": row.get("arm_id"),
+            "task_id": row.get("task_id"),
+            "base_task_id": row.get("base_task_id"),
+            "family": row.get("family"),
+            "complexity": row.get("complexity"),
+            "perturbation_class": row.get("perturbation_class"),
+            "execution_position": row.get("execution_position"),
+            "initial_success": bool(row.get("initial_success")),
+            "final_success": bool(row.get("success")),
+            "initial_catastrophic": bool(row.get("initial_catastrophic")),
+            "final_catastrophic": bool(row.get("catastrophic")),
+            "initial_failed_requirements": sorted(initial_failed),
+            "final_failed_requirements": sorted(final_failed),
+            "resolved_failures": resolved,
+            "resolved_failure_count": len(resolved),
+            "newly_introduced_failures": introduced,
+            "newly_introduced_failure_count": len(introduced),
+            "classification": (
+                "FAIL_TO_SUCCESS" if not row.get("initial_success") and row.get("success")
+                else "FAIL_TO_FAIL"
+            ),
+        })
 
     return {
         "protocol_revision": S2_PROTOCOL_REVISION,
@@ -220,6 +343,9 @@ def summarize_s2(runtime: dict[str, Any]) -> dict[str, Any]:
         "family_summaries": family_summaries,
         "perturbation_summaries": perturbation_summaries,
         "complexity_summaries": complexity_summaries,
+        "execution_position_summaries": execution_position_summaries,
+        "action_model_summaries": action_model_summaries,
+        "recovery_efficiency": recovery_efficiency,
         "pairwise_effects": pairs,
         "pairwise_index": pair_index,
         "observed_oracle": observed_oracle,
