@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -87,15 +88,38 @@ def _find_test2_tier_a(manifest: dict[str, Any], s0_dir: Path) -> Path:
     return path
 
 
+def _best_single_from_router_regret(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        raise ValueError(f"could not parse Test-2 router-regret.csv: {exc}") from exc
+    matches = [row for row in rows if str(row.get("router_level") or "") == "best_single_model"]
+    if len(matches) != 1:
+        return ""
+    return str(matches[0].get("model") or "")
+
+
 def _load_model_evidence(test2_root: Path) -> tuple[str, str]:
     router_path = test2_root / "models" / "router-policy.json"
+    router_regret_path = test2_root / "models" / "router-regret.csv"
     champions_path = test2_root / "models" / "role-champions.json"
-    if not router_path.is_file() or not champions_path.is_file():
-        raise ValueError("Test-2 Tier-A bundle is missing router-policy.json or role-champions.json")
-    router = _load_mapping(router_path)
+    if not champions_path.is_file():
+        raise ValueError("Test-2 Tier-A bundle is missing role-champions.json")
     champions = _load_mapping(champions_path)
-    best = router.get("best_single_model")
-    best_model = str(best.get("model") if isinstance(best, dict) else "")
+
+    # Current Test-2 local evidence writes role champions to router-policy.json
+    # and writes the best-single model as the `best_single_model` row in
+    # router-regret.csv. Retain the earlier JSON shape as a compatibility
+    # fallback without treating it as authoritative when the CSV exists.
+    best_model = _best_single_from_router_regret(router_regret_path)
+    if not best_model and router_path.is_file():
+        router = _load_mapping(router_path)
+        best = router.get("best_single_model")
+        best_model = str(best.get("model") if isinstance(best, dict) else "")
+
     repair_model = str(champions.get("repairer") or "")
     if not best_model or not repair_model:
         raise ValueError("Test-2 Tier-A evidence does not identify best-single and repairer models")
