@@ -42,6 +42,11 @@ def _minimal_evidence():
         "invalid_counterfactuals": [],
         "power_variance": {"status": "INSUFFICIENT_VARIANCE_EVIDENCE"},
         "candidate_section1_preregistration": {"exact_budget": None},
+        "instrumentation_anomalies": [{"kind": "normalization_error"}],
+        "unknown_fields": [{"field": "mystery"}],
+        "comparison_evidence": [{"source_file": "effects/component.csv", "delta": 0.125}],
+        "source_metadata": [{"source_id": "s1", "source_file": "provenance.json", "value": {"rare": {"x": 7}}}],
+        "data_quality": {},
         "report": "S0 report\n",
     }
 
@@ -55,6 +60,31 @@ def test_writer_emits_complete_packet_and_preserves_edge_metadata(tmp_path: Path
         transition_rows = list(csv.DictReader(handle))
     assert json.loads(transition_rows[0]["metadata"])["unknown_field"] == 7
     assert "{bad}" in (tmp_path / "normalization_errors.csv").read_text(encoding="utf-8")
+
+
+def test_writer_derives_data_quality_when_caller_supplies_empty_placeholder(tmp_path: Path):
+    writer = Test3S0ArtifactWriter(tmp_path)
+    writer.write_all(_minimal_evidence())
+    quality = json.loads((tmp_path / "data_quality.json").read_text(encoding="utf-8"))
+    assert quality["normalization_errors"] == 1
+    assert quality["instrumentation_anomalies"] == 1
+    assert quality["unknown_field_records"] == 1
+    assert quality["zero_model_call_invariant"] is True
+    assert "never silently coerce" in quality["data_loss_policy"]
+
+
+def test_writer_emits_full_comparison_and_source_metadata_evidence(tmp_path: Path):
+    writer = Test3S0ArtifactWriter(tmp_path)
+    writer.write_all(_minimal_evidence())
+    comparison_path = tmp_path / "comparison_evidence.csv"
+    metadata_path = tmp_path / "source_metadata.jsonl"
+    assert comparison_path.exists()
+    assert metadata_path.exists()
+    with comparison_path.open(encoding="utf-8", newline="") as handle:
+        comparisons = list(csv.DictReader(handle))
+    assert float(comparisons[0]["delta"]) == 0.125
+    metadata_row = json.loads(metadata_path.read_text(encoding="utf-8").splitlines()[0])
+    assert metadata_row["value"]["rare"]["x"] == 7
 
 
 def test_sha_inventory_matches_written_files(tmp_path: Path):
@@ -75,4 +105,6 @@ def test_complete_evidence_contains_every_textual_packet_before_hash_inventory(t
     master = (tmp_path / "COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
     assert "BEGIN FILE: transitions.csv" in master
     assert "BEGIN FILE: normalization_errors.csv" in master
+    assert "BEGIN FILE: comparison_evidence.csv" in master
+    assert "BEGIN FILE: source_metadata.jsonl" in master
     assert "BEGIN FILE: verdict.json" in master
