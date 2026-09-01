@@ -277,6 +277,29 @@ Rules:
 
 For fixed/order arms, the runtime must reject any component order that can reach terminal `final_validator` before any model-call component receives active intervention exposure.
 
+## 8.1 Balanced arm execution order
+
+R2 must not execute all 25 tasks for one arm before moving to the next arm. A 200-call local run is long enough for thermal, model-load, or time drift to correlate with arm identity.
+
+Execution is blocked by matched task. For task indices `0..23`, the four-arm execution order is a left rotation of:
+
+`[S1-A0, S1-A1, S1-A2, S1-A3]`
+
+by `task_index mod 4`:
+
+- index mod 4 = 0: `A0, A1, A2, A3`
+- index mod 4 = 1: `A1, A2, A3, A0`
+- index mod 4 = 2: `A2, A3, A0, A1`
+- index mod 4 = 3: `A3, A0, A1, A2`
+
+For the extra stress case at index `24`, the frozen order is:
+
+`A2, A0, A3, A1`
+
+This gives every arm six appearances in every ordinal execution position across the first 24 tasks and exactly one additional ordinal position on the 25th task. The execution order is preregistered, deterministic, independent of outcomes, and recorded in `events.jsonl` and trial metadata.
+
+Success comparisons remain paired by task and arm. Latency is secondary because model loading may still affect wall-clock time; physical-call equality and verified success are the primary causal controls.
+
 ## 9. Public-information boundary
 
 Executor prompts may contain only:
@@ -411,6 +434,7 @@ A primary S1-R2 verdict is authorized only if all are true:
 - all 25 tasks are matched across all four arms
 - all six required families and frozen complexity allocation are present
 - case IDs/seeds match the exact Section-4 schedule
+- observed arm execution order matches the exact Section-8.1 schedule
 
 If any condition fails, the result must be labeled:
 
@@ -496,15 +520,16 @@ Before implementation, regression tests must fail for missing R2 behavior and ex
 6. exact `25 × 4 × 2 = 200` runtime budget
 7. exact 50 calls per arm
 8. exact two calls per arm-task
-9. active/shadow non-interference
-10. R2 protocol-validity rejection on 199 or 201 calls
-11. public-only prompt/repair-feedback boundary
-12. no cache/internal retry
-13. category-level analysis outputs
-14. aggregate/category/negative verdict threshold precedence
-15. containment regression metrics
-16. R1 exact-80 contract unchanged
-17. short in-place terminal progress rendering without line wrapping
+9. deterministic balanced per-task arm execution schedule
+10. active/shadow non-interference
+11. R2 protocol-validity rejection on 199 or 201 calls
+12. public-only prompt/repair-feedback boundary
+13. no cache/internal retry
+14. category-level analysis outputs
+15. aggregate/category/negative verdict threshold precedence
+16. containment regression metrics
+17. R1 exact-80 contract unchanged
+18. short in-place terminal progress rendering without line wrapping
 
 Final green light requires, on one final commit:
 
