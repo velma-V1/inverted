@@ -7,7 +7,8 @@ from pathlib import Path
 
 import yaml
 
-from inverted.test3_s0_cli import _flatten_validator_results, _metadata_edge_cases, _verify_sources, main
+from inverted.test3_s0_artifacts import Test3S0ArtifactWriter, _metadata_edge_cases
+from inverted.test3_s0_cli import _flatten_validator_results, _verify_sources, main
 from inverted.test3_s0_normalize import normalize_test2_event
 from inverted.test3_s0_types import EvidenceSource
 
@@ -92,7 +93,7 @@ def test_validator_results_are_flattened_with_raw_disagreement_metadata():
     assert all("raw" in row for row in rows)
 
 
-def test_lifecycle_metadata_is_promoted_to_rich_edge_case_record():
+def test_lifecycle_metadata_is_promoted_to_rich_edge_case_record(tmp_path: Path):
     metadata = [{
         "source_id": "test1",
         "source_file": "events.jsonl",
@@ -117,6 +118,16 @@ def test_lifecycle_metadata_is_promoted_to_rich_edge_case_record():
     assert row["raw_record_hash"]
     assert row["raw"]["event"] == "run_started"
     assert "previously misclassified" in row["discovery_reason"]
+
+    packet = tmp_path / "packet"
+    Test3S0ArtifactWriter(packet).write_all({"source_metadata": metadata})
+    with (packet / "edge_cases.csv").open(encoding="utf-8", newline="") as handle:
+        persisted = list(csv.DictReader(handle))
+    assert len(persisted) == 1
+    assert persisted[0]["classification"] == "valid_run_lifecycle_metadata_not_task_transition"
+    assert persisted[0]["event"] == "run_started"
+    assert persisted[0]["raw_record_hash"] == row["raw_record_hash"]
+    assert json.loads(persisted[0]["raw"])["run_id"] == "decisive-20260831-054125"
 
 
 def test_cli_source_does_not_import_model_adapter():
