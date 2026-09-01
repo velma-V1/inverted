@@ -13,6 +13,7 @@ S2_PROTOCOL_REVISION = "S2-R1"
 S2_HOLDOUT = "B-R1"
 S2_HOLDOUT_SEED_BASE = 1_211_000
 S2_HOLDOUT_SEED_STRIDE = 239
+S2_MAX_SEED_SCAN = 128
 S2_FIXTURE_SEED_OFFSET = 1_700_001
 S2_FAMILIES = (
     "state",
@@ -32,14 +33,32 @@ class S2ExecutionCase:
     metadata: dict[str, Any]
 
 
+def _select_base_task(family: str, complexity: int, base_index: int) -> tuple[TaskCase, int, int]:
+    """Choose the first fresh deterministic task with two observable requirements.
+
+    Compound routing evidence is meaningful only when the verifier can expose at
+    least two distinct failed public requirements. Seed scanning is deterministic,
+    model-free, bounded, and its final seed/offset are retained as provenance.
+    """
+    first_seed = S2_HOLDOUT_SEED_BASE + base_index * S2_HOLDOUT_SEED_STRIDE
+    for offset in range(S2_MAX_SEED_SCAN):
+        seed = first_seed + offset
+        task = generate_task(family, complexity, seed)
+        if len(task.requirements) >= 2:
+            return task, seed, offset
+    raise AssertionError(
+        f"S2 could not find a two-requirement Holdout-B task within {S2_MAX_SEED_SCAN} seeds: "
+        f"{family} L{complexity}"
+    )
+
+
 def build_holdout_b() -> list[S2ExecutionCase]:
     """Build fresh 72-case Holdout B as 24 three-way causal-twin groups."""
     cases: list[S2ExecutionCase] = []
     base_index = 0
     for family in S2_FAMILIES:
         for complexity in (1, 2, 3, 4):
-            seed = S2_HOLDOUT_SEED_BASE + base_index * S2_HOLDOUT_SEED_STRIDE
-            task = generate_task(family, complexity, seed)
+            task, selected_seed, seed_scan_offset = _select_base_task(family, complexity, base_index)
             for perturbation in S2_PERTURBATIONS:
                 cases.append(S2ExecutionCase(
                     case_id=f"test3-s2-BR1-{family}-L{complexity}-{perturbation}-{task.id}",
@@ -49,6 +68,9 @@ def build_holdout_b() -> list[S2ExecutionCase]:
                         "perturbation_class": perturbation,
                         "holdout": S2_HOLDOUT,
                         "protocol_revision": S2_PROTOCOL_REVISION,
+                        "selected_seed": selected_seed,
+                        "seed_scan_offset": seed_scan_offset,
+                        "requirement_count": len(task.requirements),
                     },
                 ))
             base_index += 1
@@ -104,16 +126,11 @@ def _localized_actions(task: TaskCase, valid: Candidate) -> tuple[Action, ...]:
 
 
 def _compound_actions(task: TaskCase, valid: Candidate) -> tuple[Action, ...]:
+    if len(task.requirements) < 2:
+        raise AssertionError("S2 compound fixture requires two independently observable public requirements")
     actions = list(valid.actions)
-    requirements = list(task.requirements[:2]) or list(task.requirements[:1])
-    for index, req in enumerate(requirements):
+    for index, req in enumerate(task.requirements[:2]):
         actions = _corrupt_requirement(actions, req, f"__S2_COMPOUND_FAILURE_{index+1}__")
-    if len(requirements) < 2:
-        first = task.requirements[0]
-        if first.kind in {"equal", "preserve"}:
-            actions.append(Action("delete", first.path, None))
-        else:
-            actions.append(Action("set", "s2.extra_fault.value", "__S2_COMPOUND_EXTRA__"))
     return tuple(actions)
 
 
@@ -166,6 +183,11 @@ def build_seed_failure_s2(case: S2ExecutionCase) -> Candidate:
     result = evaluate_task(case.task, state, actions)
     if result.success:
         raise AssertionError(f"S2 seed fixture unexpectedly succeeds: {case.case_id}")
+    if perturbation == "compound" and len(set(result.failed_requirement_ids)) < 2:
+        raise AssertionError(
+            f"S2 compound fixture did not produce two observable failures: "
+            f"{case.case_id} -> {result.failed_requirement_ids}"
+        )
     requirement_by_id = {req.id: req for req in case.task.requirements}
     public_evidence = {
         "failed_requirement_ids": list(result.failed_requirement_ids),
@@ -185,6 +207,8 @@ def build_seed_failure_s2(case: S2ExecutionCase) -> Candidate:
             "source_case_id": case.case_id,
             "base_task_id": case.metadata["base_task_id"],
             "private_fixture_label": perturbation,
+            "fixture_selected_seed": case.metadata.get("selected_seed"),
+            "fixture_seed_scan_offset": case.metadata.get("seed_scan_offset"),
             "public_evidence": public_evidence,
         },
     )
