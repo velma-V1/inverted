@@ -30,6 +30,13 @@ def test_s0_workflow_is_zero_call_repo_backed_replay():
     assert "DISCOVERY_COMPLETE_MODEL_FREE" in replay_text
     assert '"physical_model_calls"' in replay_text
 
+    # model_calls.jsonl is a forensic preservation layer for historical source
+    # model-call records. Zero NEW S0 inference is proven by the guard/verdict,
+    # not by requiring that historical evidence file to be empty.
+    assert 'verdict["physical_model_calls"] == 0' in workflow_text
+    assert 'verdict["attempted_model_calls"] == 0' in workflow_text
+    assert 'model_calls.jsonl").read_text' not in workflow_text
+
     combined = workflow_text + replay_text
     forbidden = ["OllamaAdapter", "ollama pull", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "run_local_campaign"]
     for item in forbidden:
