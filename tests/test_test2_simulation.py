@@ -57,6 +57,22 @@ def test_model_free_order_atlas_scores_and_ranks_every_order_without_hiding_nonc
     assert len(set(rates)) > 1
 
 
+def test_model_free_atlas_separately_ranks_all_production_orders_without_oracle():
+    atlas = run_model_free_atlas(seed_count=2)
+    orderings = atlas["production_orderings"]
+    ranking = atlas["production_order_ranking"]
+    slices = atlas["production_order_slice_ranking"]
+    assert len(orderings) == 24
+    assert len(ranking) == 24
+    assert slices
+    assert [row["rank"] for row in ranking] == list(range(1, 25))
+    assert all("oracle_auditor" not in row["components"] for row in ranking)
+    assert all("oracle_auditor" not in row["order"] for row in ranking)
+    assert all(row["evidence_scope"] == "PRODUCTION_ORDER_HYPOTHESIS" for row in ranking)
+    assert all(row["production_eligible"] is True for row in ranking)
+    assert {row["causal_status"] for row in ranking} == {CAUSAL, REQUIRES_NEW_INFERENCE}
+
+
 def test_retry_repair_overlap_is_not_mislabeled_as_harm_and_retry_saturation_is_measured():
     atlas = run_model_free_atlas(seed_count=3)
     pair = next(
