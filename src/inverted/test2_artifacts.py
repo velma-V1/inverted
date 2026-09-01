@@ -11,6 +11,7 @@ from .test2_postanalysis import (
     failure_streak_quality_posterior,
     retry_repair_thresholds,
 )
+from .test2_production_orders import run_production_order_atlas
 from .test2_readiness import finalize_test2_evidence
 
 
@@ -41,6 +42,9 @@ _CSV_FILES = {
         "every_valid_order": "order/every-valid-order.csv",
         "order_ranking": "order/order-ranking.csv",
         "order_slice_ranking": "order/order-slice-ranking.csv",
+        "every_valid_production_order": "order/every-valid-production-order.csv",
+        "production_order_ranking": "order/order-ranking-production.csv",
+        "production_order_slice_ranking": "order/order-slice-ranking-production.csv",
         "saturation": "order/saturation.csv",
         "candidate_saturation": "order/candidate-saturation.csv",
         "candidate_independence_strata": "order/candidate-independence-strata.csv",
@@ -178,6 +182,33 @@ def _augment_postanalysis(evidence: dict[str, Any]) -> None:
     order["failure_streak_quality_posterior"] = failure_streak_quality_posterior(trials)
 
 
+def _production_seed_count(evidence: dict[str, Any]) -> int:
+    provenance = evidence.get("provenance") if isinstance(evidence.get("provenance"), dict) else {}
+    config = provenance.get("config") if isinstance(provenance.get("config"), dict) else {}
+    model_free = config.get("model_free") if isinstance(config.get("model_free"), dict) else {}
+    mode = str((evidence.get("master_index") or {}).get("mode") or "")
+    raw = model_free.get("seed_count_for_local") if mode == "local" else model_free.get("seed_count")
+    try:
+        return max(1, int(raw)) if raw is not None else 10
+    except (TypeError, ValueError):
+        return 10
+
+
+def _augment_production_orders(evidence: dict[str, Any]) -> None:
+    order = evidence.setdefault("order", {})
+    required = ("every_valid_production_order", "production_order_ranking", "production_order_slice_ranking")
+    if all(order.get(key) is not None for key in required):
+        return
+    atlas = run_production_order_atlas(seed_count=_production_seed_count(evidence))
+    order.setdefault("every_valid_production_order", atlas["orderings"])
+    order.setdefault("production_order_ranking", atlas["order_ranking"])
+    order.setdefault("production_order_slice_ranking", atlas["order_slice_ranking"])
+    index = evidence.setdefault("master_index", {})
+    index["production_order_base_cells"] = atlas["base_cells"]
+    index["production_order_trial_units"] = atlas["trial_units"]
+    index["production_order_evidence_scope"] = atlas["evidence_scope"]
+
+
 def _summary_rows(evidence: dict[str, Any]) -> list[dict[str, Any]]:
     index = evidence.get("master_index") or {}
     verdict = evidence.get("verdict") or {}
@@ -214,12 +245,15 @@ def _report_text(evidence: dict[str, Any]) -> str:
 
 
 class Test2ArtifactWriter:
+    __test__ = False
+
     def __init__(self, run_dir: str | Path):
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
 
     def write_all(self, evidence: dict[str, Any]) -> dict[str, str]:
         _augment_postanalysis(evidence)
+        _augment_production_orders(evidence)
         finalize_test2_evidence(evidence)
         index = evidence.setdefault("master_index", {})
         index["verdict"] = (evidence.get("verdict") or {}).get("verdict")
@@ -249,9 +283,6 @@ class Test2ArtifactWriter:
                 _write_json(path, data.get(key, {}))
                 written[f"{section}_{key}"] = path
 
-        # Conventional completion-proof aliases required by the frozen Test-2
-        # evidence contract. Rich forensic files above remain authoritative and
-        # are preserved in parallel.
         conventional_jsonl = {
             "events": list(raw.get("events", []) or []),
             "model_calls": list(raw.get("model_calls", []) or []),
@@ -309,8 +340,6 @@ class Test2ArtifactWriter:
         next_stride.write_text(build_next_stride_report(evidence), encoding="utf-8")
         written["next_stride_report"] = next_stride
 
-        # Build the authoritative master only from already-generated text files.
-        # It includes exact bytes decoded as UTF-8 in deterministic path order.
         master = self.run_dir / "TEST2-COMPLETE-EVIDENCE.txt"
         source_paths = sorted(
             [path for path in written.values() if path.suffix.lower() in {".txt", ".csv", ".json", ".jsonl"}],
@@ -329,7 +358,6 @@ class Test2ArtifactWriter:
                 handle.write(f"===== END FILE: {rel} =====\n")
         written["master_evidence"] = master
 
-        # Hash everything except the inventory itself, including the master.
         hash_path = self.run_dir / "SHA256SUMS.csv"
         hash_targets = sorted(
             [path for path in written.values() if path.exists()],
