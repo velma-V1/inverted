@@ -201,6 +201,46 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _metadata_edge_cases(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Promote scientifically useful schema-boundary metadata into the edge-case ledger."""
+    rows: list[dict[str, Any]] = []
+    for item in records:
+        if item.get("record_type") != "lifecycle_event":
+            continue
+        value = item.get("value")
+        raw = dict(value) if isinstance(value, dict) else {"value": value}
+        raw_bytes = json.dumps(
+            raw,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=_json_default,
+        ).encode("utf-8")
+        has_task_identity = any(
+            raw.get(key) not in (None, "")
+            for key in ("case_id", "task_id", "trial_id", "id")
+        )
+        rows.append({
+            "kind": "normalization_schema_boundary",
+            "classification": "valid_run_lifecycle_metadata_not_task_transition",
+            "source_id": item.get("source_id"),
+            "source_file": item.get("source_file"),
+            "line": item.get("line"),
+            "record_type": item.get("record_type"),
+            "event": raw.get("event"),
+            "run_id": raw.get("run_id"),
+            "timestamp": raw.get("timestamp"),
+            "task_identity_present": has_task_identity,
+            "raw_record_hash": hashlib.sha256(raw_bytes).hexdigest(),
+            "raw": raw,
+            "discovery_reason": (
+                "Valid run-level lifecycle metadata was previously misclassified as malformed task evidence "
+                "because it intentionally lacks task identity."
+            ),
+        })
+    return rows
+
+
 def _derive_master_index(evidence: dict[str, Any]) -> dict[str, Any]:
     verdict = dict(evidence.get("verdict") or {})
     transitions = list(evidence.get("transitions") or [])
@@ -221,6 +261,7 @@ def _derive_master_index(evidence: dict[str, Any]) -> dict[str, Any]:
         "comparison_evidence_count": len(evidence.get("comparison_evidence") or []),
         "source_metadata_count": len(evidence.get("source_metadata") or []),
         "validator_result_count": len(evidence.get("validator_results") or []),
+        "edge_case_count": len(evidence.get("edge_cases") or []),
     }
 
 
@@ -243,6 +284,7 @@ def _derive_data_quality(evidence: dict[str, Any]) -> dict[str, Any]:
         "comparison_evidence_rows": len(evidence.get("comparison_evidence") or []),
         "source_metadata_rows": len(evidence.get("source_metadata") or []),
         "validator_result_rows": len(evidence.get("validator_results") or []),
+        "edge_case_rows": len(evidence.get("edge_cases") or []),
         "all_integrity_checks_passed": all(bool(row.get("integrity_ok", True)) for row in integrity) if integrity else None,
         "zero_model_call_invariant": True,
         "data_loss_policy": "retain malformed/unknown/anomalous records as evidence; never silently coerce",
@@ -258,6 +300,9 @@ class Test3S0ArtifactWriter:
 
     def write_all(self, evidence: dict[str, Any]) -> dict[str, str]:
         data = dict(evidence)
+        metadata_edges = _metadata_edge_cases(data.get("source_metadata") or [])
+        if metadata_edges:
+            data["edge_cases"] = metadata_edges + list(data.get("edge_cases") or [])
         if not data.get("master_index"):
             data["master_index"] = _derive_master_index(data)
         if not data.get("data_quality"):
