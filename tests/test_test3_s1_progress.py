@@ -1,5 +1,6 @@
 from io import StringIO
 from os import terminal_size
+from types import SimpleNamespace
 
 import inverted.test3_s1_progress as progress_module
 from inverted.test3_s1_progress import InPlaceS1Progress
@@ -28,9 +29,10 @@ def test_s1_progress_line_shows_percent_elapsed_remaining_and_eta():
 
 def test_s1_progress_auto_fits_narrow_terminal_without_wrapping(monkeypatch):
     monkeypatch.setattr(
-        progress_module.shutil,
-        "get_terminal_size",
-        lambda fallback=(80, 24): terminal_size((72, 24)),
+        progress_module,
+        "shutil",
+        SimpleNamespace(get_terminal_size=lambda fallback=(80, 24): terminal_size((72, 24))),
+        raising=False,
     )
     stream = StringIO()
     progress = InPlaceS1Progress(stream=stream, width=16)
