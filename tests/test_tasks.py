@@ -4,6 +4,7 @@ from dataclasses import asdict
 import pytest
 
 from inverted.oracle import evaluate_task
+from inverted.system_executor import generate_candidate
 from inverted.tasks import generate_task
 
 
@@ -43,16 +44,17 @@ def test_all_families_have_machine_checkable_requirements(family):
 
 
 @pytest.mark.parametrize("family", ALL_FAMILIES)
-def test_generated_target_satisfies_its_requirements(family):
+def test_public_requirement_plan_can_generate_oracle_valid_candidate(family):
     task = generate_task(family, 4, 44004)
-    public_actions = tuple(task.metadata["solution_actions"])
-    result = evaluate_task(task, task.target_state, public_actions)
+    candidate = generate_candidate(task, 1.0, 990044)
+    result = evaluate_task(task, candidate.state, candidate.actions)
     assert result.success is True
 
 
 def test_public_information_is_symmetric_and_contains_no_hidden_action_plan():
     task = generate_task("policy", 3, 1234)
     assert "correct_actions" not in task.metadata
+    assert "solution_actions" not in task.metadata
     public = task.metadata["public_requirements"]
     assert len(public) == len(task.requirements)
     assert all("critical" not in item for item in public)
