@@ -82,6 +82,30 @@ def _public_task(task: TaskCase) -> dict[str, Any]:
     }
 
 
+def public_failure_feedback(
+    task: TaskCase,
+    candidate: Candidate | None,
+    failed_ids: list[str],
+) -> dict[str, Any]:
+    """Return deterministic failure evidence restricted to S1-public fields.
+
+    Test-2's reusable feedback helper includes the benchmark-internal
+    ``critical`` flag. S1 does not expose that flag in ``public_requirements``,
+    so this boundary strips it while preserving requirement identity,
+    public semantics, and observations derived from the candidate itself.
+    """
+    feedback = structured_failure_feedback(task, candidate, failed_ids)
+    rows = feedback.get("failed_requirements") if isinstance(feedback, dict) else None
+    sanitized: list[dict[str, Any]] = []
+    for raw in rows if isinstance(rows, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        clean = dict(raw)
+        clean.pop("critical", None)
+        sanitized.append(clean)
+    return {"failed_requirements": sanitized}
+
+
 def _parse_actions(text: str) -> tuple[Action, ...] | None:
     try:
         value = json.loads(text)
@@ -216,7 +240,7 @@ def _repair_call(
     task_id: str,
     active_intervention: bool,
 ) -> tuple[Candidate | None, dict[str, Any]]:
-    feedback = structured_failure_feedback(task, candidate, failed_ids)
+    feedback = public_failure_feedback(task, candidate, failed_ids)
     payload = _public_task(task) | {
         "previous_actions": [action.to_dict() for action in candidate.actions] if candidate else [],
         "validator_feedback": feedback,
