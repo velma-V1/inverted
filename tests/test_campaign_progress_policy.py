@@ -35,8 +35,14 @@ def test_testing_policy_freezes_universal_1000_action_ceiling():
     assert "preflight" in text
     assert "actual usage" in text
     assert "must not exceed" in text
-    assert "ceiling, not a target" in text
-    assert "smallest justified planned budget" in text
-    assert "no padding" in text
+    assert "ceiling, not a quota" in text
+    assert "orthogonal variety" in text
+    assert "failure classes" in text
+    assert "interventions" in text
+    assert "models/roles" in text
+    assert "perturbations" in text
+    assert "counterfactuals" in text
+    assert "validators" in text
+    assert "stress conditions" in text
+    assert "redundant repetition" in text
     assert "information gain" in text
-    assert "unused budget" in text
