@@ -81,10 +81,36 @@ def test_retry_success_keeps_result_when_remaining_repair_call_is_shadow_only():
     assert "target_state" not in prompt_text
 
 
-def test_terminal_final_validator_turns_later_retry_into_shadow_and_cannot_be_overridden():
-    case = build_holdout_a_r1()[0]
+def test_active_repair_prompt_contains_only_public_requirement_metadata():
+    case = next(case for case in build_holdout_a_r1() if any(req.critical for req in case.task.requirements))
     perfect = generate_candidate(case.task, 1.0, 991003)
     bad = generate_candidate(case.task, 0.0, 991004)
+    executor = QueueModel("qwen3.5:9b-q8_0", {"executor": [_actions_json(perfect)]})
+    repairer = QueueModel("cogito:3b-v1-preview-llama-q8_0", {"repairer": [_actions_json(bad)]})
+
+    result = run_arm_task(
+        case,
+        _arms()[2],
+        model_by_name={executor.model: executor, repairer.model: repairer},
+        best_single_model=executor.model,
+        repair_model=repairer.model,
+        budget=PhysicalCallBudget(20),
+        run_id="s1-r1-public-feedback",
+    )
+
+    repair_call = result["raw_calls"][0]
+    assert repair_call["component"] == "targeted_repair"
+    assert repair_call["active_intervention"] is True
+    prompt_text = json.dumps(repair_call["prompt"], sort_keys=True)
+    assert '"critical"' not in prompt_text
+    assert "hidden_gold" not in prompt_text
+    assert "target_state" not in prompt_text
+
+
+def test_terminal_final_validator_turns_later_retry_into_shadow_and_cannot_be_overridden():
+    case = build_holdout_a_r1()[0]
+    perfect = generate_candidate(case.task, 1.0, 991005)
+    bad = generate_candidate(case.task, 0.0, 991006)
     executor = QueueModel("qwen3.5:9b-q8_0", {"executor": [_actions_json(perfect)]})
     repairer = QueueModel("cogito:3b-v1-preview-llama-q8_0", {"repairer": [_actions_json(bad)]})
     arm = _arms()[2]
