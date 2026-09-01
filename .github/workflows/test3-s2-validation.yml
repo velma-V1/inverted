@@ -125,9 +125,13 @@ jobs:
                   assert set(view) == {"family"}, view
               elif row["arm_id"] == "S2-B2":
                   assert "family" not in view and "complexity" not in view, view
+              elif row["arm_id"] == "S2-B4":
+                  assert view == {}, view
 
           assert policy["arms"]["S2-B0"]["sequence"] == ["retry_qwen", "repair_cogito"], policy
           assert set(policy["intervention_library"]) == {"retry_qwen", "repair_cogito", "switch_llama"}, policy
+          assert policy["arms"]["S2-B4"]["features"] == [], policy
+          assert "outcome-independent" in policy["arms"]["S2-B4"]["rng"], policy
 
           budget_by_kind = {row["kind"]: row for row in action_budget}
           combined = budget_by_kind["combined_total"]
