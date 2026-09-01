@@ -26,6 +26,30 @@ def test_s2_summary_contains_all_primary_estimands_and_observed_oracle():
     assert summary["observed_oracle"]["matched_cases"] == 72
     assert summary["observed_oracle"]["successes"] == 72
 
+    position = summary["execution_position_summaries"]
+    assert len(position) == 25
+    assert sum(int(row["trials"]) for row in position) == 360
+    assert all(0 <= int(row["execution_position"]) <= 4 for row in position)
+
+    action_model = summary["action_model_summaries"]
+    assert action_model
+    assert sum(int(row["calls"]) for row in action_model) == 720
+    assert all(row["action_selected"] in {"retry_qwen", "repair_cogito", "switch_llama"} for row in action_model)
+    assert all("proposal_success_rate" in row and "recovery_rate" in row and "would_break_success" in row for row in action_model)
+
+    efficiency = summary["recovery_efficiency"]
+    assert len(efficiency) == 5
+    assert sum(int(row["physical_calls"]) for row in efficiency) == 720
+    assert sum(int(row["successful_recoveries"]) for row in efficiency) == sum(
+        int(row["successes"]) for row in summary["arm_summaries"]
+    )
+    assert all("tokens_per_recovery" in row and "latency_s_per_recovery" in row and "cost_usd_per_recovery" in row for row in efficiency)
+
+    transitions = summary["transitions"]
+    assert len(transitions) == 360
+    assert all("resolved_failures" in row and "newly_introduced_failures" in row for row in transitions)
+    assert all("resolved_failure_count" in row and "newly_introduced_failure_count" in row for row in transitions)
+
 
 def test_s2_signal_requires_b3_to_beat_fixed_random_and_survive_divergence_exclusion():
     summary = {
