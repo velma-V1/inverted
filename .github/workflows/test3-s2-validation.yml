@@ -1,0 +1,154 @@
+name: test3-s2-validation
+
+on:
+  push:
+    branches:
+      - build/test3-s2-adaptive-routing
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test3-s2-mock-validation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Full pytest suite
+        run: python -m pytest -q
+      - name: Run Section 2 exact-720 mock validation
+        run: >-
+          python -m inverted.test3_s2_cli mock-run
+          --config configs/test3-s2.yaml
+          --output-dir test3-s2-ci/mock-validation
+          --run-id test3-s2-r1-mock
+      - name: Verify S2-R1 routing and complete evidence contract
+        run: |
+          python - <<'PY'
+          import csv
+          import hashlib
+          import json
+          from collections import Counter, defaultdict
+          from pathlib import Path
+
+          p = Path("test3-s2-ci/mock-validation")
+          master = json.loads((p / "00-MASTER-INDEX.json").read_text(encoding="utf-8"))
+          prereg = json.loads((p / "preregistration.json").read_text(encoding="utf-8"))
+          verdict = json.loads((p / "verdict.json").read_text(encoding="utf-8"))
+          failures = json.loads((p / "protocol_failures.json").read_text(encoding="utf-8"))
+          policy = json.loads((p / "router_policy_snapshot.json").read_text(encoding="utf-8"))
+          calls = [json.loads(line) for line in (p / "model_calls.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+          snapshots = [json.loads(line) for line in (p / "routing_state_snapshots.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+          with (p / "trials.csv").open(encoding="utf-8", newline="") as handle:
+              trials = list(csv.DictReader(handle))
+          with (p / "routing_decisions.csv").open(encoding="utf-8", newline="") as handle:
+              decisions = list(csv.DictReader(handle))
+          with (p / "action_budget.csv").open(encoding="utf-8", newline="") as handle:
+              action_budget = list(csv.DictReader(handle))
+          with (p / "prompt_fingerprints.csv").open(encoding="utf-8", newline="") as handle:
+              fingerprints = list(csv.DictReader(handle))
+
+          assert master["protocol_revision"] == "S2-R1", master
+          assert master["holdout"] == "B-R1", master
+          assert master["protocol_valid_for_primary_claim"] is True, master
+          assert master["physical_model_calls"] == 720, master
+          assert master["combined_external_actions"] == 720, master
+          assert master["combined_action_limit"] == 720, master
+          assert master["trial_rows"] == 360, master
+          assert master["matched_case_count"] == 72, master
+          assert master["arm_count"] == 5, master
+          assert master["family_count"] == 6, master
+          assert master["perturbation_count"] == 3, master
+
+          assert prereg["exact_budget"] == 720, prereg
+          assert prereg["combined_action_budget"] == 720, prereg
+          assert prereg["absolute_action_ceiling"] == 1000, prereg
+          assert prereg["arm_count"] == 5, prereg
+          assert prereg["physical_call_cap_per_arm"] == 144, prereg
+          assert prereg["matched_cases"] == 72, prereg
+          assert prereg["calls_per_arm_task"] == 2, prereg
+          assert prereg["execution_mode"] == "balanced_task_blocks", prereg
+          assert prereg["equal_compute"] is True, prereg
+          assert prereg["terminal_second_call"] == "shadow_non_mutating", prereg
+          assert set(prereg["perturbation_classes"]) == {"localized", "compound", "structural"}, prereg
+          assert set(prereg["intervention_library"]) == {"retry_qwen", "repair_cogito", "switch_llama"}, prereg
+          assert set(prereg["models"]) == {
+              "qwen3.5:9b-q8_0",
+              "cogito:3b-v1-preview-llama-q8_0",
+              "llama3.1:8b",
+          }, prereg
+
+          assert failures == [], failures
+          assert verdict["protocol_valid_for_primary_claim"] is True, verdict
+          assert verdict["protocol_revision"] == "S2-R1", verdict
+          assert verdict["holdout"] == "B-R1", verdict
+
+          assert len(calls) == 720, len(calls)
+          assert Counter(row["arm_id"] for row in calls) == Counter({
+              "S2-B0": 144, "S2-B1": 144, "S2-B2": 144, "S2-B3": 144, "S2-B4": 144,
+          })
+          assert all((row.get("telemetry") or {}).get("provider") == "mock" for row in calls)
+          assert all(row.get("cache_hit") is False for row in calls)
+          assert all(bool(row.get("active_intervention")) != bool(row.get("shadow_only")) for row in calls)
+          assert all(row.get("prompt_fingerprint") for row in calls)
+          assert all(row.get("response_digest") for row in calls)
+          assert len(fingerprints) == 720
+
+          assert len(trials) == 360, len(trials)
+          assert Counter(row["arm_id"] for row in trials) == Counter({
+              "S2-B0": 72, "S2-B1": 72, "S2-B2": 72, "S2-B3": 72, "S2-B4": 72,
+          })
+          assert all(int(row["calls_used"]) == 2 for row in trials)
+          assert all(row["complete"].lower() == "true" for row in trials)
+          positions = Counter((row["arm_id"], int(row["execution_position"])) for row in trials)
+          assert all(count in {14, 15} for count in positions.values()), positions
+
+          groups = defaultdict(set)
+          for row in trials:
+              groups[row["base_task_id"]].add(row["perturbation_class"])
+          assert len(groups) == 24, len(groups)
+          assert all(values == {"localized", "compound", "structural"} for values in groups.values())
+
+          assert len(decisions) == 720, len(decisions)
+          assert len(snapshots) == 720, len(snapshots)
+          forbidden = {"target_state", "hidden_gold", "injected_faults", "perturbation_class", "private_fixture_label"}
+          for row in snapshots:
+              view = row["router_view"]
+              assert forbidden.isdisjoint(view), (row["arm_id"], view)
+              if row["arm_id"] == "S2-B1":
+                  assert set(view) == {"family"}, view
+              elif row["arm_id"] == "S2-B2":
+                  assert "family" not in view and "complexity" not in view, view
+
+          assert policy["arms"]["S2-B0"]["sequence"] == ["retry_qwen", "repair_cogito"], policy
+          assert set(policy["intervention_library"]) == {"retry_qwen", "repair_cogito", "switch_llama"}, policy
+
+          combined = next(row for row in action_budget if row["kind"] == "combined_total")
+          model_calls = next(row for row in action_budget if row["kind"] == "model_call")
+          assert int(combined["used"]) == 720 and int(combined["limit"]) == 720, combined
+          assert int(model_calls["used"]) == 720, model_calls
+
+          # The file exists even when mock determinism produces zero divergences.
+          assert (p / "stochastic_divergence.csv").is_file()
+          assert (p / "routing_decisions.csv").is_file()
+          assert (p / "shadow_counterfactuals.csv").is_file()
+          assert (p / "regret_to_oracle.csv").is_file()
+
+          with (p / "SHA256SUMS.csv").open(encoding="utf-8", newline="") as handle:
+              hashes = list(csv.DictReader(handle))
+          assert hashes
+          for row in hashes:
+              path = p / row["path"]
+              assert path.is_file(), row
+              assert int(row["bytes"]) == path.stat().st_size, row
+              assert row["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest(), row
+          PY
+      - name: Upload Section 2 mock validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: test3-s2-validation-evidence
+          path: test3-s2-ci/mock-validation
+          if-no-files-found: error
