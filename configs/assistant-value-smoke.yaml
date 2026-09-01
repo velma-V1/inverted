@@ -1,0 +1,22 @@
+assistant_value:
+  capture_content: true
+  seed: 20260901
+  long_horizon:
+    call_cap: 1152
+    per_horizon: 1
+    horizons: [2]
+    arms: [DIRECT, CHECKED, INVERTED]
+  evidence_trust:
+    call_cap: 1080
+    cases_per_regime: 1
+    arms: [DIRECT, CHECKED, INVERTED]
+  authority:
+    call_cap: 1152
+    cases_per_class: 1
+    arms: [DIRECT, CHECKED, INVERTED]
+models:
+  - provider: mock
+    model: assistant-value-mock
+    seed: 20260901
+    executor_accuracy: 0.80
+    auditor_accuracy: 0.94
