@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-def test_s1_github_workflow_is_mock_only_and_verifies_frozen_r2_exact_200_protocol():
+def test_s1_github_workflow_is_mock_only_and_verifies_frozen_r3_exact_200_corrective_protocol():
     path = Path(".github/workflows/test3-s1-validation.yml")
     assert path.is_file()
     text = path.read_text(encoding="utf-8")
@@ -12,8 +12,8 @@ def test_s1_github_workflow_is_mock_only_and_verifies_frozen_r2_exact_200_protoc
     assert "test3-s1-validation-evidence" in lowered
     assert "protocol_valid_for_primary_claim" in lowered
     assert "protocol_revision" in lowered
-    assert "s1-r2" in lowered
-    assert "a-r2" in lowered
+    assert "s1-r3" in lowered
+    assert "a-r3" in lowered
     assert "physical_model_calls" in lowered
     assert "200" in lowered
     assert "matched_task_count" in lowered
@@ -33,3 +33,11 @@ def test_s1_github_workflow_is_mock_only_and_verifies_frozen_r2_exact_200_protoc
     assert "cache_hit" in lowered
     assert "source_s0_screen_budget" in lowered
     assert "80" in lowered
+    assert "explicit_patch_composition" in lowered
+    assert "fail_closed_before_inference" in lowered
+    assert "causal_order_signatures_unique" in lowered
+    assert "targeted_repair" in lowered
+    assert "predecessor_protocol" in lowered
+    assert "s1-r2" in lowered
+    assert "test3-s1-r2-20260901-140516" in lowered
+    assert "repair_contract_ambiguity_and_control_collapse" in lowered
