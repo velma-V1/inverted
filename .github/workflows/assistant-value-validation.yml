@@ -1,0 +1,48 @@
+name: assistant-value-validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  instrument-validation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Run full repository test suite
+        run: python -m pytest -q
+      - name: Run all three assistant-value mock instruments
+        run: >-
+          python -m inverted.assistant_value.cli
+          --config configs/assistant-value-smoke.yaml
+          --test all
+          --output-dir assistant-value-ci
+          --run-id ci-instrument
+          --progress
+      - name: Verify all evidence packets are complete and clean
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          from inverted.assistant_value.evidence import REQUIRED_ARTIFACTS
+
+          roots = sorted(Path("assistant-value-ci/assistant-value").glob("*/ci-instrument-*"))
+          assert len(roots) == 3, roots
+          for root in roots:
+              integrity = json.loads((root / "integrity.json").read_text(encoding="utf-8"))
+              assert integrity["status"] == "OK", (root, integrity)
+              missing = [name for name in REQUIRED_ARTIFACTS if not (root / name).exists()]
+              assert not missing, (root, missing)
+              assert (root / "COMPLETE-EVIDENCE.txt").stat().st_size > 0
+              assert (root / "SHA256SUMS.csv").stat().st_size > 0
+      - name: Upload complete mock evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: assistant-value-instrument-evidence
+          path: assistant-value-ci/assistant-value
+          if-no-files-found: error
