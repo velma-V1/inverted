@@ -23,7 +23,7 @@ models:
     temperature: 0.0
     max_tokens: 768
     timeout_s: 600
-    max_retries: 2
+    max_retries: 0
     retry_backoff_s: 5
     think: false
     format_json: true
@@ -34,7 +34,7 @@ models:
     temperature: 0.0
     max_tokens: 768
     timeout_s: 600
-    max_retries: 2
+    max_retries: 0
     retry_backoff_s: 5
     think: false
     format_json: true
@@ -45,7 +45,7 @@ models:
     temperature: 0.0
     max_tokens: 768
     timeout_s: 600
-    max_retries: 2
+    max_retries: 0
     retry_backoff_s: 5
     think: false
     format_json: true
