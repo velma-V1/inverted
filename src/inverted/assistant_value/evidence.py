@@ -203,8 +203,13 @@ class EvidenceStore:
         }
 
     def _write_master_index(self) -> Path:
+        # COMPLETE-EVIDENCE and SHA256SUMS are intentionally excluded here:
+        # both are finalized after this index and including their placeholders
+        # would create stale hashes. SHA256SUMS.csv is the final whole-packet
+        # integrity authority and hashes this master index plus COMPLETE-EVIDENCE.
+        excluded = {"00-MASTER-INDEX.json", "COMPLETE-EVIDENCE.txt", "SHA256SUMS.csv"}
         entries = []
-        for path in sorted(p for p in self.root.iterdir() if p.is_file() and p.name != "00-MASTER-INDEX.json"):
+        for path in sorted(p for p in self.root.iterdir() if p.is_file() and p.name not in excluded):
             entries.append(
                 {
                     "path": path.name,
