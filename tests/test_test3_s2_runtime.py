@@ -3,7 +3,13 @@ from collections import Counter
 from inverted.models import MockModelAdapter
 from inverted.test3_s2_cases import build_holdout_b
 from inverted.test3_s2_policy import REAL_ARM_IDS
-from inverted.test3_s2_runtime import S2_EXACT_BUDGET, S2_TRIAL_COUNT, run_s2_screen
+from inverted.test3_s2_runtime import (
+    S2_COMBINED_ACTION_BUDGET,
+    S2_EXACT_BUDGET,
+    S2_PROVENANCE_API_CALL_BUDGET,
+    S2_TRIAL_COUNT,
+    run_s2_screen,
+)
 
 
 def _models():
@@ -17,9 +23,13 @@ def _models():
 def test_s2_mock_runtime_is_exact_720_equal_compute_and_complete():
     result = run_s2_screen(cases=build_holdout_b(), model_by_name=_models(), run_id="s2-mock")
     assert S2_EXACT_BUDGET == 720
+    assert S2_PROVENANCE_API_CALL_BUDGET == 12
+    assert S2_COMBINED_ACTION_BUDGET == 732
     assert S2_TRIAL_COUNT == 360
     assert result["physical_model_calls"] == 720
+    assert result["action_budget"]["limit"] == 732
     assert result["action_budget"]["combined_used"] == 720
+    assert result["action_budget"]["remaining"] == 12
     assert result["action_budget"]["by_kind"] == {"model_call": 720}
     assert len(result["trials"]) == 360
     assert len(result["model_calls"]) == 720
