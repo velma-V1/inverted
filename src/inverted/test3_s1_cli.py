@@ -15,6 +15,7 @@ from .test3_s1_analysis import derive_s1_verdict, summarize_s1
 from .test3_s1_artifacts import Test3S1ArtifactWriter
 from .test3_s1_cases import build_holdout_a
 from .test3_s1_inputs import S1ResolvedInputs, load_s1_inputs
+from .test3_s1_progress import InPlaceS1Progress, ProgressReportingAdapter, S1ProgressTracker
 from .test3_s1_runtime import matched_task_limit, run_s1_screen
 
 
@@ -197,14 +198,40 @@ def _run_real(args: argparse.Namespace) -> int:
         raise ValueError("S0 S1 budget freeze does not match runtime config")
     settings = dict(s1.get("ollama") or {})
     names = tuple(dict.fromkeys((resolved.best_single_model, resolved.repair_model)))
-    adapters = {name: _adapter(name, settings) for name in names}
+    base_adapters = {name: _adapter(name, settings) for name in names}
     base_url = str(settings.get("base_url") or "http://127.0.0.1:11434")
     before = _provenance_snapshot(base_url, names)
-    runtime = run_s1_screen(
-        cases=build_holdout_a(), arms=resolved.arms, model_by_name=adapters,
-        best_single_model=resolved.best_single_model, repair_model=resolved.repair_model,
-        run_id=args.run_id, exact_budget=resolved.exact_budget,
+
+    cases = build_holdout_a()
+    matched = matched_task_limit(resolved.arms, available_cases=len(cases))
+    progress = InPlaceS1Progress()
+    tracker = S1ProgressTracker(
+        progress,
+        total_tasks=len(resolved.arms) * matched,
+        call_budget=resolved.exact_budget,
     )
+    adapters = {
+        name: ProgressReportingAdapter(adapter, tracker)
+        for name, adapter in base_adapters.items()
+    }
+    try:
+        runtime = run_s1_screen(
+            cases=cases, arms=resolved.arms, model_by_name=adapters,
+            best_single_model=resolved.best_single_model, repair_model=resolved.repair_model,
+            run_id=args.run_id, exact_budget=resolved.exact_budget,
+        )
+    except BaseException:
+        tracker.finish(mark_current_complete=False)
+        raise
+    else:
+        tracker.finish(mark_current_complete=True)
+
+    if tracker.physical_calls != int(runtime["physical_model_calls"]):
+        raise AssertionError(
+            "S1 progress physical-call accounting diverged from runtime: "
+            f"{tracker.physical_calls} != {runtime['physical_model_calls']}"
+        )
+
     anomalies: list[dict[str, Any]] = []
     after: dict[str, Any] | None = None
     try:
