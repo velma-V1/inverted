@@ -5,11 +5,13 @@ import hashlib
 from pathlib import Path
 
 from inverted.test3_s0_inputs import (
+    BundleVerification,
     SourceAvailability,
     discover_bundle_files,
     load_source_manifest,
     verify_evidence_bundle,
     verify_file_hash,
+    verify_source_against_manifest,
     write_source_manifest,
 )
 from inverted.test3_s0_types import EvidenceSource
@@ -73,3 +75,54 @@ def test_manifest_roundtrip_preserves_source_metadata(tmp_path: Path):
     loaded = load_source_manifest(path)
     assert loaded[0].source_id == "test2-mf"
     assert loaded[0].metadata["artifact_id"] == 123
+
+
+def test_manifest_identity_mismatch_is_integrity_failure():
+    source = EvidenceSource(
+        source_id="tier-a",
+        source_class="test2_tier_a",
+        path="/evidence/tier-a",
+        required=True,
+        bundle_sha256="expected-inventory-sha",
+        git_sha="expected-git",
+        run_id="expected-run",
+        complete_claim=True,
+    )
+    verification = BundleVerification(
+        root="/evidence/tier-a",
+        integrity_ok=True,
+        claims_complete=True,
+        sha_inventory_present=True,
+        metadata={
+            "inventory_sha256": "observed-inventory-sha",
+            "git_sha": "observed-git",
+            "run_id": "observed-run",
+        },
+    )
+    errors = verify_source_against_manifest(source, verification)
+    assert len(errors) == 3
+    assert any("bundle_sha256" in error for error in errors)
+    assert any("git_sha" in error for error in errors)
+    assert any("run_id" in error for error in errors)
+
+
+def test_manifest_expected_identity_missing_from_bundle_is_not_silently_accepted():
+    source = EvidenceSource(
+        source_id="tier-a",
+        source_class="test2_tier_a",
+        path="/evidence/tier-a",
+        required=True,
+        git_sha="expected-git",
+        run_id="expected-run",
+        complete_claim=True,
+    )
+    verification = BundleVerification(
+        root="/evidence/tier-a",
+        integrity_ok=True,
+        claims_complete=True,
+        sha_inventory_present=True,
+        metadata={},
+    )
+    errors = verify_source_against_manifest(source, verification)
+    assert any("git_sha" in error and "missing" in error for error in errors)
+    assert any("run_id" in error and "missing" in error for error in errors)
