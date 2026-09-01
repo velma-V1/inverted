@@ -20,16 +20,17 @@ jobs:
       - run: python -m pip install -e ".[test]"
       - name: Full pytest suite
         run: python -m pytest -q
-      - name: Run Section 1 R1 mock smoke
+      - name: Run Section 1 R2 mock smoke
         run: >-
           python -m inverted.test3_s1_cli mock-smoke
           --output-dir test3-s1-ci/mock-validation
-          --run-id test3-s1-r1-mock
-      - name: Verify mock-only S1-R1 exact exposure contract
+          --run-id test3-s1-r2-mock
+      - name: Verify mock-only S1-R2 exact-200 exposure contract
         run: |
           python - <<'PY'
           import csv
           import json
+          from collections import Counter, defaultdict
           from pathlib import Path
 
           p = Path("test3-s1-ci/mock-validation")
@@ -43,35 +44,67 @@ jobs:
               for line in (p / "model_calls.jsonl").read_text(encoding="utf-8").splitlines()
               if line.strip()
           ]
+          with (p / "trials.csv").open(encoding="utf-8", newline="") as handle:
+              trials = list(csv.DictReader(handle))
+          with (p / "family_summaries.csv").open(encoding="utf-8", newline="") as handle:
+              family_rows = list(csv.DictReader(handle))
 
           assert verdict["verdict"] == "MOCK_VALIDATION_ONLY", verdict
           assert verdict["tier_a_architecture_claim"] is False, verdict
           assert verdict["real_model_inference"] is False, verdict
           assert verdict["protocol_valid_for_primary_claim"] is True, verdict
-          assert verdict["protocol_revision"] == "S1-R1", verdict
-          assert verdict["holdout"] == "A-R1", verdict
-          assert verdict["physical_model_calls"] == 80, verdict
-          assert verdict["matched_task_count"] == 10, verdict
+          assert verdict["protocol_revision"] == "S1-R2", verdict
+          assert verdict["holdout"] == "A-R2", verdict
+          assert verdict["physical_model_calls"] == 200, verdict
+          assert verdict["matched_task_count"] == 25, verdict
 
-          assert master["protocol_revision"] == "S1-R1", master
-          assert master["holdout"] == "A-R1", master
+          assert master["protocol_revision"] == "S1-R2", master
+          assert master["holdout"] == "A-R2", master
           assert master["protocol_valid_for_primary_claim"] is True, master
-          assert master["physical_model_calls"] == 80, master
-          assert master["matched_task_count"] == 10, master
+          assert master["physical_model_calls"] == 200, master
+          assert master["matched_task_count"] == 25, master
+          assert master["family_count"] == 6, master
+          assert set(master["families"]) == {
+              "state", "policy", "reconciliation",
+              "preservation", "dependency_order", "repair_containment",
+          }, master
 
-          assert prereg["protocol_revision"] == "S1-R1", prereg
-          assert prereg["holdout"] == "A-R1", prereg
-          assert prereg["exact_budget"] == 80, prereg
+          assert prereg["protocol_revision"] == "S1-R2", prereg
+          assert prereg["holdout"] == "A-R2", prereg
+          assert prereg["exact_budget"] == 200, prereg
+          assert prereg["source_s0_screen_budget"] == 80, prereg
           assert prereg["arm_count"] == 4, prereg
-          assert prereg["physical_call_cap_per_arm"] == 20, prereg
-          assert prereg["matched_tasks"] == 10, prereg
+          assert prereg["physical_call_cap_per_arm"] == 50, prereg
+          assert prereg["matched_tasks"] == 25, prereg
           assert prereg["calls_per_arm_task"] == 2, prereg
+          assert prereg["execution_mode"] == "balanced_task_blocks", prereg
 
-          assert len(calls) == 80, len(calls)
+          assert len(calls) == 200, len(calls)
           assert all((row.get("telemetry") or {}).get("provider") == "mock" for row in calls)
           assert all(row.get("cache_hit") is False for row in calls)
           assert all(bool(row.get("active_intervention")) != bool(row.get("shadow_only")) for row in calls)
-          assert sum(bool(row.get("active_intervention")) for row in calls) >= 40
+          assert sum(bool(row.get("active_intervention")) for row in calls) >= 100
+
+          assert len(trials) == 100, len(trials)
+          assert {int(row["execution_ordinal"]) for row in trials} == set(range(100))
+          assert {int(row["task_index"]) for row in trials} == set(range(25))
+          task_arms = defaultdict(set)
+          task_positions = defaultdict(set)
+          for row in trials:
+              task_index = int(row["task_index"])
+              task_arms[task_index].add(row["arm_id"])
+              task_positions[task_index].add(int(row["arm_execution_position"]))
+          assert all(arms == {"S1-A0", "S1-A1", "S1-A2", "S1-A3"} for arms in task_arms.values())
+          assert all(positions == {0, 1, 2, 3} for positions in task_positions.values())
+          assert Counter(row["arm_id"] for row in trials) == Counter({
+              "S1-A0": 25, "S1-A1": 25, "S1-A2": 25, "S1-A3": 25,
+          })
+
+          families = {row["family"] for row in family_rows}
+          assert families == {
+              "state", "policy", "reconciliation",
+              "preservation", "dependency_order", "repair_containment",
+          }, families
 
           assert failures == [], failures
           assert exposure["all_seed_failures_verified"] is True, exposure
@@ -84,7 +117,7 @@ jobs:
               hashes = list(csv.DictReader(handle))
           assert hashes and all((p / row["path"]).is_file() for row in hashes)
           PY
-      - name: Upload Section 1 R1 mock validation evidence
+      - name: Upload Section 1 R2 mock validation evidence
         uses: actions/upload-artifact@v4
         with:
           name: test3-s1-validation-evidence
