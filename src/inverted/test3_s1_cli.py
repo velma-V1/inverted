@@ -13,13 +13,13 @@ from .models import MockModelAdapter, OllamaAdapter
 from .test2_provenance import collect_ollama_provenance
 from .test3_s1_analysis import derive_s1_verdict, summarize_s1
 from .test3_s1_artifacts import Test3S1ArtifactWriter
-from .test3_s1_cases import build_holdout_a_r1
+from .test3_s1_cases import build_holdout_a_r2
 from .test3_s1_inputs import S1ResolvedInputs, load_s1_inputs
 from .test3_s1_progress import InPlaceS1Progress, ProgressReportingAdapter, S1ProgressTracker
 from .test3_s1_runtime import (
     S1_CALLS_PER_ARM_TASK,
-    S1_HOLDOUT,
-    S1_PROTOCOL_REVISION,
+    S1_R2_HOLDOUT,
+    S1_R2_PROTOCOL_REVISION,
     matched_task_limit,
     run_s1_screen,
 )
@@ -27,7 +27,12 @@ from .test3_s1_runtime import (
 
 PREDECESSOR_INVALID_RUN = "test3-s1-20260901-111233"
 PREDECESSOR_INVALIDATION = "INTERVENTION_EXPOSURE_COLLAPSE"
-S1_R1_MATCHED_TASKS = 10
+S1_R2_MATCHED_TASKS = 25
+S1_R2_EXACT_BUDGET = 200
+S1_R2_PER_ARM_CAP = 50
+SOURCE_S0_SCREEN_BUDGET = 80
+SOURCE_S0_PER_ARM_CAP = 20
+S1_R2_SPEC = "docs/superpowers/specs/2026-09-01-test3-s1-r2-expanded-category-screen-design.md"
 
 
 def _load_config(path: str | Path) -> dict[str, Any]:
@@ -37,60 +42,78 @@ def _load_config(path: str | Path) -> dict[str, Any]:
     s1 = dict(value["s1"])
     expected = {
         "section": "S1_FIXED_STACK_ORDER",
-        "protocol_revision": S1_PROTOCOL_REVISION,
-        "holdout": S1_HOLDOUT,
-        "hard_call_limit": 80,
+        "protocol_revision": S1_R2_PROTOCOL_REVISION,
+        "holdout": S1_R2_HOLDOUT,
+        "hard_call_limit": S1_R2_EXACT_BUDGET,
         "arm_count": 4,
-        "per_arm_call_cap": 20,
-        "matched_tasks": S1_R1_MATCHED_TASKS,
+        "per_arm_call_cap": S1_R2_PER_ARM_CAP,
+        "matched_tasks": S1_R2_MATCHED_TASKS,
         "calls_per_arm_task": S1_CALLS_PER_ARM_TASK,
+        "execution_mode": "balanced_task_blocks",
         "intervention_start": "deterministic_verified_failure",
         "predecessor_invalid_run": PREDECESSOR_INVALID_RUN,
         "predecessor_invalidation": PREDECESSOR_INVALIDATION,
     }
     for key, required in expected.items():
         if s1.get(key) != required:
-            raise ValueError(f"S1-R1 config {key} must be exactly {required!r}")
+            raise ValueError(f"S1-R2 config {key} must be exactly {required!r}")
     if s1.get("no_outcome_dependent_early_stopping") is not True:
-        raise ValueError("S1-R1 forbids outcome-dependent early stopping")
+        raise ValueError("S1-R2 forbids outcome-dependent early stopping")
     ollama = dict(s1.get("ollama") or {})
     if int(ollama.get("transport_retries") or 0) != 0:
-        raise ValueError("S1-R1 Ollama transport retries must be zero")
-    if int(s1["matched_tasks"]) * int(s1["arm_count"]) * int(s1["calls_per_arm_task"]) != int(s1["hard_call_limit"]):
-        raise ValueError("S1-R1 schedule must resolve to exactly 80 physical calls")
+        raise ValueError("S1-R2 Ollama transport retries must be zero")
+    planned = int(s1["matched_tasks"]) * int(s1["arm_count"]) * int(s1["calls_per_arm_task"])
+    if planned != int(s1["hard_call_limit"]):
+        raise ValueError("S1-R2 schedule must resolve to exactly 200 physical calls")
     return value
 
 
-def _mock_arms() -> tuple[dict[str, Any], ...]:
+def _mock_arms(cap: int = S1_R2_PER_ARM_CAP) -> tuple[dict[str, Any], ...]:
     return (
-        {"arm_id": "S1-A0", "role": "best_single_model_baseline", "order": None, "physical_call_cap": 20},
-        {"arm_id": "S1-A1", "role": "current_best_fixed_hybrid", "order": "requirement_validator -> retry -> targeted_repair -> final_validator", "physical_call_cap": 20},
-        {"arm_id": "S1-A2", "role": "alternate_fixed_order", "order": "requirement_validator -> targeted_repair -> final_validator -> retry", "physical_call_cap": 20},
-        {"arm_id": "S1-A3", "role": "random_order_negative_control", "order": "retry -> targeted_repair -> final_validator -> requirement_validator", "physical_call_cap": 20},
+        {"arm_id": "S1-A0", "role": "best_single_model_baseline", "order": None, "physical_call_cap": cap},
+        {"arm_id": "S1-A1", "role": "current_best_fixed_hybrid", "order": "requirement_validator -> retry -> targeted_repair -> final_validator", "physical_call_cap": cap},
+        {"arm_id": "S1-A2", "role": "alternate_fixed_order", "order": "requirement_validator -> targeted_repair -> final_validator -> retry", "physical_call_cap": cap},
+        {"arm_id": "S1-A3", "role": "random_order_negative_control", "order": "retry -> targeted_repair -> final_validator -> requirement_validator", "physical_call_cap": cap},
     )
+
+
+def _r2_arms(source_arms: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
+    rows = tuple({**dict(row), "physical_call_cap": S1_R2_PER_ARM_CAP} for row in source_arms)
+    if tuple(str(row.get("arm_id") or "") for row in rows) != ("S1-A0", "S1-A1", "S1-A2", "S1-A3"):
+        raise ValueError("S1-R2 requires the frozen S0 A0-A3 arm identities")
+    return rows
 
 
 def _execution_preregistration(resolved: S1ResolvedInputs, config: dict[str, Any]) -> dict[str, Any]:
     s1 = dict(config["s1"])
     source = dict(resolved.preregistration)
+    arms = _r2_arms(resolved.arms)
     return {
-        "status": "S1_R1_FROZEN_FOR_LOCAL_TIER_A_EXECUTION",
+        "status": "S1_R2_FROZEN_FOR_LOCAL_TIER_A_EXECUTION",
         "section": "S1_FIXED_STACK_ORDER",
-        "protocol_revision": S1_PROTOCOL_REVISION,
-        "holdout": S1_HOLDOUT,
+        "protocol_revision": S1_R2_PROTOCOL_REVISION,
+        "holdout": S1_R2_HOLDOUT,
+        "spec": S1_R2_SPEC,
         "source_s0_holdout": resolved.holdout,
-        "corrective_reason": PREDECESSOR_INVALIDATION,
+        "source_s0_screen_budget": resolved.exact_budget,
+        "source_s0_per_arm_call_cap": resolved.per_arm_call_cap,
+        "budget_revision_source": "approved_s1_r2_protocol_spec",
+        "corrective_reason": "expanded_six_family_200_call_screen",
+        "predecessor_protocol": s1.get("predecessor_protocol", "S1-R1"),
         "predecessor_invalid_run": PREDECESSOR_INVALID_RUN,
+        "predecessor_invalidation": PREDECESSOR_INVALIDATION,
         "predecessor_invalid_for_primary_claim": True,
         "source_s0_preregistration": source,
-        "arms": [dict(row) for row in resolved.arms],
-        "arm_count": len(resolved.arms),
-        "exact_budget": resolved.exact_budget,
-        "physical_call_cap_per_arm": resolved.per_arm_call_cap,
+        "source_s0_arms": [dict(row) for row in resolved.arms],
+        "arms": [dict(row) for row in arms],
+        "arm_count": len(arms),
+        "exact_budget": int(s1["hard_call_limit"]),
+        "physical_call_cap_per_arm": int(s1["per_arm_call_cap"]),
         "matched_tasks": int(s1["matched_tasks"]),
         "calls_per_arm_task": int(s1["calls_per_arm_task"]),
+        "execution_mode": s1["execution_mode"],
         "intervention_start": s1["intervention_start"],
-        "budget_strategy": "exact_equal_physical_call_intervention_screen",
+        "budget_strategy": "exact_equal_physical_call_expanded_category_screen",
         "no_outcome_dependent_early_stopping": True,
         "tier_a_inference_authorized_by_artifact": False,
         "full_power_cluster_requirement": resolved.full_power_clusters,
@@ -99,14 +122,17 @@ def _execution_preregistration(resolved: S1ResolvedInputs, config: dict[str, Any
 
 
 def _report(verdict: dict[str, Any], runtime: dict[str, Any]) -> str:
+    protocol = str(runtime.get("protocol_revision") or "S1")
+    holdout = str(runtime.get("holdout") or "")
     lines = [
-        "VELMA TEST 3 — SECTION 1 R1 FIXED STACK/ORDER",
-        "=============================================",
+        f"VELMA TEST 3 — SECTION 1 {protocol} FIXED STACK/ORDER",
+        "=================================================",
         f"Run ID: {runtime.get('run_id')}",
-        f"Protocol: {runtime.get('protocol_revision')}",
-        f"Holdout: {runtime.get('holdout')}",
-        f"Physical model calls: {runtime.get('physical_model_calls', 0)} / {runtime.get('exact_budget', 80)}",
-        f"Matched Holdout A-R1 tasks: {runtime.get('matched_task_limit', 0)}",
+        f"Protocol: {protocol}",
+        f"Holdout: {holdout}",
+        f"Physical model calls: {runtime.get('physical_model_calls', 0)} / {runtime.get('exact_budget', 0)}",
+        f"Matched tasks: {runtime.get('matched_task_limit', 0)}",
+        f"Execution mode: {runtime.get('execution_mode', '')}",
         f"Protocol valid for primary claim: {str(bool(verdict.get('protocol_valid_for_primary_claim'))).lower()}",
         f"Verdict: {verdict.get('verdict')}",
         f"Reason: {verdict.get('reason', '')}",
@@ -130,12 +156,12 @@ def _assemble_evidence(
     if mock and analysis.get("protocol_valid_for_primary_claim") is True:
         verdict = {
             "verdict": "MOCK_VALIDATION_ONLY",
-            "reason": "GitHub/mock S1-R1 validation exercised the exact-80-call corrective instrument without real model inference.",
+            "reason": "GitHub/mock S1-R2 validation exercised the exact-200-call six-family instrument without real model inference.",
             "tier_a_architecture_claim": False,
             "real_model_inference": False,
             "protocol_valid_for_primary_claim": True,
-            "protocol_revision": S1_PROTOCOL_REVISION,
-            "holdout": S1_HOLDOUT,
+            "protocol_revision": S1_R2_PROTOCOL_REVISION,
+            "holdout": S1_R2_HOLDOUT,
             "matched_task_count": analysis["matched_task_count"],
             "full_power_cluster_requirement": full_power_clusters,
             "cannot_rule_out_target_effect": True,
@@ -152,16 +178,16 @@ def _assemble_evidence(
         "invalid_for_primary_claim": True,
         "discovery_reason": (
             "The predecessor S1 run consumed 24 calls over 6 matched tasks because successful initial executor outputs "
-            "caused fixed-order interventions to disappear. It is retained as measurement-system evidence and excluded from R1 claims."
+            "caused fixed-order interventions to disappear. It is retained as measurement-system evidence and excluded from S1 claims."
         ),
     }]
     if full_power_clusters is not None and analysis["matched_task_count"] < full_power_clusters:
         edge_cases.append({
             "kind": "power_boundary",
-            "classification": "bounded_s1_r1_screen_underpowered_for_target_effect",
+            "classification": "bounded_s1_r2_screen_underpowered_for_target_effect",
             "matched_task_count": analysis["matched_task_count"],
             "full_power_cluster_requirement": full_power_clusters,
-            "discovery_reason": "The exact-80-call S1-R1 screen is a large-effect screen and cannot exclude the configured small target effect.",
+            "discovery_reason": "The exact-200-call S1-R2 screen is a large/category-effect screen and cannot exclude the configured small target effect.",
         })
 
     return {
@@ -174,6 +200,7 @@ def _assemble_evidence(
         "validator_results": runtime["validator_results"],
         "arm_accounting": runtime["arm_accounting"],
         "arm_summaries": analysis["arm_summaries"],
+        "family_summaries": analysis["family_summaries"],
         "pairwise_effects": analysis["pairwise_effects"],
         "transitions": analysis["transitions"],
         "intervention_exposure": analysis["intervention_exposure"],
@@ -214,19 +241,23 @@ def _provenance_snapshot(base_url: str, model_names: tuple[str, ...]) -> dict[st
     return snapshot
 
 
-def _dry_plan(resolved: S1ResolvedInputs) -> None:
-    cases = build_holdout_a_r1()
-    matched = matched_task_limit(resolved.arms, available_cases=len(cases))
-    planned = len(resolved.arms) * matched * S1_CALLS_PER_ARM_TASK
+def _dry_plan(resolved: S1ResolvedInputs, config: dict[str, Any]) -> None:
+    s1 = dict(config["s1"])
+    cases = build_holdout_a_r2()
+    arms = _r2_arms(resolved.arms)
+    matched = matched_task_limit(arms, available_cases=len(cases))
+    planned = len(arms) * matched * S1_CALLS_PER_ARM_TASK
     print("SECTION=S1_FIXED_STACK_ORDER")
-    print(f"PROTOCOL={S1_PROTOCOL_REVISION}")
-    print(f"HOLDOUT={S1_HOLDOUT}")
-    print(f"EXACT_BUDGET={resolved.exact_budget}")
-    print(f"ARM_COUNT={len(resolved.arms)}")
-    print(f"PER_ARM_CALL_CAP={resolved.per_arm_call_cap}")
+    print(f"PROTOCOL={S1_R2_PROTOCOL_REVISION}")
+    print(f"HOLDOUT={S1_R2_HOLDOUT}")
+    print(f"EXACT_BUDGET={int(s1['hard_call_limit'])}")
+    print(f"SOURCE_S0_SCREEN_BUDGET={resolved.exact_budget}")
+    print(f"ARM_COUNT={len(arms)}")
+    print(f"PER_ARM_CALL_CAP={int(s1['per_arm_call_cap'])}")
     print(f"MATCHED_TASKS={matched}")
     print(f"CALLS_PER_ARM_TASK={S1_CALLS_PER_ARM_TASK}")
     print(f"PLANNED_PHYSICAL_CALLS={planned}")
+    print("EXECUTION_MODE=balanced_task_blocks")
     print("INTERVENTION_START=deterministic_verified_failure")
     print(f"BEST_SINGLE_MODEL={resolved.best_single_model}")
     print(f"REPAIR_MODEL={resolved.repair_model}")
@@ -240,24 +271,29 @@ def _run_mock(output_dir: str | Path, run_id: str) -> int:
     repair = "cogito:3b-v1-preview-llama-q8_0"
     models = {best: MockModelAdapter(best), repair: MockModelAdapter(repair)}
     runtime = run_s1_screen(
-        cases=build_holdout_a_r1(),
+        cases=build_holdout_a_r2(),
         arms=arms,
         model_by_name=models,
         best_single_model=best,
         repair_model=repair,
         run_id=run_id,
-        exact_budget=80,
+        exact_budget=S1_R2_EXACT_BUDGET,
+        protocol_revision=S1_R2_PROTOCOL_REVISION,
     )
     prereg = {
         "status": "MOCK_VALIDATION_ONLY",
         "section": "S1_FIXED_STACK_ORDER",
-        "protocol_revision": S1_PROTOCOL_REVISION,
-        "holdout": S1_HOLDOUT,
-        "exact_budget": 80,
+        "protocol_revision": S1_R2_PROTOCOL_REVISION,
+        "holdout": S1_R2_HOLDOUT,
+        "spec": S1_R2_SPEC,
+        "source_s0_screen_budget": SOURCE_S0_SCREEN_BUDGET,
+        "budget_revision_source": "approved_s1_r2_protocol_spec",
+        "exact_budget": S1_R2_EXACT_BUDGET,
         "arm_count": 4,
-        "physical_call_cap_per_arm": 20,
-        "matched_tasks": 10,
+        "physical_call_cap_per_arm": S1_R2_PER_ARM_CAP,
+        "matched_tasks": S1_R2_MATCHED_TASKS,
         "calls_per_arm_task": 2,
+        "execution_mode": "balanced_task_blocks",
         "arms": list(arms),
         "tier_a_inference_authorized": False,
         "predecessor_invalid_run": PREDECESSOR_INVALID_RUN,
@@ -270,15 +306,15 @@ def _run_mock(output_dir: str | Path, run_id: str) -> int:
         provenance={
             "run_id": run_id,
             "mode": "mock-validation",
-            "protocol_revision": S1_PROTOCOL_REVISION,
-            "holdout": S1_HOLDOUT,
+            "protocol_revision": S1_R2_PROTOCOL_REVISION,
+            "execution_holdout": S1_R2_HOLDOUT,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         },
         full_power_clusters=260,
         mock=True,
     )
     if evidence["verdict"].get("protocol_valid_for_primary_claim") is not True:
-        raise AssertionError("S1-R1 mock validation failed the intervention-exposure gate")
+        raise AssertionError("S1-R2 mock validation failed the intervention-exposure gate")
     Test3S1ArtifactWriter(output_dir).write_all(evidence)
     return 0
 
@@ -290,14 +326,16 @@ def _run_real(args: argparse.Namespace) -> int:
     config = _load_config(args.config)
     resolved = load_s1_inputs(args.s0_dir)
     s1 = dict(config["s1"])
-    if resolved.exact_budget != int(s1["hard_call_limit"]):
-        raise ValueError("S0 S1 budget freeze does not match S1-R1 runtime config")
+    # The S0 packet remains historical provenance: its original screen was 80 calls.
+    if resolved.exact_budget != SOURCE_S0_SCREEN_BUDGET or resolved.per_arm_call_cap != SOURCE_S0_PER_ARM_CAP:
+        raise ValueError("S1-R2 source S0 packet does not match the frozen original 80-call S1 screen provenance")
 
-    cases = build_holdout_a_r1()
-    matched = matched_task_limit(resolved.arms, available_cases=len(cases))
-    planned = len(resolved.arms) * matched * S1_CALLS_PER_ARM_TASK
-    if matched != S1_R1_MATCHED_TASKS or planned != resolved.exact_budget:
-        raise ValueError(f"S1-R1 preflight schedule invalid: matched={matched}, planned_calls={planned}")
+    arms = _r2_arms(resolved.arms)
+    cases = build_holdout_a_r2()
+    matched = matched_task_limit(arms, available_cases=len(cases))
+    planned = len(arms) * matched * S1_CALLS_PER_ARM_TASK
+    if matched != S1_R2_MATCHED_TASKS or planned != int(s1["hard_call_limit"]):
+        raise ValueError(f"S1-R2 preflight schedule invalid: matched={matched}, planned_calls={planned}")
 
     settings = dict(s1.get("ollama") or {})
     names = tuple(dict.fromkeys((resolved.best_single_model, resolved.repair_model)))
@@ -308,19 +346,20 @@ def _run_real(args: argparse.Namespace) -> int:
     progress = InPlaceS1Progress()
     tracker = S1ProgressTracker(
         progress,
-        total_tasks=len(resolved.arms) * matched,
-        call_budget=resolved.exact_budget,
+        total_tasks=len(arms) * matched,
+        call_budget=int(s1["hard_call_limit"]),
     )
     adapters = {name: ProgressReportingAdapter(adapter, tracker) for name, adapter in base_adapters.items()}
     try:
         runtime = run_s1_screen(
             cases=cases,
-            arms=resolved.arms,
+            arms=arms,
             model_by_name=adapters,
             best_single_model=resolved.best_single_model,
             repair_model=resolved.repair_model,
             run_id=args.run_id,
-            exact_budget=resolved.exact_budget,
+            exact_budget=int(s1["hard_call_limit"]),
+            protocol_revision=S1_R2_PROTOCOL_REVISION,
         )
     except BaseException:
         tracker.finish(mark_current_complete=False)
@@ -333,8 +372,8 @@ def _run_real(args: argparse.Namespace) -> int:
             "S1 progress physical-call accounting diverged from runtime: "
             f"{tracker.physical_calls} != {runtime['physical_model_calls']}"
         )
-    if int(runtime["physical_model_calls"]) != 80 or runtime.get("protocol_valid_for_primary_claim") is not True:
-        raise AssertionError("S1-R1 runtime completed without satisfying the exact-80-call protocol gate")
+    if int(runtime["physical_model_calls"]) != S1_R2_EXACT_BUDGET or runtime.get("protocol_valid_for_primary_claim") is not True:
+        raise AssertionError("S1-R2 runtime completed without satisfying the exact-200-call protocol gate")
 
     anomalies: list[dict[str, Any]] = []
     after: dict[str, Any] | None = None
@@ -349,9 +388,13 @@ def _run_real(args: argparse.Namespace) -> int:
     provenance = {
         "run_id": args.run_id,
         "mode": "tier-a-local",
-        "protocol_revision": S1_PROTOCOL_REVISION,
-        "execution_holdout": S1_HOLDOUT,
+        "protocol_revision": S1_R2_PROTOCOL_REVISION,
+        "execution_holdout": S1_R2_HOLDOUT,
+        "execution_mode": "balanced_task_blocks",
         "source_s0_holdout": resolved.holdout,
+        "source_s0_screen_budget": resolved.exact_budget,
+        "budget_revision_source": "approved_s1_r2_protocol_spec",
+        "spec": S1_R2_SPEC,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "s0_dir": resolved.s0_dir,
         "test2_tier_a_dir": resolved.test2_tier_a_dir,
@@ -373,15 +416,15 @@ def _run_real(args: argparse.Namespace) -> int:
     if anomalies:
         evidence["verdict"] = {
             **evidence["verdict"],
-            "verdict": "S1_INSTRUMENTATION_WARNING",
+            "verdict": "S1_R2_INSTRUMENTATION_WARNING",
             "tier_a_architecture_claim": False,
-            "reason": "S1-R1 inference completed but post-run model identity provenance could not be fully verified; evidence retained and architecture claim withheld.",
+            "reason": "S1-R2 inference completed but post-run model identity provenance could not be fully verified; evidence retained and architecture claim withheld.",
         }
         evidence["report"] = _report(evidence["verdict"], runtime)
     Test3S1ArtifactWriter(args.output_dir).write_all(evidence)
     print(f"RUN_ID={args.run_id}")
-    print(f"PROTOCOL={S1_PROTOCOL_REVISION}")
-    print(f"HOLDOUT={S1_HOLDOUT}")
+    print(f"PROTOCOL={S1_R2_PROTOCOL_REVISION}")
+    print(f"HOLDOUT={S1_R2_HOLDOUT}")
     print(f"PHYSICAL_MODEL_CALLS={runtime['physical_model_calls']}")
     print(f"MATCHED_TASKS={runtime['matched_task_limit']}")
     print(f"PROTOCOL_VALID={str(bool(evidence['verdict'].get('protocol_valid_for_primary_claim'))).lower()}")
@@ -400,13 +443,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     mock = sub.add_parser("mock-smoke")
     mock.add_argument("--output-dir", required=True)
-    mock.add_argument("--run-id", default="test3-s1-r1-mock")
+    mock.add_argument("--run-id", default="test3-s1-r2-mock")
 
     run = sub.add_parser("run")
     run.add_argument("--s0-dir", required=True)
     run.add_argument("--config", default="configs/test3-s1.yaml")
     run.add_argument("--output-dir", required=True)
-    run.add_argument("--run-id", default="test3-s1-r1-local")
+    run.add_argument("--run-id", default="test3-s1-r2-local")
     run.add_argument("--authorize-tier-a", action="store_true")
     return parser
 
@@ -414,8 +457,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "dry-plan":
-        _load_config(args.config)
-        _dry_plan(load_s1_inputs(args.s0_dir))
+        config = _load_config(args.config)
+        _dry_plan(load_s1_inputs(args.s0_dir), config)
         return 0
     if args.command == "mock-smoke":
         return _run_mock(args.output_dir, args.run_id)
