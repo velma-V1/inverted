@@ -20,12 +20,12 @@ jobs:
       - run: python -m pip install -e ".[test]"
       - name: Full pytest suite
         run: python -m pytest -q
-      - name: Run Section 1 R2 mock smoke
+      - name: Run Section 1 R3 mock smoke
         run: >-
           python -m inverted.test3_s1_cli mock-smoke
           --output-dir test3-s1-ci/mock-validation
-          --run-id test3-s1-r2-mock
-      - name: Verify mock-only S1-R2 exact-200 exposure contract
+          --run-id test3-s1-r3-mock
+      - name: Verify mock-only S1-R3 exact-200 corrective contract
         run: |
           python - <<'PY'
           import csv
@@ -53,13 +53,13 @@ jobs:
           assert verdict["tier_a_architecture_claim"] is False, verdict
           assert verdict["real_model_inference"] is False, verdict
           assert verdict["protocol_valid_for_primary_claim"] is True, verdict
-          assert verdict["protocol_revision"] == "S1-R2", verdict
-          assert verdict["holdout"] == "A-R2", verdict
+          assert verdict["protocol_revision"] == "S1-R3", verdict
+          assert verdict["holdout"] == "A-R3", verdict
           assert verdict["physical_model_calls"] == 200, verdict
           assert verdict["matched_task_count"] == 25, verdict
 
-          assert master["protocol_revision"] == "S1-R2", master
-          assert master["holdout"] == "A-R2", master
+          assert master["protocol_revision"] == "S1-R3", master
+          assert master["holdout"] == "A-R3", master
           assert master["protocol_valid_for_primary_claim"] is True, master
           assert master["physical_model_calls"] == 200, master
           assert master["matched_task_count"] == 25, master
@@ -69,8 +69,8 @@ jobs:
               "preservation", "dependency_order", "repair_containment",
           }, master
 
-          assert prereg["protocol_revision"] == "S1-R2", prereg
-          assert prereg["holdout"] == "A-R2", prereg
+          assert prereg["protocol_revision"] == "S1-R3", prereg
+          assert prereg["holdout"] == "A-R3", prereg
           assert prereg["exact_budget"] == 200, prereg
           assert prereg["source_s0_screen_budget"] == 80, prereg
           assert prereg["arm_count"] == 4, prereg
@@ -78,6 +78,11 @@ jobs:
           assert prereg["matched_tasks"] == 25, prereg
           assert prereg["calls_per_arm_task"] == 2, prereg
           assert prereg["execution_mode"] == "balanced_task_blocks", prereg
+          assert prereg["repair_semantics"] == "explicit_patch_composition", prereg
+          assert prereg["causal_order_collision_gate"] == "fail_closed_before_inference", prereg
+          assert prereg["predecessor_protocol"] == "S1-R2", prereg
+          assert prereg["predecessor_invalid_run"] == "test3-s1-r2-20260901-140516", prereg
+          assert prereg["predecessor_invalidation"] == "REPAIR_CONTRACT_AMBIGUITY_AND_CONTROL_COLLAPSE", prereg
 
           assert len(calls) == 200, len(calls)
           assert all((row.get("telemetry") or {}).get("provider") == "mock" for row in calls)
@@ -88,6 +93,8 @@ jobs:
           assert len(trials) == 100, len(trials)
           assert {int(row["execution_ordinal"]) for row in trials} == set(range(100))
           assert {int(row["task_index"]) for row in trials} == set(range(25))
+          assert all(row["protocol_revision"] == "S1-R3" for row in trials)
+          assert all(row["holdout"] == "A-R3" for row in trials)
           task_arms = defaultdict(set)
           task_positions = defaultdict(set)
           for row in trials:
@@ -112,12 +119,18 @@ jobs:
           assert exposure["all_calls_partitioned_active_or_shadow"] is True, exposure
           assert exposure["distinct_fixed_first_active_components"] >= 2, exposure
           assert exposure["cache_hits"] == 0, exposure
+          assert exposure["causal_order_signatures_unique"] is True, exposure
+          assert exposure["causal_order_signatures"] == {
+              "S1-A1": ["retry", "targeted_repair", "final_validator"],
+              "S1-A2": ["targeted_repair", "final_validator", "retry"],
+              "S1-A3": ["targeted_repair", "retry", "final_validator"],
+          }, exposure
 
           with (p / "SHA256SUMS.csv").open(encoding="utf-8", newline="") as handle:
               hashes = list(csv.DictReader(handle))
           assert hashes and all((p / row["path"]).is_file() for row in hashes)
           PY
-      - name: Upload Section 1 R2 mock validation evidence
+      - name: Upload Section 1 R3 mock validation evidence
         uses: actions/upload-artifact@v4
         with:
           name: test3-s1-validation-evidence
