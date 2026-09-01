@@ -1,7 +1,7 @@
 s1:
   section: S1_FIXED_STACK_ORDER
-  protocol_revision: S1-R2
-  holdout: A-R2
+  protocol_revision: S1-R3
+  holdout: A-R3
   hard_call_limit: 200
   arm_count: 4
   per_arm_call_cap: 50
@@ -9,9 +9,9 @@ s1:
   calls_per_arm_task: 2
   execution_mode: balanced_task_blocks
   intervention_start: deterministic_verified_failure
-  predecessor_protocol: S1-R1
-  predecessor_invalid_run: test3-s1-20260901-111233
-  predecessor_invalidation: INTERVENTION_EXPOSURE_COLLAPSE
+  predecessor_protocol: S1-R2
+  predecessor_invalid_run: test3-s1-r2-20260901-140516
+  predecessor_invalidation: REPAIR_CONTRACT_AMBIGUITY_AND_CONTROL_COLLAPSE
   no_outcome_dependent_early_stopping: true
   large_signal_rule:
     min_net_wins_vs_baseline: 5
