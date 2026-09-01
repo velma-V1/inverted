@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from typing import Any, Iterable
+from typing import Any
 
 from .test3_s2_cases import S2_HOLDOUT, S2_PROTOCOL_REVISION
 from .test3_s2_policy import REAL_ARM_IDS
-from .test3_s2_runtime import S2_EXACT_BUDGET, S2_MATCHED_CASES, S2_PER_ARM_CALL_CAP, S2_TRIAL_COUNT
+from .test3_s2_runtime import (
+    S2_COMBINED_ACTION_BUDGET,
+    S2_EXACT_BUDGET,
+    S2_MATCHED_CASES,
+    S2_PER_ARM_CALL_CAP,
+    S2_TRIAL_COUNT,
+)
 
 
 def _summary_rows(rows: list[dict[str, Any]], dimensions: tuple[str, ...]) -> list[dict[str, Any]]:
@@ -70,14 +76,27 @@ def _protocol_failures(runtime: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     trials = [dict(row) for row in runtime.get("trials") or []]
     calls = [dict(row) for row in runtime.get("model_calls") or []]
+    action_budget = dict(runtime.get("action_budget") or {})
+    by_kind = dict(action_budget.get("by_kind") or {})
+    combined_used = int(action_budget.get("combined_used") or 0)
+    combined_limit = int(action_budget.get("limit") or 0)
     if runtime.get("protocol_revision") != S2_PROTOCOL_REVISION:
         failures.append("protocol_revision_s2_r1")
     if runtime.get("holdout") != S2_HOLDOUT:
         failures.append("holdout_b_r1")
     if int(runtime.get("physical_model_calls") or 0) != S2_EXACT_BUDGET:
         failures.append("exact_720_calls")
-    if int((runtime.get("action_budget") or {}).get("combined_used") or 0) != S2_EXACT_BUDGET:
-        failures.append("combined_action_budget_exact_720")
+    if int(runtime.get("inference_action_delta") or 0) != S2_EXACT_BUDGET:
+        failures.append("exact_720_inference_actions")
+    if combined_limit != S2_COMBINED_ACTION_BUDGET:
+        failures.append("combined_action_budget_limit_732")
+    if combined_used > S2_COMBINED_ACTION_BUDGET or combined_used < S2_EXACT_BUDGET:
+        failures.append("combined_action_usage_within_declared_budget")
+    if int(by_kind.get("model_call") or 0) != S2_EXACT_BUDGET:
+        failures.append("combined_budget_records_720_model_calls")
+    unknown = set(by_kind) - {"model_call", "provenance_api_call"}
+    if unknown:
+        failures.append("unexpected_external_action_classes")
     if len(trials) != S2_TRIAL_COUNT:
         failures.append("exact_360_trials")
     if len(calls) != S2_EXACT_BUDGET:
