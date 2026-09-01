@@ -322,8 +322,28 @@ def _dry_plan(config: dict[str, Any]) -> None:
 
 def _run_mock(args: argparse.Namespace) -> int:
     config = _load_config(args.config)
-    models = {name: MockModelAdapter(name) for name in S2_MODEL_NAMES}
-    runtime = run_s2_screen(cases=build_holdout_b(), model_by_name=models, run_id=args.run_id, exact_budget=S2_EXACT_BUDGET)
+    progress = InPlaceS2Progress()
+    tracker = S2ProgressTracker(progress, total_trials=S2_TRIAL_COUNT, call_budget=S2_EXACT_BUDGET)
+    models = {
+        name: ProgressReportingAdapter(MockModelAdapter(name), tracker)
+        for name in S2_MODEL_NAMES
+    }
+    try:
+        runtime = run_s2_screen(
+            cases=build_holdout_b(),
+            model_by_name=models,
+            run_id=args.run_id,
+            exact_budget=S2_EXACT_BUDGET,
+        )
+    except BaseException:
+        tracker.finish(mark_current_complete=False)
+        raise
+    else:
+        tracker.finish(mark_current_complete=True)
+    if tracker.physical_calls != int(runtime["physical_model_calls"]):
+        raise AssertionError(
+            f"S2 mock progress call accounting diverged: {tracker.physical_calls} != {runtime['physical_model_calls']}"
+        )
     evidence = _assemble_evidence(
         runtime=runtime,
         config=config,
