@@ -4,6 +4,7 @@ from inverted.test2_postanalysis import (
     mutation_boundary_analysis,
     retry_repair_thresholds,
 )
+from inverted.test2_production_orders import run_production_order_atlas
 from inverted.test2_simulation import (
     CAUSAL,
     REQUIRES_NEW_INFERENCE,
@@ -58,10 +59,10 @@ def test_model_free_order_atlas_scores_and_ranks_every_order_without_hiding_nonc
 
 
 def test_model_free_atlas_separately_ranks_all_production_orders_without_oracle():
-    atlas = run_model_free_atlas(seed_count=2)
-    orderings = atlas["production_orderings"]
-    ranking = atlas["production_order_ranking"]
-    slices = atlas["production_order_slice_ranking"]
+    atlas = run_production_order_atlas(seed_count=2)
+    orderings = atlas["orderings"]
+    ranking = atlas["order_ranking"]
+    slices = atlas["order_slice_ranking"]
     assert len(orderings) == 24
     assert len(ranking) == 24
     assert slices
