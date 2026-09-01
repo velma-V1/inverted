@@ -18,12 +18,7 @@ These ideas are deliberately isolated from the preregistered Inverted benchmark.
 | ID | Idea | Status | File |
 |---|---|---|---|
 | 001 | Codex as an on-demand cortex for Qwen | Seed | [ideas/001-codex-on-demand-cortex.md](ideas/001-codex-on-demand-cortex.md) |
-| 002 | Live Codex observation + real-time Qwen intervention | Seed | [ideas/002-live-codex-qwen-intervention.md](ideas/002-live-codex-qwen-intervention.md) |
-| 003 | Qwen sleep / dream / consolidation loop | Seed | [ideas/003-qwen-sleep-consolidation.md](ideas/003-qwen-sleep-consolidation.md) |
-| 004 | Compressed recurring-failure capsules | Seed | [ideas/004-compressed-failure-capsules.md](ideas/004-compressed-failure-capsules.md) |
-| 005 | Live internal telemetry + compressed brain-state recording | Seed | [ideas/005-qwen-internal-telemetry.md](ideas/005-qwen-internal-telemetry.md) |
-| 006 | Causal model surgery on Qwen | Seed | [ideas/006-qwen-causal-model-surgery.md](ideas/006-qwen-causal-model-surgery.md) |
 
-## Design rule
+## Rule
 
-Work through one idea at a time. Each file should eventually contain: hypothesis, existing evidence, exact architecture, controls, test protocol, success/failure thresholds, risks, implementation plan, results, and final disposition.
+Ideas are added **one at a time**. We design and review the current idea first; only then do we create the next idea file and add it to this index.
