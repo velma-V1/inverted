@@ -10,7 +10,8 @@ def test_s2_dry_plan_freezes_exact_720_diverse_contract(capsys):
         "PROTOCOL=S2-R1",
         "HOLDOUT=B-R1",
         "EXACT_BUDGET=720",
-        "COMBINED_ACTION_BUDGET=720",
+        "COMBINED_ACTION_BUDGET=732",
+        "PROVENANCE_API_CALL_BUDGET=12",
         "ABSOLUTE_ACTION_CEILING=1000",
         "ARM_COUNT=5",
         "MATCHED_CASES=72",
@@ -52,4 +53,5 @@ def test_s2_mock_run_writes_complete_exact_720_evidence(tmp_path):
     assert all((output / name).is_file() for name in REQUIRED_S2_FILES)
     master = (output / "00-MASTER-INDEX.json").read_text(encoding="utf-8")
     assert '"physical_model_calls": 720' in master
+    assert '"combined_action_limit": 732' in master
     assert '"combined_external_actions": 720' in master
