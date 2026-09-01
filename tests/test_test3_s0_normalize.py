@@ -61,3 +61,33 @@ def test_malformed_jsonl_is_retained_as_normalization_error(tmp_path: Path):
     assert result.errors[0]["record_type"] == "events.jsonl"
     assert result.coverage[0]["input_rows"] == 2
     assert result.coverage[0]["dropped_rows"] == 1
+
+
+def test_test1_run_lifecycle_events_are_preserved_as_metadata_not_errors(tmp_path: Path):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    rows = [
+        {"event": "run_started", "run_id": "r1", "timestamp": "2026-08-31T12:30:23+00:00"},
+        {"task_id": "task-1", "event": "trial_completed", "success": True},
+        {"event": "run_ended", "run_id": "r1", "timestamp": "2026-08-31T13:03:38+00:00"},
+    ]
+    (bundle / "events.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    result = normalize_bundle("test1", "test1", bundle)
+
+    assert len(result.transitions) == 1
+    assert result.transitions[0].state_before.task_id == "task-1"
+    assert result.errors == []
+    lifecycle = [
+        row for row in result.metadata_records
+        if row.get("record_type") == "lifecycle_event"
+    ]
+    assert [row["value"]["event"] for row in lifecycle] == ["run_started", "run_ended"]
+    coverage = next(row for row in result.coverage if row["record_type"] == "events.jsonl")
+    assert coverage["input_rows"] == 3
+    assert coverage["normalized_rows"] == 1
+    assert coverage["metadata_rows"] == 2
+    assert coverage["dropped_rows"] == 0
