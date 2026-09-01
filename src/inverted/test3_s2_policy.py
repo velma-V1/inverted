@@ -44,10 +44,10 @@ def public_router_state(arm_id: str, evidence_state: dict[str, Any]) -> dict[str
     if arm_id == "S2-B3":
         return {key: source.get(key) for key in _B3_KEYS}
     if arm_id == "S2-B4":
-        return {
-            "failed_count": source.get("failed_count"),
-            "failure_signature": source.get("failure_signature"),
-        }
+        # Negative control: routing must be independent of every observed
+        # task/failure/outcome feature. Only the preregistered seed stream and
+        # step index may influence action selection.
+        return {}
     raise ValueError(f"unknown S2 arm: {arm_id}")
 
 
@@ -106,8 +106,8 @@ def _rich_route(view: dict[str, Any], step_index: int) -> str:
     return _failure_route(view, 1)
 
 
-def _random_route(view: dict[str, Any], step_index: int, random_seed: int) -> str:
-    payload = f"{int(random_seed)}|{int(step_index)}|{view.get('failure_signature')}|{view.get('failed_count')}"
+def _random_route(step_index: int, random_seed: int) -> str:
+    payload = f"{int(random_seed)}|{int(step_index)}"
     digest = hashlib.sha256(payload.encode("utf-8")).digest()
     return INTERVENTION_LIBRARY[int.from_bytes(digest[:4], "big") % len(INTERVENTION_LIBRARY)]
 
@@ -133,5 +133,5 @@ def select_action(
     if arm_id == "S2-B3":
         return _rich_route(view, step)
     if arm_id == "S2-B4":
-        return _random_route(view, step, random_seed)
+        return _random_route(step, random_seed)
     raise ValueError(f"unknown S2 arm: {arm_id}")
