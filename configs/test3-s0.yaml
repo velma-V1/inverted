@@ -1,0 +1,30 @@
+experiment: test3-section0-github-causal-discovery
+mode: model-free
+physical_model_call_ceiling: 0
+architecture_claims_authorized: false
+required_source_classes:
+  - test1
+  - test2_tier_a
+  - test2_model_free
+allow_partial_instrument_validation: true
+counterfactual_statuses:
+  - CAUSAL_REPLAY
+  - REQUIRES_NEW_INFERENCE
+  - INVALID_COUNTERFACTUAL
+power:
+  bootstrap_iterations: 20000
+  seed: 20260901
+  candidate_alpha: 0.05
+  target_power: 0.80
+  target_effect: 0.03
+telemetry:
+  retain_unknown_fields: true
+  retain_malformed_rows: true
+  retain_unhashed_extras: true
+  retain_raw_record_hashes: true
+  retain_field_temporal_provenance: true
+  retain_instrumentation_failures: true
+  retain_cost_missingness: true
+  retain_validator_disagreement: true
+  retain_cache_metadata: true
+  retain_decision_trace: true
