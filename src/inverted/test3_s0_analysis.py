@@ -65,13 +65,49 @@ def _aggregate_candidate(name: str, rows: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
+def _explicit_policy_name(row: dict[str, Any]) -> str | None:
+    for key in ("policy", "policy_id", "stack_order", "fixed_order", "pipeline_order", "stack_id"):
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
 def score_fixed_policies(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Score only rows with an explicit fixed-policy/order identity.
+
+    A single observed action/component is not a fixed policy and must never be
+    promoted into one merely because historical rows lack a policy field.
+    """
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in rows:
-        name = str(row.get("policy") or row.get("action") or row.get("component") or "unknown")
-        grouped[name].append(dict(row))
+    for raw in rows:
+        row = dict(raw)
+        name = _explicit_policy_name(row)
+        if name is None:
+            continue
+        grouped[name].append(row)
     return sorted(
         (_aggregate_candidate(name, items) for name, items in grouped.items()),
+        key=lambda row: (
+            -(row["verified_success_rate"] if row["verified_success_rate"] is not None else -1.0),
+            row["catastrophe_rate"] if row["catastrophe_rate"] is not None else math.inf,
+            row["candidate"],
+        ),
+    )
+
+
+def score_component_outcomes(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Retain useful historical per-component outcome summaries without calling them policies."""
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for raw in rows:
+        row = dict(raw)
+        name = str(row.get("action") or row.get("component") or "unknown")
+        grouped[name].append(row)
+    return sorted(
+        (
+            {"summary_type": "historical_component_outcome", **_aggregate_candidate(name, items)}
+            for name, items in grouped.items()
+        ),
         key=lambda row: (
             -(row["verified_success_rate"] if row["verified_success_rate"] is not None else -1.0),
             row["catastrophe_rate"] if row["catastrophe_rate"] is not None else math.inf,
@@ -93,7 +129,6 @@ def _best_action_mapping(rows: list[dict[str, Any]]) -> dict[str, str]:
         candidates[signature].append((statistics.fmean(values), len(values), action))
     mapping: dict[str, str] = {}
     for signature, values in candidates.items():
-        # Max success, then support, then stable lexicographic action.
         values.sort(key=lambda item: (-item[0], -item[1], item[2]))
         mapping[signature] = values[0][2]
     return mapping
@@ -167,6 +202,7 @@ def score_grouped_policy(rows: Iterable[dict[str, Any]], folds: int = 5) -> dict
 
 
 def score_negative_controls(rows: Iterable[dict[str, Any]], seed: int = 20260901) -> list[dict[str, Any]]:
+    """Classify negative controls without mistaking no-op identity subsets for interventions."""
     data = [dict(row) for row in rows]
     rng = random.Random(seed)
     actions = sorted({str(row.get("action") or row.get("component") or "unknown") for row in data})
@@ -174,7 +210,7 @@ def score_negative_controls(rows: Iterable[dict[str, Any]], seed: int = 20260901
     rng.shuffle(randomized)
     substitution = {action: randomized[index] for index, action in enumerate(actions)}
 
-    def replay_score(selector: callable) -> tuple[int, int]:
+    def identity_subset(selector: callable) -> tuple[int, int]:
         replayable = 0
         successes = 0
         for row in data:
@@ -186,23 +222,45 @@ def score_negative_controls(rows: Iterable[dict[str, Any]], seed: int = 20260901
                 successes += int(bool(outcome))
         return replayable, successes
 
-    random_replay, random_success = replay_score(lambda row, observed: substitution.get(observed, observed))
-    retry_replay, retry_success = replay_score(lambda row, observed: "retry")
+    random_identity_rows, random_identity_success = identity_subset(
+        lambda row, observed: substitution.get(observed, observed)
+    )
+    retry_identity_rows, retry_identity_success = identity_subset(lambda row, observed: "retry")
+    identity_actions = sorted(action for action, mapped in substitution.items() if action == mapped)
+
     results = [
         {
             "control": "random_action_switch",
             "seed": seed,
-            "replayable_rows": random_replay,
-            "verified_success_rate": random_success / random_replay if random_replay else None,
-            "causal_status": "CAUSAL_REPLAY" if random_replay else "REQUIRES_NEW_INFERENCE",
+            "replayable_rows": 0,
+            "verified_success_rate": None,
+            "causal_status": "REQUIRES_NEW_INFERENCE",
             "mapping": substitution,
+            "identity_actions": identity_actions,
+            "identity_subset_replayable_rows": random_identity_rows,
+            "identity_subset_success_rate": (
+                random_identity_success / random_identity_rows if random_identity_rows else None
+            ),
+            "reason": (
+                "A true random switch changes the historical action and therefore requires an unobserved outcome. "
+                "Rows where the shuffled mapping equals the observed action are a no-op identity subset, not evidence "
+                "for the random-switch intervention."
+            ),
         },
         {
             "control": "random_retry",
             "seed": seed,
-            "replayable_rows": retry_replay,
-            "verified_success_rate": retry_success / retry_replay if retry_replay else None,
-            "causal_status": "CAUSAL_REPLAY" if retry_replay else "REQUIRES_NEW_INFERENCE",
+            "replayable_rows": 0,
+            "verified_success_rate": None,
+            "causal_status": "REQUIRES_NEW_INFERENCE",
+            "identity_subset_replayable_rows": retry_identity_rows,
+            "identity_subset_success_rate": (
+                retry_identity_success / retry_identity_rows if retry_identity_rows else None
+            ),
+            "reason": (
+                "Applying retry to historical non-retry states changes the action and requires an unobserved outcome. "
+                "Observed retry rows form only an identity subset and cannot estimate the random-retry intervention."
+            ),
         },
         {
             "control": "random_extra_model_call",
@@ -318,7 +376,7 @@ def estimate_required_task_clusters(
     alpha: float = 0.05,
     target_power: float = 0.80,
 ) -> dict[str, Any]:
-    del alpha, target_power  # Constants below are frozen to the prereg candidate values.
+    del alpha, target_power
     by_cluster: dict[str, list[float]] = defaultdict(list)
     for row in rows:
         cluster = str(row.get("cluster_id") or row.get("causal_twin_id") or row.get("task_id") or "")
