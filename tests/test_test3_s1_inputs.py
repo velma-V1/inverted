@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -38,15 +39,27 @@ def _packet(tmp_path: Path, *, frozen: bool = True, oracle: bool = False) -> Pat
     (s0 / "source_manifest.json").write_text(json.dumps({"sources": [
         {"source_id": "test2-tier-a", "source_class": "test2_tier_a", "path": str(t2), "required": True}
     ]}), encoding="utf-8")
-    (t2 / "models" / "router-policy.json").write_text(json.dumps({
-        "best_single_model": {"model": "qwen3.5:9b-q8_0", "successes": 10}
-    }), encoding="utf-8")
-    (t2 / "models" / "role-champions.json").write_text(json.dumps({
+
+    # Match the real Test-2 artifact contract: router-policy.json is the role
+    # champion mapping, while the best-single model appears in router-regret.csv.
+    champions = {
         "formalizer": "qwen3.5:9b-q8_0",
         "executor": "qwen3.5:9b-q8_0",
         "repairer": "llama3.1:8b",
         "auditor": "granite4:7b-a1b-h",
-    }), encoding="utf-8")
+    }
+    (t2 / "models" / "router-policy.json").write_text(json.dumps(champions), encoding="utf-8")
+    (t2 / "models" / "role-champions.json").write_text(json.dumps(champions), encoding="utf-8")
+    with (t2 / "models" / "router-regret.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["router_level", "successes", "model", "assignments", "regret_to_oracle_successes"])
+        writer.writeheader()
+        writer.writerow({
+            "router_level": "best_single_model",
+            "successes": 10,
+            "model": "qwen3.5:9b-q8_0",
+            "assignments": "",
+            "regret_to_oracle_successes": 2,
+        })
     return s0
 
 
