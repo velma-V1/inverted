@@ -5,17 +5,30 @@ from pathlib import Path
 import yaml
 
 
-def test_s0_workflow_is_zero_call_model_free_validation():
+def test_s0_workflow_is_zero_call_repo_backed_replay():
     workflow = Path(".github/workflows/test3-s0-validation.yml")
+    replay = Path("scripts/run_test3_s0_from_repo.py")
     assert workflow.exists()
-    text = workflow.read_text(encoding="utf-8")
-    assert 'python-version: "3.14"' in text
-    assert "python -m pytest" in text
-    assert "test2_cli" in text and "model-free" in text
-    assert "test3_s0_cli" in text and "validate-instrument" in text
+    assert replay.exists()
+
+    workflow_text = workflow.read_text(encoding="utf-8")
+    replay_text = replay.read_text(encoding="utf-8")
+
+    assert 'python-version: "3.14"' in workflow_text
+    assert "python -m pytest" in workflow_text
+    assert "run_test3_s0_from_repo.py" in workflow_text
+    assert "repo-replay-summary.json" in workflow_text
+
+    assert "inverted.test2_cli" in replay_text and '"model-free"' in replay_text
+    assert "inverted.test3_s0_cli" in replay_text and '"run"' in replay_text
+    assert "verify_repo_evidence" in replay_text
+    assert "DISCOVERY_COMPLETE_MODEL_FREE" in replay_text
+    assert '"physical_model_calls"' in replay_text
+
+    combined = workflow_text + replay_text
     forbidden = ["OllamaAdapter", "ollama pull", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "run_local_campaign"]
     for item in forbidden:
-        assert item not in text
+        assert item not in combined
 
 
 def test_s0_config_freezes_zero_call_guardrails():
