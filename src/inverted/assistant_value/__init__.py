@@ -11,6 +11,7 @@ TEST_CALL_CAPS = {
     "long_horizon": 1152,
     "evidence_trust": 1080,
     "authority": 1152,
+    "ground_truth_isolation": 1080,
 }
 
 TEST_NAMES = tuple(TEST_CALL_CAPS)
