@@ -7,7 +7,10 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from .test3_s0_analysis import score_component_outcomes
+from .test3_s0_analysis import (
+    derive_fixed_policy_candidates_from_comparisons,
+    score_component_outcomes,
+)
 
 
 STANDARD_PACKET_FILES = (
@@ -256,14 +259,20 @@ def _analysis_edge_cases(
     control_rows = [dict(row) for row in controls]
     rows: list[dict[str, Any]] = []
 
-    if components and not fixed:
+    fixed_from_comparison_evidence = bool(fixed) and all(
+        row.get("evidence_basis") == "MODEL_FREE_ORDER_RANKING_HYPOTHESIS"
+        for row in fixed
+    )
+    if components and (not fixed or fixed_from_comparison_evidence):
         rows.append({
             "kind": "analysis_schema_boundary",
             "classification": "single_component_summary_not_fixed_stack_policy",
             "component_count": len(components),
+            "recovered_fixed_order_count": len(fixed),
             "discovery_reason": (
                 "Historical transition rows expose single actions/components but no explicit fixed-policy/order identity. "
-                "A previous scorer incorrectly promoted component outcome summaries into fixed-stack candidates."
+                "A previous scorer incorrectly promoted component outcome summaries into fixed-stack candidates; "
+                "explicit order identities must instead come from preserved comparison evidence."
             ),
         })
 
@@ -354,6 +363,13 @@ class Test3S0ArtifactWriter:
         if not data.get("component_outcome_summary"):
             data["component_outcome_summary"] = score_component_outcomes(data.get("trials") or [])
 
+        if not data.get("fixed_policy_candidates"):
+            recovered_fixed = derive_fixed_policy_candidates_from_comparisons(
+                data.get("comparison_evidence") or []
+            )
+            if recovered_fixed:
+                data["fixed_policy_candidates"] = recovered_fixed
+
         fixed = list(data.get("fixed_policy_candidates") or [])
         components = list(data.get("component_outcome_summary") or [])
         controls = list(data.get("control_results") or [])
@@ -367,7 +383,12 @@ class Test3S0ArtifactWriter:
             candidate_s1["fixed_policy_candidate_count"] = len(fixed)
             candidate_s1["component_summary_count"] = len(components)
             candidate_s1["arm_freeze_ready"] = bool(fixed)
-            if components and not fixed:
+            if fixed:
+                candidate_s1.pop("arm_freeze_blocker", None)
+                candidate_s1["fixed_policy_evidence_basis"] = sorted({
+                    str(row.get("evidence_basis")) for row in fixed if row.get("evidence_basis")
+                })
+            elif components:
                 candidate_s1["arm_freeze_blocker"] = (
                     "Historical transitions do not carry explicit fixed-policy/order identity. "
                     "Component outcome summaries cannot be substituted for fixed-stack candidates."
