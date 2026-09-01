@@ -1,17 +1,27 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 import sys
+import time
 from typing import Any, TextIO
 
 
+def _format_duration(seconds: float) -> str:
+    total = max(0, int(round(float(seconds))))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 class InPlaceS1Progress:
-    """Render a deliberately short S1 progress line using carriage returns."""
+    """Render a bounded single-line S1 progress meter with display-only ETA telemetry."""
 
     def __init__(self, *, stream: TextIO | None = None, width: int = 16):
         self.stream = stream if stream is not None else sys.stdout
         self.width = min(20, max(10, int(width)))
         self._last_width = 0
         self._finished = False
+        self._started_monotonic = time.monotonic()
 
     def update(
         self,
@@ -26,20 +36,43 @@ class InPlaceS1Progress:
         del task_id  # Full task IDs can wrap Windows terminals and create fake new bars.
         if self._finished:
             return
+
         total = max(1, int(total_tasks))
         completed = min(total, max(0, int(completed_tasks)))
-        ratio = completed / total
+        calls_total = max(0, int(call_budget))
+        calls_done = max(0, int(physical_calls))
+
+        task_ratio = completed / total
+        if calls_total > 0:
+            ratio = min(1.0, calls_done / calls_total)
+        else:
+            ratio = task_ratio
+
         filled = min(self.width, int(self.width * ratio))
         bar = "#" * filled + "-" * (self.width - filled)
+        percent = ratio * 100.0
+
+        elapsed = max(0.0, time.monotonic() - self._started_monotonic)
+        if ratio > 0.0:
+            remaining = max(0.0, elapsed * (1.0 - ratio) / ratio)
+            eta = datetime.now().astimezone() + timedelta(seconds=remaining)
+            left_text = _format_duration(remaining)
+            eta_text = eta.strftime("%H:%M:%S")
+        else:
+            left_text = "--:--:--"
+            eta_text = "--:--:--"
+
         arm = str(arm_id).strip()
         line = (
-            f"S1 [{bar}] {completed}/{total} | "
-            f"{max(0, int(physical_calls))}/{max(0, int(call_budget))} calls"
+            f"S1 [{bar}] {percent:5.1f}% {completed}/{total} | "
+            f"{calls_done}/{calls_total} calls | "
+            f"elapsed {_format_duration(elapsed)} | left {left_text} | ETA {eta_text}"
         )
         if arm:
             line += f" | {arm[:8]}"
-        # Guard against accidental future growth that would reintroduce line wrapping.
-        line = line[:63]
+
+        # Keep the richer status bounded to a normal PowerShell terminal line.
+        line = line[:112]
         padded = line.ljust(max(self._last_width, len(line)))
         self.stream.write("\r" + padded)
         self.stream.flush()
