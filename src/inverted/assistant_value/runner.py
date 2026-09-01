@@ -13,6 +13,12 @@ from .authority import generate_authority_cases, planned_authority_calls, run_au
 from .budget import PhysicalCallBudget
 from .evidence import EvidenceStore
 from .evidence_trust import generate_evidence_cases, planned_evidence_calls, run_evidence_trust
+from .ground_truth_isolation import (
+    LEAK_REGIMES,
+    generate_ground_truth_cases,
+    planned_ground_truth_calls,
+    run_ground_truth_isolation,
+)
 from .long_horizon import generate_long_horizon_cases, planned_long_horizon_calls, run_long_horizon
 from .types import json_safe
 
@@ -96,6 +102,10 @@ def _plan(test_name: str, section: dict[str, Any], model_count: int) -> tuple[in
         cases_per_class = int(section.get("cases_per_class", 15))
         planned = planned_authority_calls(model_count, cases_per_class, 8, len(arms))
         params = {"cases_per_class": cases_per_class, "arms": arms}
+    elif test_name == "ground_truth_isolation":
+        cases_per_regime = int(section.get("cases_per_regime", 10))
+        planned = planned_ground_truth_calls(model_count, cases_per_regime, len(LEAK_REGIMES), len(arms))
+        params = {"cases_per_regime": cases_per_regime, "regimes": LEAK_REGIMES, "arms": arms}
     else:
         raise ValueError(f"unknown assistant-value test: {test_name}")
     if planned < 0:
@@ -192,7 +202,7 @@ def run_assistant_value_test(
             store=store,
             progress_callback=progress_callback,
         )
-    else:
+    elif test_name == "authority":
         cases = generate_authority_cases(seed=seed, cases_per_class=params["cases_per_class"])
         trials, metrics, failures = run_authority(
             models=models,
@@ -203,6 +213,19 @@ def run_assistant_value_test(
             store=store,
             progress_callback=progress_callback,
         )
+    elif test_name == "ground_truth_isolation":
+        cases = generate_ground_truth_cases(seed=seed, cases_per_regime=params["cases_per_regime"])
+        trials, metrics, failures = run_ground_truth_isolation(
+            models=models,
+            cases=cases,
+            arms=params["arms"],
+            run_id=str(run_id),
+            budget=budget,
+            store=store,
+            progress_callback=progress_callback,
+        )
+    else:
+        raise ValueError(f"unknown assistant-value test: {test_name}")
 
     store.event(
         "run_completed",
