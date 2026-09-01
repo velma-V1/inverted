@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import shutil
 import sys
 import time
 from typing import Any, TextIO
@@ -13,8 +14,17 @@ def _format_duration(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
+def _format_compact_duration(seconds: float) -> str:
+    total = max(0, int(round(float(seconds))))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m"
+    return f"{minutes:02d}:{secs:02d}"
+
+
 class InPlaceS1Progress:
-    """Render a bounded single-line S1 progress meter with display-only ETA telemetry."""
+    """Render a terminal-width-aware S1 progress meter with display-only ETA telemetry."""
 
     def __init__(self, *, stream: TextIO | None = None, width: int = 16):
         self.stream = stream if stream is not None else sys.stdout
@@ -47,9 +57,6 @@ class InPlaceS1Progress:
             ratio = min(1.0, calls_done / calls_total)
         else:
             ratio = task_ratio
-
-        filled = min(self.width, int(self.width * ratio))
-        bar = "#" * filled + "-" * (self.width - filled)
         percent = ratio * 100.0
 
         elapsed = max(0.0, time.monotonic() - self._started_monotonic)
@@ -58,22 +65,43 @@ class InPlaceS1Progress:
             eta = datetime.now().astimezone() + timedelta(seconds=remaining)
             left_text = _format_duration(remaining)
             eta_text = eta.strftime("%H:%M:%S")
+            compact_left = _format_compact_duration(remaining)
+            compact_eta = eta.strftime("%H:%M")
         else:
             left_text = "--:--:--"
             eta_text = "--:--:--"
+            compact_left = "--:--"
+            compact_eta = "--:--"
 
         arm = str(arm_id).strip()
-        line = (
-            f"S1 [{bar}] {percent:5.1f}% {completed}/{total} | "
-            f"{calls_done}/{calls_total} calls | "
-            f"elapsed {_format_duration(elapsed)} | left {left_text} | ETA {eta_text}"
-        )
-        if arm:
-            line += f" | {arm[:8]}"
+        terminal_columns = max(40, int(shutil.get_terminal_size(fallback=(112, 24)).columns))
+        max_chars = max(39, terminal_columns - 1)
 
-        # Keep the richer status bounded to a normal PowerShell terminal line.
-        line = line[:112]
-        padded = line.ljust(max(self._last_width, len(line)))
+        if max_chars >= 100:
+            filled = min(self.width, int(self.width * ratio))
+            bar = "#" * filled + "-" * (self.width - filled)
+            line = (
+                f"S1 [{bar}] {percent:5.1f}% {completed}/{total} | "
+                f"{calls_done}/{calls_total} calls | "
+                f"elapsed {_format_duration(elapsed)} | left {left_text} | ETA {eta_text}"
+            )
+            if arm:
+                line += f" | {arm[:8]}"
+        else:
+            compact_width = max(4, min(8, max_chars - 54))
+            filled = min(compact_width, int(compact_width * ratio))
+            bar = "#" * filled + "-" * (compact_width - filled)
+            arm_short = arm.replace("S1-", "")[:4] if arm else ""
+            line = (
+                f"S1[{bar}] {percent:.1f}% {completed}/{total} {calls_done}/{calls_total} "
+                f"elapsed{_format_compact_duration(elapsed)} left{compact_left} ETA{compact_eta}"
+            )
+            if arm_short:
+                line += f" {arm_short}"
+
+        line = line[:max_chars]
+        pad_width = min(max_chars, max(self._last_width, len(line)))
+        padded = line.ljust(pad_width)
         self.stream.write("\r" + padded)
         self.stream.flush()
         self._last_width = len(line)
