@@ -14,6 +14,10 @@ assistant_value:
     call_cap: 1152
     cases_per_class: 1
     arms: [DIRECT, CHECKED, INVERTED]
+  ground_truth_isolation:
+    call_cap: 1080
+    cases_per_regime: 1
+    arms: [DIRECT, CHECKED, INVERTED]
 models:
   - provider: mock
     model: assistant-value-mock
