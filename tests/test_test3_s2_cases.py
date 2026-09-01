@@ -31,3 +31,17 @@ def test_every_s2_seed_fixture_is_verified_failure_and_public_metadata_excludes_
         public = dict(candidate.metadata.get("public_evidence") or {})
         forbidden = {"perturbation_class", "fault_type", "injected_faults", "target_state", "hidden_gold"}
         assert forbidden.isdisjoint(public)
+
+
+def test_compound_holdout_cases_have_two_distinct_observable_requirement_failures():
+    compounds = [case for case in build_holdout_b() if case.metadata["perturbation_class"] == "compound"]
+    assert len(compounds) == 24
+    for case in compounds:
+        candidate = build_seed_failure_s2(case)
+        result = evaluate_task(case.task, candidate.state, candidate.actions)
+        assert len(set(result.failed_requirement_ids)) >= 2, (
+            case.case_id,
+            result.failed_requirement_ids,
+        )
+        public = dict(candidate.metadata["public_evidence"])
+        assert public["failed_count"] >= 2
