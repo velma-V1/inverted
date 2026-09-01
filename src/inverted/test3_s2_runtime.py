@@ -66,6 +66,16 @@ def _result(task: TaskCase, candidate: Candidate | None) -> dict[str, Any]:
     }
 
 
+def _candidate_snapshot(candidate: Candidate | None) -> dict[str, Any]:
+    if candidate is None:
+        return {"id": None, "state": None, "actions": []}
+    return {
+        "id": candidate.id,
+        "state": candidate.state.to_dict(),
+        "actions": [action.to_dict() for action in candidate.actions],
+    }
+
+
 def _failure_signature(task: TaskCase, failed_ids: list[str]) -> str:
     by_id = {req.id: req for req in task.requirements}
     parts: list[str] = []
@@ -173,6 +183,7 @@ def _execute_call(
     model_name, role = _model_for_action(action)
     if str(getattr(model, "model", "")) != model_name:
         raise ValueError(f"S2 model adapter mismatch for {action}: expected {model_name}")
+    before_snapshot = _candidate_snapshot(candidate)
     messages = _messages_for_action(action, task, candidate, status)
     action_budget.reserve("model_call")
     context = {
@@ -216,6 +227,8 @@ def _execute_call(
     else:
         proposed = _candidate(task, completion.text, f"{case_id}-{arm_id}-{action}-{step_index}")
 
+    proposed_snapshot = _candidate_snapshot(proposed)
+    proposed_status = _result(task, proposed)
     row = _call_row(
         completion,
         arm_id=arm_id,
@@ -231,6 +244,17 @@ def _execute_call(
         "action_selected": action,
         "prompt_fingerprint": completion.identity,
         "response_digest": hashlib.sha256(response.encode("utf-8")).hexdigest(),
+        "candidate_before_id": before_snapshot["id"],
+        "candidate_before_state": before_snapshot["state"],
+        "candidate_before_actions": before_snapshot["actions"],
+        "proposed_candidate_id": proposed_snapshot["id"],
+        "proposed_candidate_state": proposed_snapshot["state"],
+        "proposed_candidate_actions": proposed_snapshot["actions"],
+        "proposed_success": bool(proposed_status.get("success")),
+        "proposed_catastrophic": bool(proposed_status.get("catastrophic")),
+        "proposed_passed_requirements": list(proposed_status.get("passed_requirements") or []),
+        "proposed_failed_requirements": list(proposed_status.get("failed_requirements") or []),
+        "counterfactual_evaluated": not active,
     })
     return proposed, row
 
@@ -256,7 +280,13 @@ def detect_stochastic_divergence(model_calls: list[dict[str, Any]]) -> list[dict
         digests = sorted({str(row.get("response_digest") or "") for row in rows})
         if len(digests) <= 1:
             continue
-        outcomes = {(bool(row.get("success_after")), bool(row.get("catastrophic_after"))) for row in rows}
+        outcomes = {
+            (
+                bool(row.get("proposed_success", row.get("success_after"))),
+                bool(row.get("proposed_catastrophic", row.get("catastrophic_after"))),
+            )
+            for row in rows
+        }
         findings.append({
             "classification": "STOCHASTIC_RESPONSE_DIVERGENCE",
             "prompt_fingerprint": fingerprint,
@@ -268,6 +298,13 @@ def detect_stochastic_divergence(model_calls: list[dict[str, Any]]) -> list[dict
             "task_ids": [row.get("task_id") for row in rows],
             "responses": [row.get("response") for row in rows],
             "telemetry": [row.get("telemetry") for row in rows],
+            "proposed_outcomes": [
+                {
+                    "success": bool(row.get("proposed_success", row.get("success_after"))),
+                    "catastrophic": bool(row.get("proposed_catastrophic", row.get("catastrophic_after"))),
+                }
+                for row in rows
+            ],
             "outcome_changed": len(outcomes) > 1,
         })
     return findings
@@ -350,6 +387,7 @@ def run_s2_screen(
             candidate: Candidate | None = seed
             status = _result(case.task, candidate)
             initial_status = dict(status)
+            initial_candidate = _candidate_snapshot(candidate)
             previous_action: str | None = None
             previous_model: str | None = None
             selected_actions: list[str] = []
@@ -415,6 +453,7 @@ def run_s2_screen(
                     candidate = proposed
                     status = _result(case.task, candidate)
                 after = dict(status)
+                after_candidate = _candidate_snapshot(candidate)
                 call.update({
                     "base_task_id": case.metadata["base_task_id"],
                     "perturbation_class": case.metadata["perturbation_class"],
@@ -423,6 +462,9 @@ def run_s2_screen(
                     "catastrophic_before": bool(before.get("catastrophic")),
                     "success_after": bool(after.get("success")),
                     "catastrophic_after": bool(after.get("catastrophic")),
+                    "candidate_after_id": after_candidate["id"],
+                    "candidate_after_state": after_candidate["state"],
+                    "candidate_after_actions": after_candidate["actions"],
                 })
                 calls.append(call)
                 trial_calls.append(call)
@@ -432,10 +474,25 @@ def run_s2_screen(
                     "step_index": step_index,
                     "stage": "post_action_deterministic_validator",
                     "active_intervention": active,
+                    "shadow_only": not active,
                     "success": bool(after.get("success")),
                     "catastrophic": bool(after.get("catastrophic")),
                     "passed_requirements": list(after.get("passed_requirements") or []),
                     "failed_requirements": list(after.get("failed_requirements") or []),
+                    "proposed_success": bool(call.get("proposed_success")),
+                    "proposed_catastrophic": bool(call.get("proposed_catastrophic")),
+                    "proposed_passed_requirements": list(call.get("proposed_passed_requirements") or []),
+                    "proposed_failed_requirements": list(call.get("proposed_failed_requirements") or []),
+                    "counterfactual_evaluated": bool(call.get("counterfactual_evaluated")),
+                    "candidate_before_id": call.get("candidate_before_id"),
+                    "candidate_before_state": call.get("candidate_before_state"),
+                    "candidate_before_actions": call.get("candidate_before_actions"),
+                    "proposed_candidate_id": call.get("proposed_candidate_id"),
+                    "proposed_candidate_state": call.get("proposed_candidate_state"),
+                    "proposed_candidate_actions": call.get("proposed_candidate_actions"),
+                    "candidate_after_id": call.get("candidate_after_id"),
+                    "candidate_after_state": call.get("candidate_after_state"),
+                    "candidate_after_actions": call.get("candidate_after_actions"),
                 })
                 events.append({
                     "event": "s2_action_observed",
@@ -447,12 +504,19 @@ def run_s2_screen(
                     "active": active,
                     "success_after": bool(after.get("success")),
                     "catastrophic_after": bool(after.get("catastrophic")),
+                    "proposed_success": bool(call.get("proposed_success")),
+                    "proposed_catastrophic": bool(call.get("proposed_catastrophic")),
+                    "counterfactual_evaluated": bool(call.get("counterfactual_evaluated")),
+                    "candidate_before_id": call.get("candidate_before_id"),
+                    "proposed_candidate_id": call.get("proposed_candidate_id"),
+                    "candidate_after_id": call.get("candidate_after_id"),
                 })
                 selected_actions.append(action)
                 selected_models.append(model_name)
                 previous_action = action
                 previous_model = model_name
 
+            final_candidate = _candidate_snapshot(candidate)
             trials.append({
                 "protocol_revision": S2_PROTOCOL_REVISION,
                 "holdout": S2_HOLDOUT,
@@ -467,9 +531,15 @@ def run_s2_screen(
                 "requirement_count": case.metadata.get("requirement_count"),
                 "fixture_seed": seed.metadata.get("fixture_seed"),
                 "execution_position": execution_position,
+                "initial_candidate_id": initial_candidate["id"],
+                "initial_candidate_state": initial_candidate["state"],
+                "initial_candidate_actions": initial_candidate["actions"],
                 "initial_success": bool(initial_status.get("success")),
                 "initial_catastrophic": bool(initial_status.get("catastrophic")),
                 "initial_failed_requirements": list(initial_status.get("failed_requirements") or []),
+                "final_candidate_id": final_candidate["id"],
+                "final_candidate_state": final_candidate["state"],
+                "final_candidate_actions": final_candidate["actions"],
                 "success": bool(status.get("success")),
                 "catastrophic": bool(status.get("catastrophic")),
                 "final_failed_requirements": list(status.get("failed_requirements") or []),
