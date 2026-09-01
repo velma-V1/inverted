@@ -16,7 +16,7 @@ jobs:
       - run: python -m pip install -e ".[test]"
       - name: Run full repository test suite
         run: python -m pytest -q
-      - name: Run all three assistant-value mock instruments
+      - name: Run all four assistant-value mock instruments
         run: >-
           python -m inverted.assistant_value.cli
           --config configs/assistant-value-smoke.yaml
@@ -32,7 +32,7 @@ jobs:
           from inverted.assistant_value.evidence import REQUIRED_ARTIFACTS
 
           roots = sorted(Path("assistant-value-ci/assistant-value").glob("*/ci-instrument-*"))
-          assert len(roots) == 3, roots
+          assert len(roots) == 4, roots
           for root in roots:
               integrity = json.loads((root / "integrity.json").read_text(encoding="utf-8"))
               assert integrity["status"] == "OK", (root, integrity)
