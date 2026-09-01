@@ -20,6 +20,7 @@ REQUIRED_S1_FILES = (
     "validator_results.csv",
     "arm_accounting.csv",
     "arm_summaries.csv",
+    "family_summaries.csv",
     "pairwise_effects.csv",
     "transitions.csv",
     "failures.csv",
@@ -124,6 +125,7 @@ def _derive_master_index(data: dict[str, Any]) -> dict[str, Any]:
     verdict = dict(data.get("verdict") or {})
     provenance = dict(data.get("provenance") or {})
     prereg = dict(data.get("preregistration") or {})
+    families = list(data.get("family_summaries") or [])
     protocol_revision = verdict.get("protocol_revision") or provenance.get("protocol_revision") or prereg.get("protocol_revision")
     holdout = verdict.get("holdout") or provenance.get("execution_holdout") or prereg.get("holdout")
     return {
@@ -139,6 +141,8 @@ def _derive_master_index(data: dict[str, Any]) -> dict[str, Any]:
         "verdict": verdict.get("verdict"),
         "trial_rows": len(data.get("trials") or []),
         "matched_task_count": verdict.get("matched_task_count"),
+        "family_count": len(families),
+        "families": sorted(str(row.get("family")) for row in families if row.get("family")),
         "active_inference_calls": sum(bool(row.get("active_intervention")) for row in calls),
         "shadow_inference_calls": sum(bool(row.get("shadow_only")) for row in calls),
         "edge_case_count": len(data.get("edge_cases") or []),
@@ -174,13 +178,20 @@ class Test3S1ArtifactWriter:
         data.setdefault("instrumentation_anomalies", [])
         data.setdefault("arm_accounting", [])
         data.setdefault("arm_summaries", [])
+        data.setdefault("family_summaries", [])
         data.setdefault("pairwise_effects", [])
         data.setdefault("transitions", [])
         data.setdefault("validator_results", [])
         data.setdefault("events", [])
         data.setdefault("intervention_exposure", {})
         data.setdefault("protocol_failures", [])
-        data.setdefault("report", "VELMA TEST 3 — SECTION 1 R1\nNo report text supplied.\n")
+        protocol = (
+            (data.get("verdict") or {}).get("protocol_revision")
+            or (data.get("provenance") or {}).get("protocol_revision")
+            or (data.get("preregistration") or {}).get("protocol_revision")
+            or "S1"
+        )
+        data.setdefault("report", f"VELMA TEST 3 — SECTION 1 {protocol}\nNo report text supplied.\n")
         data.setdefault("master_index", _derive_master_index(data))
 
         json_files = {
@@ -201,6 +212,7 @@ class Test3S1ArtifactWriter:
             "validator_results.csv": data["validator_results"],
             "arm_accounting.csv": data["arm_accounting"],
             "arm_summaries.csv": data["arm_summaries"],
+            "family_summaries.csv": data["family_summaries"],
             "pairwise_effects.csv": data["pairwise_effects"],
             "transitions.csv": data["transitions"],
             "failures.csv": data["failures"],
@@ -232,8 +244,8 @@ class Test3S1ArtifactWriter:
 
         master = self.run_dir / "COMPLETE-EVIDENCE.txt"
         with master.open("w", encoding="utf-8", newline="\n") as handle:
-            handle.write("VELMA TEST 3 — SECTION 1 R1 COMPLETE EVIDENCE\n")
-            handle.write("===================================================\n")
+            handle.write(f"VELMA TEST 3 — SECTION 1 {protocol} COMPLETE EVIDENCE\n")
+            handle.write("========================================================\n")
             handle.write(f"PROTOCOL: {data['master_index'].get('protocol_revision')}\n")
             handle.write(f"HOLDOUT: {data['master_index'].get('holdout')}\n")
             handle.write(f"PROTOCOL VALID FOR PRIMARY CLAIM: {str(bool(data['master_index'].get('protocol_valid_for_primary_claim'))).lower()}\n")
