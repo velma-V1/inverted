@@ -34,19 +34,42 @@ jobs:
           --manifest test3-s0-ci/source-manifest.json
           --output-dir test3-s0-ci/instrument-validation
       - name: Verify Test3 S0 zero-call evidence contract
-        run: >-
-          python -c "import csv,json; from pathlib import Path;
-          p=Path('test3-s0-ci/instrument-validation');
-          verdict=json.loads((p/'verdict.json').read_text(encoding='utf-8'));
-          assert verdict['verdict']=='PARTIAL_INPUT_EVIDENCE', verdict;
-          assert verdict['physical_model_calls']==0, verdict;
-          required=['preregistration.json','config.json','provenance.json','model_calls.jsonl','events.jsonl','trials.csv','validator_results.csv','failures.csv','wins.csv','losses.csv','transitions.csv','counterfactuals.csv','costs.csv','latency.csv','tokens.csv','cache.csv','failure_atlas.json','effect_sizes.json','verdict.json','report.txt','source_manifest.json','source_integrity.csv','normalization_coverage.csv','normalization_errors.csv','fixed_policy_candidates.csv','adaptive_policy_candidates.csv','control_results.csv','pareto_frontier.csv','unresolved_causal_questions.csv','requires_new_inference.csv','invalid_counterfactuals.csv','power_variance.json','candidate_section1_preregistration.json','00-MASTER-INDEX.json','instrumentation_anomalies.csv','metadata_catalog.csv','field_provenance.csv','source_file_inventory.csv','decision_trace.csv','unknown_fields.csv','edge_cases.csv','data_quality.json','COMPLETE-EVIDENCE.txt','SHA256SUMS.csv'];
-          missing=[x for x in required if not (p/x).exists()]; assert not missing, missing;
-          assert (p/'model_calls.jsonl').read_text(encoding='utf-8')=='';
-          master=(p/'COMPLETE-EVIDENCE.txt').read_text(encoding='utf-8');
-          assert 'PHYSICAL MODEL CALLS: 0' in master;
-          with (p/'SHA256SUMS.csv').open(encoding='utf-8',newline='') as h: rows=list(csv.DictReader(h));
-          assert rows and all((p/r['path']).exists() for r in rows)"
+        run: |
+          python - <<'PY'
+          import csv
+          import json
+          from pathlib import Path
+
+          p = Path("test3-s0-ci/instrument-validation")
+          verdict = json.loads((p / "verdict.json").read_text(encoding="utf-8"))
+          assert verdict["verdict"] == "PARTIAL_INPUT_EVIDENCE", verdict
+          assert verdict["physical_model_calls"] == 0, verdict
+          required = [
+              "preregistration.json", "config.json", "provenance.json",
+              "model_calls.jsonl", "events.jsonl", "trials.csv",
+              "validator_results.csv", "failures.csv", "wins.csv", "losses.csv",
+              "transitions.csv", "counterfactuals.csv", "costs.csv", "latency.csv",
+              "tokens.csv", "cache.csv", "failure_atlas.json", "effect_sizes.json",
+              "verdict.json", "report.txt", "source_manifest.json", "source_integrity.csv",
+              "normalization_coverage.csv", "normalization_errors.csv",
+              "fixed_policy_candidates.csv", "adaptive_policy_candidates.csv",
+              "control_results.csv", "pareto_frontier.csv", "unresolved_causal_questions.csv",
+              "requires_new_inference.csv", "invalid_counterfactuals.csv",
+              "power_variance.json", "candidate_section1_preregistration.json",
+              "00-MASTER-INDEX.json", "instrumentation_anomalies.csv", "metadata_catalog.csv",
+              "field_provenance.csv", "source_file_inventory.csv", "decision_trace.csv",
+              "unknown_fields.csv", "edge_cases.csv", "data_quality.json",
+              "COMPLETE-EVIDENCE.txt", "SHA256SUMS.csv",
+          ]
+          missing = [name for name in required if not (p / name).exists()]
+          assert not missing, missing
+          assert (p / "model_calls.jsonl").read_text(encoding="utf-8") == ""
+          master = (p / "COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
+          assert "PHYSICAL MODEL CALLS: 0" in master
+          with (p / "SHA256SUMS.csv").open(encoding="utf-8", newline="") as handle:
+              rows = list(csv.DictReader(handle))
+          assert rows and all((p / row["path"]).exists() for row in rows)
+          PY
       - name: Upload Test3 S0 instrument validation evidence
         uses: actions/upload-artifact@v4
         with:
