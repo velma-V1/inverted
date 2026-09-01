@@ -48,6 +48,33 @@ def test_seeded_random_router_is_deterministic_and_all_actions_are_valid():
     assert all(action in INTERVENTION_LIBRARY for action in first)
 
 
+def test_seeded_random_negative_control_is_independent_of_verified_outcomes():
+    before = _state()
+    after = {
+        **before,
+        "failed_requirement_ids": [],
+        "failed_requirement_kinds": [],
+        "failed_count": 0,
+        "failure_signature": "none",
+        "deterministic_success": True,
+        "catastrophic": True,
+        "previous_action": "switch_llama",
+        "previous_model": "llama3.1:8b",
+        "retry_count": 99,
+        "budget_spent": 700,
+        "budget_remaining": 32,
+    }
+    assert public_router_state("S2-B4", before) == {}
+    assert public_router_state("S2-B4", after) == {}
+    for step_index in (0, 1):
+        assert select_action("S2-B4", before, step_index=step_index, random_seed=41001) == select_action(
+            "S2-B4",
+            after,
+            step_index=step_index,
+            random_seed=41001,
+        )
+
+
 def test_fixed_control_is_retry_then_repair():
     raw = _state()
     assert select_action("S2-B0", raw, step_index=0, random_seed=0) == "retry_qwen"
