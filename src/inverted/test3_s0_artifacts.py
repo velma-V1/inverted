@@ -56,6 +56,8 @@ FORENSIC_PACKET_FILES = (
     "decision_trace.csv",
     "unknown_fields.csv",
     "edge_cases.csv",
+    "comparison_evidence.csv",
+    "source_metadata.jsonl",
     "data_quality.json",
 )
 
@@ -81,6 +83,7 @@ _JSON_FILES = {
 _JSONL_FILES = {
     "model_calls": "model_calls.jsonl",
     "events": "events.jsonl",
+    "source_metadata": "source_metadata.jsonl",
 }
 
 _CSV_FILES = {
@@ -112,6 +115,7 @@ _CSV_FILES = {
     "decision_trace": "decision_trace.csv",
     "unknown_fields": "unknown_fields.csv",
     "edge_cases": "edge_cases.csv",
+    "comparison_evidence": "comparison_evidence.csv",
 }
 
 
@@ -214,6 +218,9 @@ def _derive_master_index(evidence: dict[str, Any]) -> dict[str, Any]:
         "source_count": len((evidence.get("source_manifest") or {}).get("sources", [])) if isinstance(evidence.get("source_manifest"), dict) else 0,
         "requires_new_inference_count": len(evidence.get("requires_new_inference") or []),
         "invalid_counterfactual_count": len(evidence.get("invalid_counterfactuals") or []),
+        "comparison_evidence_count": len(evidence.get("comparison_evidence") or []),
+        "source_metadata_count": len(evidence.get("source_metadata") or []),
+        "validator_result_count": len(evidence.get("validator_results") or []),
     }
 
 
@@ -222,11 +229,20 @@ def _derive_data_quality(evidence: dict[str, Any]) -> dict[str, Any]:
     normalization_errors = list(evidence.get("normalization_errors") or [])
     anomalies = list(evidence.get("instrumentation_anomalies") or [])
     unknown_fields = list(evidence.get("unknown_fields") or [])
+    coverage = list(evidence.get("normalization_coverage") or [])
+    dropped_rows = sum(int(row.get("dropped_rows") or 0) for row in coverage if isinstance(row, dict))
+    input_rows = sum(int(row.get("input_rows") or 0) for row in coverage if isinstance(row, dict))
     return {
         "source_integrity_rows": len(integrity),
         "normalization_errors": len(normalization_errors),
         "instrumentation_anomalies": len(anomalies),
         "unknown_field_records": len(unknown_fields),
+        "normalization_input_rows": input_rows,
+        "normalization_dropped_rows": dropped_rows,
+        "normalization_retention_rate": ((input_rows - dropped_rows) / input_rows) if input_rows else None,
+        "comparison_evidence_rows": len(evidence.get("comparison_evidence") or []),
+        "source_metadata_rows": len(evidence.get("source_metadata") or []),
+        "validator_result_rows": len(evidence.get("validator_results") or []),
         "all_integrity_checks_passed": all(bool(row.get("integrity_ok", True)) for row in integrity) if integrity else None,
         "zero_model_call_invariant": True,
         "data_loss_policy": "retain malformed/unknown/anomalous records as evidence; never silently coerce",
@@ -242,8 +258,10 @@ class Test3S0ArtifactWriter:
 
     def write_all(self, evidence: dict[str, Any]) -> dict[str, str]:
         data = dict(evidence)
-        data.setdefault("master_index", _derive_master_index(data))
-        data.setdefault("data_quality", _derive_data_quality(data))
+        if not data.get("master_index"):
+            data["master_index"] = _derive_master_index(data)
+        if not data.get("data_quality"):
+            data["data_quality"] = _derive_data_quality(data)
         data.setdefault("report", "VELMA TEST 3 — SECTION 0\nNo report text supplied.\n")
         for key in _CSV_FILES:
             data.setdefault(key, [])
