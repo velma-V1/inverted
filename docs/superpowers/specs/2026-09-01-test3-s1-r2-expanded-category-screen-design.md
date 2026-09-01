@@ -1,7 +1,7 @@
 # Test-3 S1-R2 Expanded Category Fixed-Order Screen — Design
 
 Date: 2026-09-01
-Status: APPROVED DESIGN — NO S1-R2 TIER-A INFERENCE AUTHORIZED YET
+Status: DESIGN APPROVED IN CHAT; WRITTEN SPEC AWAITING REVIEW — NO S1-R2 TIER-A INFERENCE AUTHORIZED YET
 Branch: `build/test3-s1-fixed-stack-order`
 Predecessor protocol: `S1-R1`
 Campaign design: `docs/superpowers/specs/2026-09-01-adaptive-evidence-discovery-campaign-design.md`
@@ -76,11 +76,50 @@ The CLI must still resolve and report these from evidence rather than trusting h
 
 S1-R2 uses a fresh deterministic holdout named `A-R2`.
 
+Frozen seed scheme:
+
+- seed base: `611000`
+- seed stride: `229`
+- case index: zero-based `0..24`
+- task seed: `611000 + (index × 229)`
+- R2 fault-seed namespace base: `900001`
+- ordinary deterministic fault seed: `900001 + sum(ord(ch) for ch in case_id)`
+
+These seeds are disjoint from original Holdout A (`211000` namespace) and S1-R1 A-R1 (`411000` namespace). Implementation tests must also verify no exact seed collision with committed Test-2 holdout/task seeds used by the repository.
+
+The exact A-R2 case order is frozen as follows:
+
+| Index | Family | Complexity | Task seed |
+|---:|---|---:|---:|
+| 0 | state | 1 | 611000 |
+| 1 | policy | 1 | 611229 |
+| 2 | reconciliation | 1 | 611458 |
+| 3 | preservation | 1 | 611687 |
+| 4 | dependency_order | 1 | 611916 |
+| 5 | repair_containment | 1 | 612145 |
+| 6 | state | 2 | 612374 |
+| 7 | policy | 2 | 612603 |
+| 8 | reconciliation | 2 | 612832 |
+| 9 | preservation | 2 | 613061 |
+| 10 | dependency_order | 2 | 613290 |
+| 11 | repair_containment | 2 | 613519 |
+| 12 | state | 3 | 613748 |
+| 13 | policy | 3 | 613977 |
+| 14 | reconciliation | 3 | 614206 |
+| 15 | preservation | 3 | 614435 |
+| 16 | dependency_order | 3 | 614664 |
+| 17 | repair_containment | 3 | 614893 |
+| 18 | state | 4 | 615122 |
+| 19 | policy | 4 | 615351 |
+| 20 | reconciliation | 4 | 615580 |
+| 21 | preservation | 4 | 615809 |
+| 22 | dependency_order | 4 | 616038 |
+| 23 | repair_containment | 4 | 616267 |
+| 24 | repair_containment | 4 stress | 616496 |
+
 A-R2 requirements:
 
 - exactly 25 cases
-- deterministic construction from preregistered seeds
-- seed range disjoint from original Holdout A, S1-R1 Holdout A-R1, Test-2 holdouts, and later Test-3 holdouts
 - no model outcome may influence task selection, complexity, seed, or family allocation
 - same ordered 25-case sequence presented to every arm
 - hidden target state and hidden benchmark metadata never enter model prompts
@@ -103,6 +142,8 @@ Core failure modes:
 - unintended state mutation
 - critical final requirement failure at higher complexity
 
+The R2 seed candidate uses deterministic existing-style fault injection and must be verified failing before inference.
+
 ### 5.2 Existing: policy
 
 Purpose: test procedural constraints and action ordering, including forbidden operations.
@@ -113,6 +154,8 @@ Core failure modes:
 - forbidden procedure
 - missing required state transition
 - locally plausible output that violates process constraints
+
+The R2 seed candidate uses deterministic existing-style fault injection and must be verified failing before inference.
 
 ### 5.3 Existing: reconciliation
 
@@ -125,18 +168,22 @@ Core failure modes:
 - wrong canonical value
 - partial reconciliation
 
+The R2 seed candidate uses deterministic existing-style fault injection and must be verified failing before inference.
+
 ### 5.4 New: preservation
 
 Purpose: test whether the system can make required changes while preserving already-correct or protected state.
 
-Construction principles:
+Construction requirements:
 
-- at least one required mutable target
+- at least one required mutable `equal` target
 - at least one public `preserve` invariant
 - protected state begins correct
 - valid solution changes only required mutable paths
-- higher complexity increases the number of mutable and preserved fields
-- critical preservation failures are allowed at high complexity for catastrophe measurement
+- higher complexity increases mutable and preserved requirements using deterministic seed-derived values
+- Level 4 contains at least one critical preservation invariant for catastrophe measurement
+
+Preservation seed failure is category-specific: begin from an otherwise valid public action set, then deterministically append exactly one action that changes a protected `preserve` path to a wrong value. Thus the seed exposes a preservation failure while requested mutable changes remain correct.
 
 Primary failure signal:
 
@@ -146,12 +193,16 @@ Primary failure signal:
 
 Purpose: test multi-step prerequisite structure where individually valid actions fail if sequenced incorrectly.
 
-Construction principles:
+Construction requirements:
 
-- use existing public requirement types such as `action_present` and `action_before`
-- include at least one prerequisite action and one dependent action
-- higher complexity adds independent state requirements and/or additional ordering pressure without introducing hidden rules
-- the valid sequence must be derivable entirely from the public task payload
+- use only existing supported action operations and requirement semantics
+- include a prerequisite `grant` action and a dependent `start` action
+- include public `action_before` requiring `grant` before `start`
+- include public `action_present` for the dependent `start` action
+- higher complexity adds deterministic independent state requirements without hidden rules
+- valid sequence is derivable entirely from the public task payload
+
+Dependency/order seed failure is category-specific: construct the otherwise valid public action set, then deterministically reverse the prerequisite/dependent pair so the required actions are present but the public ordering rule fails.
 
 Primary failure signal:
 
@@ -161,23 +212,28 @@ Primary failure signal:
 
 Purpose: test whether targeted recovery fixes a localized verified defect without regressing already-correct requirements or introducing new side effects.
 
-Construction principles:
+Construction requirements:
 
-- initial deterministic seed candidate contains a preregistered localized defect
-- several other public requirements begin satisfied
-- at least one explicit preservation or no-side-effect invariant protects correct state
-- successful repair must fix the seeded defect and preserve all previously correct requirements
-- the model is never told hidden fault metadata; it receives only public requirements, previous actions, and public-safe observed validator feedback
+- multiple public mutable `equal` requirements
+- at least one explicit public `preserve` invariant
+- optional public `action_absent` no-side-effect invariant where supported by the generated case
+- valid action set satisfies all mutable requirements and leaves protected state untouched
+
+Repair-containment seed failure is category-specific: begin from the valid public action set and deterministically corrupt exactly one mutable requirement action while preserving every other public requirement. The extra Level-4 stress case corrupts exactly two mutable requirement actions. The model is never told the injected fault metadata; it receives only public requirements, previous actions, and public-safe observed validator feedback.
+
+The evidence packet must record, before inference:
+
+- public requirements already satisfied
+- public requirements failed
+- protected invariants satisfied
+
+After inference it must record which previously satisfied requirements regressed and which failed requirements were repaired.
 
 Primary failure signal:
 
 > Does recovery remain contained to the failed region, or does it destroy previously correct work while appearing to repair the immediate defect?
 
-The extra 25th A-R2 case is a Level-4 repair-containment stress case because mutation-induced regression is especially relevant to the `targeted_repair` versus `retry` order question.
-
 ## 6. A-R2 family/complexity allocation
-
-The frozen allocation is:
 
 | Family | L1 | L2 | L3 | L4 | Extra | Total |
 |---|---:|---:|---:|---:|---:|---:|
@@ -185,11 +241,11 @@ The frozen allocation is:
 | policy | 1 | 1 | 1 | 1 | 0 | 4 |
 | reconciliation | 1 | 1 | 1 | 1 | 0 | 4 |
 | preservation | 1 | 1 | 1 | 1 | 0 | 4 |
-| dependency/order | 1 | 1 | 1 | 1 | 0 | 4 |
-| repair containment | 1 | 1 | 1 | 1 | 1×L4 | 5 |
+| dependency_order | 1 | 1 | 1 | 1 | 0 | 4 |
+| repair_containment | 1 | 1 | 1 | 1 | 1×L4 | 5 |
 | **Total** | **6** | **6** | **6** | **6** | **1** | **25** |
 
-The exact case order and seeds must be frozen in code tests before the first Tier-A S1-R2 call.
+The table and exact case order in Section 4 are preregistered and may not be changed after the first Tier-A R2 call.
 
 ## 7. Seed-failure protocol
 
@@ -202,10 +258,7 @@ Requirements:
 - identical seed candidate/actions are supplied to all four arms for a matched case
 - injected-fault metadata is retained for forensic analysis but never rendered into model prompts
 - no hidden target state, `critical` flag, hidden-gold label, injected-fault label, or non-public benchmark metadata may enter executor or repair prompts
-
-For ordinary families, deterministic fault injection may be used if it guarantees a genuine failed state.
-
-For repair-containment cases, the seed defect must be deterministic and localized so the experiment can measure regression of requirements that were already correct at intervention start. The evidence packet must record the set of requirements satisfied before intervention and whether each remains satisfied afterward.
+- category-specific seed construction from Section 5 overrides ordinary fault injection for preservation, dependency_order, and repair_containment
 
 ## 8. Two-call intervention exposure contract
 
@@ -250,7 +303,7 @@ Repair feedback must not contain:
 
 Hidden-gold and semantic evaluators may score outputs after inference for experiment measurement, but their hidden data cannot influence production-arm model prompts or action selection.
 
-## 10. Primary outcomes
+## 10. Primary outcomes and preregistered aggregate threshold
 
 The primary causal unit is the matched task across all four arms.
 
@@ -264,11 +317,17 @@ Primary measurements:
 - intervention exposure validity
 - exact physical-call compliance
 
-Primary Section-1 interpretation remains based on whether fixed order produces a large, stable causal effect relative to both baseline and random-order control.
+A production fixed arm qualifies for `S1_R2_FIXED_ORDER_LARGE_SIGNAL` only if all are true across the 25 matched tasks:
+
+- net wins versus best-single baseline `>= 5` (20 percentage-point matched net advantage)
+- net wins versus random-order control `>= 3`
+- catastrophes added versus best-single baseline `== 0`
+
+If both production fixed arms qualify, select the arm with the larger net wins versus baseline, then larger net wins versus random control, then deterministic arm ID as the final tie-break.
 
 A null or small effect remains non-dispositive for very small effects because S1-R2 is still a bounded screen, not the 260-cluster full-power experiment estimated by S0.
 
-## 11. New category-level outcomes
+## 11. Category-level outcomes and conditional threshold
 
 R2 adds family-level analysis so aggregate performance cannot hide category-specific architecture effects.
 
@@ -282,6 +341,20 @@ Required per-family outputs:
 - mean physical calls (must equal 2 per arm-task)
 - token and latency summaries
 - active/shadow call counts
+
+A production fixed arm qualifies for a **family-level strong signal** within one family only if:
+
+- net wins versus baseline `>= 2`
+- net wins versus random control `>= 1`
+- catastrophes added versus baseline `== 0`
+
+`S1_R2_FIXED_ORDER_CATEGORY_CONDITIONAL_SIGNAL` is allowed only when the aggregate large-signal threshold is not met and one same production fixed arm:
+
+- meets the family-level strong-signal rule in at least **2 distinct families**
+- has aggregate net wins versus baseline `> 0`
+- adds `0` catastrophes versus baseline across all 25 tasks
+
+This verdict is hypothesis-generating for Section 2 routing and does not authorize a universal fixed-stack claim.
 
 Additional family-specific metrics:
 
@@ -307,7 +380,18 @@ Additional family-specific metrics:
 - containment success rate
 - repair regression rate
 
-## 12. Protocol validity gate
+A repair-containment family signal must be reported with regression counts; a nominal success gain accompanied by more previously-satisfied requirement regressions may not be described as a clean containment improvement.
+
+## 12. Negative/harmful threshold
+
+If neither production fixed arm meets the aggregate or category-conditional rules, emit `S1_R2_FIXED_ORDER_NEGATIVE_OR_HARMFUL` only if either preregistered condition is true:
+
+1. both production fixed arms have net wins versus baseline `<= -3`; or
+2. both production fixed arms add at least `1` catastrophe versus baseline and neither has positive aggregate net wins.
+
+Otherwise the valid result is `S1_R2_SCREEN_NON_DECISIVE`.
+
+## 13. Protocol validity gate
 
 A primary S1-R2 verdict is authorized only if all are true:
 
@@ -326,6 +410,7 @@ A primary S1-R2 verdict is authorized only if all are true:
 - prompt leakage scans find no hidden/non-public benchmark fields
 - all 25 tasks are matched across all four arms
 - all six required families and frozen complexity allocation are present
+- case IDs/seeds match the exact Section-4 schedule
 
 If any condition fails, the result must be labeled:
 
@@ -333,19 +418,19 @@ If any condition fails, the result must be labeled:
 
 The packet remains retained for forensic analysis.
 
-## 13. Verdict classes
+## 14. Verdict classes and precedence
 
-S1-R2 may emit one of:
+Verdicts are evaluated in this order:
 
-- `S1_R2_FIXED_ORDER_LARGE_SIGNAL`
-- `S1_R2_FIXED_ORDER_CATEGORY_CONDITIONAL_SIGNAL`
-- `S1_R2_SCREEN_NON_DECISIVE`
-- `S1_R2_FIXED_ORDER_NEGATIVE_OR_HARMFUL`
-- `INVALID_FOR_PRIMARY_S1_R2_CAUSAL_CLAIM`
+1. protocol failure → `INVALID_FOR_PRIMARY_S1_R2_CAUSAL_CLAIM`
+2. aggregate large-signal rule met → `S1_R2_FIXED_ORDER_LARGE_SIGNAL`
+3. category-conditional rule met → `S1_R2_FIXED_ORDER_CATEGORY_CONDITIONAL_SIGNAL`
+4. negative/harmful rule met → `S1_R2_FIXED_ORDER_NEGATIVE_OR_HARMFUL`
+5. otherwise → `S1_R2_SCREEN_NON_DECISIVE`
 
-`CATEGORY_CONDITIONAL_SIGNAL` is used when aggregate effect is weak/non-decisive but one or more preregistered families show a coherent fixed-order advantage that is not accompanied by unacceptable catastrophe/regression growth. It is hypothesis-generating for later adaptive routing and does not justify claiming a universal fixed stack.
+This precedence prevents category slicing from overriding a stronger aggregate result and prevents a negative label when a coherent preregistered category signal exists.
 
-## 14. Evidence requirements
+## 15. Evidence requirements
 
 S1-R2 reuses the standard Test-3 evidence packet and adds R2-specific files where necessary.
 
@@ -382,7 +467,7 @@ R2 additionally requires:
 
 The packet must distinguish active-call outputs from shadow-call outputs and must never treat shadow output as causal outcome evidence.
 
-## 15. R1 immutability and provenance
+## 16. R1 immutability and provenance
 
 Implementation must preserve S1-R1 behavior and evidence semantics.
 
@@ -397,17 +482,17 @@ Required regression guarantees:
 
 Code may factor common execution mechanics into shared helpers only if regression tests prove the frozen R1 observable contract remains unchanged.
 
-## 16. CI/TDD acceptance criteria
+## 17. CI/TDD acceptance criteria
 
 Implementation follows strict red-green TDD.
 
 Before implementation, regression tests must fail for missing R2 behavior and explicitly cover:
 
-1. exact 25-case A-R2 schedule and six-family allocation
-2. seed disjointness from A and A-R1
-3. new preservation task semantics
-4. new dependency/order task semantics
-5. localized repair-containment seed semantics
+1. exact 25-case A-R2 schedule, exact seeds, and six-family allocation
+2. seed disjointness from A, A-R1, and committed Test-2 holdout/task seeds
+3. new preservation task semantics and category-specific preservation fault
+4. new dependency_order semantics and order-reversal seed fault
+5. localized repair_containment seed semantics, including two-defect L4 stress case
 6. exact `25 × 4 × 2 = 200` runtime budget
 7. exact 50 calls per arm
 8. exact two calls per arm-task
@@ -416,9 +501,10 @@ Before implementation, regression tests must fail for missing R2 behavior and ex
 11. public-only prompt/repair-feedback boundary
 12. no cache/internal retry
 13. category-level analysis outputs
-14. containment regression metrics
-15. R1 exact-80 contract unchanged
-16. short in-place terminal progress rendering without line wrapping
+14. aggregate/category/negative verdict threshold precedence
+15. containment regression metrics
+16. R1 exact-80 contract unchanged
+17. short in-place terminal progress rendering without line wrapping
 
 Final green light requires, on one final commit:
 
@@ -432,7 +518,7 @@ Final green light requires, on one final commit:
 
 No real Tier-A S1-R2 inference is authorized until all gates above are green and the local dry-plan reports the frozen R2 protocol exactly.
 
-## 17. Local preflight contract
+## 18. Local preflight contract
 
 Before the first real R2 call, the local dry-plan must print at least:
 
@@ -453,7 +539,7 @@ TIER_A_INFERENCE_AUTHORIZED=false
 
 The real run requires an explicit Tier-A authorization flag and refuses to launch if the dry-plan/runtime contract does not resolve to the exact values above.
 
-## 18. Interpretation boundary
+## 19. Interpretation boundary
 
 S1-R2 is deliberately broader and stronger than S1-R1, but it is still a Section-1 screen.
 
