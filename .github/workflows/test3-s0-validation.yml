@@ -58,7 +58,8 @@ jobs:
               "power_variance.json", "candidate_section1_preregistration.json",
               "00-MASTER-INDEX.json", "instrumentation_anomalies.csv", "metadata_catalog.csv",
               "field_provenance.csv", "source_file_inventory.csv", "decision_trace.csv",
-              "unknown_fields.csv", "edge_cases.csv", "data_quality.json",
+              "unknown_fields.csv", "edge_cases.csv", "comparison_evidence.csv",
+              "source_metadata.jsonl", "data_quality.json",
               "COMPLETE-EVIDENCE.txt", "SHA256SUMS.csv",
           ]
           missing = [name for name in required if not (p / name).exists()]
@@ -66,6 +67,9 @@ jobs:
           assert (p / "model_calls.jsonl").read_text(encoding="utf-8") == ""
           master = (p / "COMPLETE-EVIDENCE.txt").read_text(encoding="utf-8")
           assert "PHYSICAL MODEL CALLS: 0" in master
+          quality = json.loads((p / "data_quality.json").read_text(encoding="utf-8"))
+          assert quality["zero_model_call_invariant"] is True
+          assert quality["data_loss_policy"]
           with (p / "SHA256SUMS.csv").open(encoding="utf-8", newline="") as handle:
               rows = list(csv.DictReader(handle))
           assert rows and all((p / row["path"]).exists() for row in rows)
