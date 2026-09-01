@@ -3,10 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from inverted.test3_s0_analysis import (
-    derive_fixed_policy_candidates_from_comparisons,
-    select_s1_fixed_orders,
-)
+from inverted.test3_s1_freeze import derive_s1_order_candidates, select_s1_fixed_orders
 from inverted.test3_s0_artifacts import Test3S0ArtifactWriter
 
 
@@ -80,7 +77,7 @@ def _messy_comparisons() -> list[dict[str, str]]:
 
 
 def test_order_comparison_evidence_recovers_explicit_s1_fixed_policy_candidates():
-    rows = derive_fixed_policy_candidates_from_comparisons(_comparisons())
+    rows = derive_s1_order_candidates(_comparisons())
     assert [row["candidate"] for row in rows] == [
         "retry -> validator -> repair",
         "validator -> retry -> repair",
@@ -96,7 +93,7 @@ def test_order_comparison_evidence_recovers_explicit_s1_fixed_policy_candidates(
 
 
 def test_order_candidates_deduplicate_sources_and_quarantine_oracle_orders():
-    rows = derive_fixed_policy_candidates_from_comparisons(_messy_comparisons())
+    rows = derive_s1_order_candidates(_messy_comparisons())
     assert len(rows) == 3
 
     duplicate = next(row for row in rows if row["candidate"] == "retry -> validator -> repair")
