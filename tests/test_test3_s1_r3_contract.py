@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import importlib
 import json
+from typing import Any
 
 import pytest
 
@@ -17,6 +18,16 @@ R3_PROTOCOL = "S1-R3"
 R3_HOLDOUT = "A-R3"
 R3_SEED_BASE = 811000
 R3_SEED_STRIDE = 233
+
+
+class CountingMockModelAdapter(MockModelAdapter):
+    def __init__(self, model: str):
+        super().__init__(model)
+        self.call_count = 0
+
+    def complete(self, messages: list[dict[str, str]], *, role: str, context: dict[str, Any]):
+        self.call_count += 1
+        return super().complete(messages, role=role, context=context)
 
 
 def _runtime():
@@ -44,8 +55,8 @@ def _legacy_colliding_arms(cap: int = 50):
 
 
 def _mock_models():
-    best = MockModelAdapter("qwen3.5:9b-q8_0")
-    repair = MockModelAdapter("cogito:3b-v1-preview-llama-q8_0")
+    best = CountingMockModelAdapter("qwen3.5:9b-q8_0")
+    repair = CountingMockModelAdapter("cogito:3b-v1-preview-llama-q8_0")
     return best, repair
 
 
@@ -110,8 +121,8 @@ def test_r3_runtime_fails_closed_before_inference_when_causal_orders_collide():
             run_id="s1-r3-collision",
             exact_budget=200,
         )
-    assert best.calls == []
-    assert repair.calls == []
+    assert best.call_count == 0
+    assert repair.call_count == 0
 
 
 def test_r3_repair_patch_composition_preserves_unrelated_correct_work_and_replaces_failed_path():
