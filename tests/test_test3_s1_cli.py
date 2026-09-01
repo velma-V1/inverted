@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
-from inverted.test3_s1_cli import main
+from inverted.test3_s1_cli import InPlaceS1Progress, main
 
 
 def _frozen_packet(tmp_path: Path) -> Path:
@@ -61,3 +62,33 @@ def test_mock_smoke_writes_validation_packet_without_real_inference(tmp_path: Pa
     assert verdict["verdict"] == "MOCK_VALIDATION_ONLY"
     assert verdict["tier_a_architecture_claim"] is False
     assert verdict["real_model_inference"] is False
+
+
+def test_s1_progress_rewrites_one_terminal_line_and_finishes_once():
+    stream = io.StringIO()
+    progress = InPlaceS1Progress(stream=stream, width=20)
+
+    progress.update(
+        completed_tasks=1,
+        total_tasks=24,
+        physical_calls=2,
+        call_budget=80,
+        arm_id="S1-A0",
+        task_id="S1-H001",
+    )
+    progress.update(
+        completed_tasks=2,
+        total_tasks=24,
+        physical_calls=3,
+        call_budget=80,
+        arm_id="S1-A0",
+        task_id="S1-H002",
+    )
+    progress.finish()
+
+    text = stream.getvalue()
+    assert text.count("\n") == 1
+    assert text.count("\r") == 2
+    assert "2/24 tasks" in text
+    assert "calls 3/80" in text
+    assert "S1-A0" in text
