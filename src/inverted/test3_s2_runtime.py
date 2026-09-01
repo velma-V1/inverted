@@ -24,6 +24,8 @@ S2_ARM_COUNT = 5
 S2_TRIAL_COUNT = S2_MATCHED_CASES * S2_ARM_COUNT
 S2_PER_ARM_CALL_CAP = S2_MATCHED_CASES * S2_CALLS_PER_ARM_TASK
 S2_EXACT_BUDGET = S2_TRIAL_COUNT * S2_CALLS_PER_ARM_TASK
+S2_PROVENANCE_API_CALL_BUDGET = 12
+S2_COMBINED_ACTION_BUDGET = S2_EXACT_BUDGET + S2_PROVENANCE_API_CALL_BUDGET
 S2_QWEN_MODEL = "qwen3.5:9b-q8_0"
 S2_REPAIR_MODEL = "cogito:3b-v1-preview-llama-q8_0"
 S2_LLAMA_MODEL = "llama3.1:8b"
@@ -273,7 +275,7 @@ def detect_stochastic_divergence(model_calls: list[dict[str, Any]]) -> list[dict
 
 def _validate_inputs(cases: list[S2ExecutionCase], model_by_name: dict[str, Any], exact_budget: int) -> None:
     if exact_budget != S2_EXACT_BUDGET:
-        raise ValueError("S2-R1 requires exact 720-call budget")
+        raise ValueError("S2-R1 requires exact 720-call inference budget")
     if len(cases) != S2_MATCHED_CASES:
         raise ValueError("S2-R1 requires exactly 72 Holdout B cases")
     if any(not str(case.case_id).startswith("test3-s2-BR1-") for case in cases):
@@ -292,11 +294,15 @@ def run_s2_screen(
     model_by_name: dict[str, Any],
     run_id: str,
     exact_budget: int = S2_EXACT_BUDGET,
+    action_budget: CombinedActionBudget | None = None,
 ) -> dict[str, Any]:
     _validate_inputs(cases, model_by_name, exact_budget)
     physical = PhysicalCallBudget(max_calls=exact_budget)
     caller = BoundedModelCaller(physical)
-    combined = CombinedActionBudget(exact_budget)
+    combined = action_budget if action_budget is not None else CombinedActionBudget(S2_COMBINED_ACTION_BUDGET)
+    if combined.remaining < exact_budget:
+        raise ValueError("S2 shared action budget does not have room for the exact 720 inference actions")
+    action_start = combined.used
     trials: list[dict[str, Any]] = []
     calls: list[dict[str, Any]] = []
     validators: list[dict[str, Any]] = []
@@ -439,8 +445,9 @@ def run_s2_screen(
 
     if physical.physical_calls != exact_budget:
         raise AssertionError(f"S2 runtime consumed {physical.physical_calls}, expected exactly {exact_budget}")
-    if combined.used != exact_budget:
-        raise AssertionError(f"S2 combined action budget consumed {combined.used}, expected exactly {exact_budget}")
+    inference_action_delta = combined.used - action_start
+    if inference_action_delta != exact_budget:
+        raise AssertionError(f"S2 inference consumed {inference_action_delta} shared actions, expected exactly {exact_budget}")
     if physical.cache_hits:
         raise AssertionError("S2 primary runtime forbids cache hits")
 
@@ -461,9 +468,11 @@ def run_s2_screen(
         "holdout": S2_HOLDOUT,
         "execution_mode": "balanced_task_blocks",
         "exact_budget": exact_budget,
+        "combined_action_budget_limit": combined.limit,
         "matched_cases": S2_MATCHED_CASES,
         "trial_count": S2_TRIAL_COUNT,
         "physical_model_calls": physical.physical_calls,
+        "inference_action_delta": inference_action_delta,
         "action_budget": combined.snapshot(),
         "trials": trials,
         "model_calls": calls,
