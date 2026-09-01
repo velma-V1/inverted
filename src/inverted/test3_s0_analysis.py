@@ -116,6 +116,60 @@ def score_component_outcomes(rows: Iterable[dict[str, Any]]) -> list[dict[str, A
     )
 
 
+def derive_fixed_policy_candidates_from_comparisons(
+    rows: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Promote explicit Test-2 order rankings into S1 hypotheses without upgrading simulation to proof."""
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw in rows:
+        row = dict(raw)
+        source_file = str(row.get("source_file") or "").replace("\\", "/")
+        order = row.get("order")
+        if not source_file.endswith("order/order-ranking.csv") or order in (None, ""):
+            continue
+        source_id = str(row.get("source_id") or "")
+        key = (source_id, str(order))
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            rank = int(float(str(row.get("rank")))) if row.get("rank") not in (None, "") else None
+        except (TypeError, ValueError):
+            rank = None
+        out.append({
+            "candidate": str(order),
+            "rank": rank,
+            "components": row.get("components"),
+            "source_id": source_id,
+            "source_file": source_file,
+            "causal_status": row.get("causal_status"),
+            "changes_upstream_prompt": _as_bool(row.get("changes_upstream_prompt")),
+            "rows": int(float(str(row.get("n")))) if row.get("n") not in (None, "") else None,
+            "simulated_success_rate": _as_float(row.get("simulated_success_rate")),
+            "simulated_blocked_rate": _as_float(row.get("blocked_rate")),
+            "simulated_catastrophe_rate": _as_float(row.get("catastrophic_rate")),
+            "verified_successes": None,
+            "verified_failures": None,
+            "verified_success_rate": None,
+            "catastrophe_rate": None,
+            "calls": None,
+            "tokens": None,
+            "latency_ms": None,
+            "fully_costed": False,
+            "evidence_basis": "MODEL_FREE_ORDER_RANKING_HYPOTHESIS",
+            "tier_a_architecture_claim": False,
+        })
+    return sorted(
+        out,
+        key=lambda row: (
+            row["rank"] if row["rank"] is not None else 10**9,
+            -(row["simulated_success_rate"] if row["simulated_success_rate"] is not None else -1.0),
+            row["candidate"],
+        ),
+    )
+
+
 def _best_action_mapping(rows: list[dict[str, Any]]) -> dict[str, str]:
     buckets: dict[tuple[str, str], list[bool]] = defaultdict(list)
     for row in rows:
