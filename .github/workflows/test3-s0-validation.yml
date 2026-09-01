@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          lfs: true
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -32,10 +34,13 @@ jobs:
           root = Path("test3-s0-ci")
           p = root / "scientific-s0"
           summary = json.loads((root / "repo-replay-summary.json").read_text(encoding="utf-8"))
+          normalization = json.loads((root / "repo-evidence-normalization.json").read_text(encoding="utf-8"))
           verdict = json.loads((p / "verdict.json").read_text(encoding="utf-8-sig"))
           prereg = json.loads((p / "candidate_section1_preregistration.json").read_text(encoding="utf-8-sig"))
 
           assert summary["repo_evidence_verified"] is True, summary
+          assert summary["repo_evidence_unverified_files"] == [], summary
+          assert normalization["unverified_files"] == [], normalization
           assert summary["s0_verdict"] == "DISCOVERY_COMPLETE_MODEL_FREE", summary
           assert verdict["verdict"] == "DISCOVERY_COMPLETE_MODEL_FREE", verdict
           assert verdict["physical_model_calls"] == 0, verdict
@@ -87,4 +92,5 @@ jobs:
             test3-s0-ci/scientific-s0
             test3-s0-ci/source-manifest.json
             test3-s0-ci/repo-replay-summary.json
+            test3-s0-ci/repo-evidence-normalization.json
           if-no-files-found: error
