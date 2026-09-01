@@ -1,0 +1,21 @@
+s1:
+  section: S1_FIXED_STACK_ORDER
+  holdout: A
+  hard_call_limit: 80
+  arm_count: 4
+  per_arm_call_cap: 20
+  no_outcome_dependent_early_stopping: true
+  large_signal_rule:
+    min_net_wins_vs_baseline: 2
+    min_net_wins_vs_random_control: 1
+    max_catastrophes_added_vs_baseline: 0
+  ollama:
+    base_url: http://127.0.0.1:11434
+    temperature: 0
+    max_tokens: 1024
+    timeout_s: 600
+    transport_retries: 0
+    retry_backoff_s: 0
+    think: false
+    format_json: true
+    context_limit: 8192
