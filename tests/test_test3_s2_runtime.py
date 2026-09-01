@@ -75,3 +75,28 @@ def test_s2_runtime_preserves_holdout_seed_scan_and_fixture_provenance():
     compound = [row for row in manifest if row["perturbation_class"] == "compound"]
     assert len(compound) == 24
     assert all(len(set(row["initial_failed_requirements"])) >= 2 for row in compound)
+
+
+def test_s2_preserves_candidate_snapshots_and_validates_shadow_counterfactuals():
+    result = run_s2_screen(cases=build_holdout_b(), model_by_name=_models(), run_id="s2-shadow-evidence")
+    calls = result["model_calls"]
+    assert len(calls) == 720
+    for row in calls:
+        assert "candidate_before_id" in row
+        assert "candidate_before_state" in row
+        assert "candidate_before_actions" in row
+        assert "proposed_candidate_id" in row
+        assert "proposed_candidate_state" in row
+        assert "proposed_candidate_actions" in row
+        assert "proposed_success" in row
+        assert "proposed_catastrophic" in row
+        assert "proposed_failed_requirements" in row
+
+    shadow = [row for row in calls if row["shadow_only"]]
+    assert shadow
+    assert all(row["counterfactual_evaluated"] is True for row in shadow)
+    assert all(row["success_after"] == row["success_before"] for row in shadow)
+    assert all(row["catastrophic_after"] == row["catastrophic_before"] for row in shadow)
+    assert all(row["proposed_success"] is True for row in shadow)
+    assert all(row["proposed_candidate_state"] for row in shadow)
+    assert all(row["proposed_candidate_actions"] for row in shadow)
