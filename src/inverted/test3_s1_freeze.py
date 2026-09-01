@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 
 ANALYSIS_ONLY_COMPONENTS = frozenset({"oracle_auditor"})
+PRODUCTION_ORDER_RANKING_FILE = "order/order-ranking-production.csv"
 DEFAULT_S1_PHYSICAL_CALL_CEILING = 80
 DEFAULT_S1_FIXED_ORDER_COUNT = 2
 DEFAULT_S1_SEED = 20260901
@@ -69,18 +70,19 @@ def _rank_key(row: dict[str, Any]) -> tuple[int, float, str]:
 
 
 def derive_s1_order_candidates(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Deduplicate Test-2 order rankings and quarantine analysis-only orders.
+    """Build S1 hypotheses only from the separate production-order atlas.
 
-    The raw comparison evidence remains untouched. This layer only creates the
-    production-facing S1 hypothesis list. Simulation remains hypothesis evidence,
-    never Tier-A architecture proof.
+    The original `order/order-ranking.csv` remains preserved analysis-ceiling
+    evidence because every Test-2 order in that file includes `oracle_auditor`.
+    It is intentionally ignored here rather than stripping oracle from an
+    already oracle-scored result.
     """
     grouped: dict[str, list[dict[str, Any]]] = {}
     for raw in rows:
         row = dict(raw)
         source_file = str(row.get("source_file") or "").replace("\\", "/")
         order = str(row.get("order") or "").strip()
-        if not source_file.endswith("order/order-ranking.csv") or not order:
+        if not source_file.endswith(PRODUCTION_ORDER_RANKING_FILE) or not order:
             continue
         grouped.setdefault(order, []).append(row)
 
@@ -95,6 +97,8 @@ def derive_s1_order_candidates(rows: Iterable[dict[str, Any]]) -> list[dict[str,
         causal_statuses = sorted({str(row.get("causal_status")) for row in observations if row.get("causal_status")})
         causal_status = causal_statuses[0] if len(causal_statuses) == 1 else "MIXED" if causal_statuses else None
         row_count_values = [value for value in (_as_int(row.get("n")) for row in observations) if value is not None]
+        declared_production = _as_bool(primary.get("production_eligible"))
+        production_eligible = not analysis_only and declared_production is not False
 
         out.append({
             "candidate": order,
@@ -119,13 +123,14 @@ def derive_s1_order_candidates(rows: Iterable[dict[str, Any]]) -> list[dict[str,
             "tokens": None,
             "latency_ms": None,
             "fully_costed": False,
-            "production_eligible": not analysis_only,
+            "production_eligible": production_eligible,
             "analysis_only_components": analysis_only,
             "exclusion_reason": (
                 "contains analysis-only component(s): " + ", ".join(analysis_only)
-                if analysis_only else ""
+                if analysis_only else "" if production_eligible else "production atlas marked row ineligible"
             ),
-            "evidence_basis": "MODEL_FREE_ORDER_RANKING_HYPOTHESIS",
+            "evidence_scope": primary.get("evidence_scope") or "PRODUCTION_ORDER_HYPOTHESIS",
+            "evidence_basis": "MODEL_FREE_PRODUCTION_ORDER_RANKING_HYPOTHESIS",
             "tier_a_architecture_claim": False,
         })
 
@@ -200,6 +205,7 @@ def finalize_s1_preregistration(
     result["fixed_policy_candidate_count"] = len(all_candidates)
     result["production_eligible_fixed_order_count"] = len(eligible)
     result["excluded_analysis_only_order_count"] = len(all_candidates) - len(eligible)
+    result["fixed_policy_evidence_basis"] = ["MODEL_FREE_PRODUCTION_ORDER_RANKING_HYPOTHESIS"] if all_candidates else []
     result["tier_a_inference_authorized"] = False
 
     if len(selected) < fixed_order_count:
@@ -234,21 +240,21 @@ def finalize_s1_preregistration(
             "arm_id": "S1-A1",
             "role": "current_best_fixed_hybrid",
             "order": str(selected[0]["candidate"]),
-            "selection_basis": "top production-eligible S0 fixed-order hypothesis",
+            "selection_basis": "top production-only S0 fixed-order hypothesis",
             "physical_call_cap": per_arm_cap,
         },
         {
             "arm_id": "S1-A2",
             "role": "alternate_fixed_order",
             "order": str(selected[1]["candidate"]),
-            "selection_basis": "second production-eligible S0 fixed-order hypothesis",
+            "selection_basis": "second production-only S0 fixed-order hypothesis",
             "physical_call_cap": per_arm_cap,
         },
         {
             "arm_id": "S1-A3",
             "role": "random_order_negative_control",
             "order": random_order,
-            "selection_basis": f"deterministic permutation control; seed={seed}",
+            "selection_basis": f"deterministic production-component permutation control; seed={seed}",
             "physical_call_cap": per_arm_cap,
         },
     ]
