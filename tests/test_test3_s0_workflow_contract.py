@@ -13,11 +13,16 @@ def test_s0_workflow_is_zero_call_repo_backed_replay():
 
     workflow_text = workflow.read_text(encoding="utf-8")
     replay_text = replay.read_text(encoding="utf-8")
+    workflow_data = yaml.safe_load(workflow_text)
 
     assert 'python-version: "3.14"' in workflow_text
     assert "python -m pytest" in workflow_text
     assert "run_test3_s0_from_repo.py" in workflow_text
     assert "repo-replay-summary.json" in workflow_text
+
+    steps = workflow_data["jobs"]["test3-s0-repo-replay"]["steps"]
+    checkout = next(step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@"))
+    assert checkout.get("with", {}).get("lfs") is True
 
     assert "inverted.test2_cli" in replay_text and '"model-free"' in replay_text
     assert "inverted.test3_s0_cli" in replay_text and '"run"' in replay_text
