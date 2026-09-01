@@ -8,23 +8,26 @@ from pathlib import Path
 import sys
 from typing import Any
 
+import httpx
 import yaml
 
 from .models import MockModelAdapter, OllamaAdapter
 from .test2_provenance import collect_ollama_provenance
 from .test3_s2_analysis import derive_s2_verdict, summarize_s2
 from .test3_s2_artifacts import Test3S2ArtifactWriter
-from .test3_s2_budget import ABSOLUTE_PER_TEST_ACTION_CEILING
+from .test3_s2_budget import ABSOLUTE_PER_TEST_ACTION_CEILING, CombinedActionBudget
 from .test3_s2_cases import S2_HOLDOUT, S2_PERTURBATIONS, S2_PROTOCOL_REVISION, build_holdout_b
 from .test3_s2_policy import INTERVENTION_LIBRARY, REAL_ARM_IDS
 from .test3_s2_progress import InPlaceS2Progress, ProgressReportingAdapter, S2ProgressTracker
 from .test3_s2_runtime import (
     S2_CALLS_PER_ARM_TASK,
+    S2_COMBINED_ACTION_BUDGET,
     S2_EXACT_BUDGET,
     S2_LLAMA_MODEL,
     S2_MATCHED_CASES,
     S2_MODEL_NAMES,
     S2_PER_ARM_CALL_CAP,
+    S2_PROVENANCE_API_CALL_BUDGET,
     S2_QWEN_MODEL,
     S2_REPAIR_MODEL,
     S2_TRIAL_COUNT,
@@ -38,12 +41,7 @@ S2_PREDECESSOR_VERDICT = "S1_R3_SCREEN_NON_DECISIVE"
 
 
 class S2OllamaAdapter(OllamaAdapter):
-    """S2-local executor schema covering every legitimate task operation.
-
-    The shared historical adapter intentionally remains untouched so older
-    experiment provenance is not rewritten. S2 needs grant/start in addition
-    to the legacy set/resolve/delete operations for dependency-order cases.
-    """
+    """S2-local executor schema covering every legitimate task operation."""
 
     _EXECUTOR_SCHEMA = {
         "type": "object",
@@ -68,6 +66,21 @@ class S2OllamaAdapter(OllamaAdapter):
     }
 
 
+class _BudgetedTransport(httpx.BaseTransport):
+    """Count each real provenance HTTP request before it leaves the process."""
+
+    def __init__(self, budget: CombinedActionBudget):
+        self._budget = budget
+        self._inner = httpx.HTTPTransport()
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        self._budget.reserve("provenance_api_call")
+        return self._inner.handle_request(request)
+
+    def close(self) -> None:
+        self._inner.close()
+
+
 def _load_config(path: str | Path) -> dict[str, Any]:
     value = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     if not isinstance(value, dict) or not isinstance(value.get("s2"), dict):
@@ -78,7 +91,8 @@ def _load_config(path: str | Path) -> dict[str, Any]:
         "protocol_revision": S2_PROTOCOL_REVISION,
         "holdout": S2_HOLDOUT,
         "hard_call_limit": S2_EXACT_BUDGET,
-        "combined_action_budget": S2_EXACT_BUDGET,
+        "combined_action_budget": S2_COMBINED_ACTION_BUDGET,
+        "provenance_api_call_budget": S2_PROVENANCE_API_CALL_BUDGET,
         "absolute_action_ceiling": ABSOLUTE_PER_TEST_ACTION_CEILING,
         "arm_count": len(REAL_ARM_IDS),
         "per_arm_call_cap": S2_PER_ARM_CALL_CAP,
@@ -123,9 +137,13 @@ def _load_config(path: str | Path) -> dict[str, Any]:
     ollama = dict(s2.get("ollama") or {})
     if int(ollama.get("transport_retries") or 0) != 0:
         raise ValueError("S2-R1 Ollama transport retries must be zero")
-    planned = int(s2["matched_cases"]) * int(s2["arm_count"]) * int(s2["calls_per_arm_task"])
-    if planned != S2_EXACT_BUDGET or planned != int(s2["combined_action_budget"]):
-        raise ValueError("S2-R1 schedule must resolve to exactly 720 shared actions/model calls")
+    planned_inference = int(s2["matched_cases"]) * int(s2["arm_count"]) * int(s2["calls_per_arm_task"])
+    if planned_inference != S2_EXACT_BUDGET or planned_inference != int(s2["hard_call_limit"]):
+        raise ValueError("S2-R1 inference schedule must resolve to exactly 720 physical model calls")
+    if planned_inference + int(s2["provenance_api_call_budget"]) != int(s2["combined_action_budget"]):
+        raise ValueError("S2-R1 combined action budget must cover 720 inference + 12 provenance API calls")
+    if int(s2["combined_action_budget"]) > int(s2["absolute_action_ceiling"]):
+        raise ValueError("S2-R1 combined action budget exceeds repository absolute ceiling")
     return value
 
 
@@ -168,8 +186,12 @@ def _adapter(name: str, settings: dict[str, Any]) -> S2OllamaAdapter:
     )
 
 
-def _provenance_snapshot(base_url: str, model_names: tuple[str, ...]) -> dict[str, Any]:
-    snapshot = collect_ollama_provenance(base_url, model_names)
+def _provenance_snapshot(base_url: str, model_names: tuple[str, ...], action_budget: CombinedActionBudget) -> dict[str, Any]:
+    snapshot = collect_ollama_provenance(
+        base_url,
+        model_names,
+        transport=_BudgetedTransport(action_budget),
+    )
     models = snapshot.get("models") if isinstance(snapshot, dict) else None
     if not isinstance(models, dict) or set(models) != set(model_names):
         raise ValueError("S2 Ollama identity preflight did not resolve exactly the three frozen models")
@@ -190,7 +212,8 @@ def _preregistration(*, mock: bool) -> dict[str, Any]:
         "predecessor_run": S2_PREDECESSOR_RUN,
         "predecessor_verdict": S2_PREDECESSOR_VERDICT,
         "exact_budget": S2_EXACT_BUDGET,
-        "combined_action_budget": S2_EXACT_BUDGET,
+        "combined_action_budget": S2_COMBINED_ACTION_BUDGET,
+        "provenance_api_call_budget": S2_PROVENANCE_API_CALL_BUDGET,
         "absolute_action_ceiling": ABSOLUTE_PER_TEST_ACTION_CEILING,
         "arm_count": len(REAL_ARM_IDS),
         "physical_call_cap_per_arm": S2_PER_ARM_CALL_CAP,
@@ -218,6 +241,7 @@ def _report(verdict: dict[str, Any], runtime: dict[str, Any], analysis: dict[str
         f"HOLDOUT={S2_HOLDOUT}",
         f"PHYSICAL_MODEL_CALLS={runtime.get('physical_model_calls')}",
         f"COMBINED_EXTERNAL_ACTIONS={(runtime.get('action_budget') or {}).get('combined_used')}",
+        f"COMBINED_ACTION_LIMIT={(runtime.get('action_budget') or {}).get('limit')}",
         f"MATCHED_CASES={S2_MATCHED_CASES}",
         f"TRIALS={S2_TRIAL_COUNT}",
         f"PROTOCOL_VALID={str(bool(verdict.get('protocol_valid_for_primary_claim'))).lower()}",
@@ -280,6 +304,7 @@ def _dry_plan(config: dict[str, Any]) -> None:
     print(f"HOLDOUT={S2_HOLDOUT}")
     print(f"EXACT_BUDGET={int(s2['hard_call_limit'])}")
     print(f"COMBINED_ACTION_BUDGET={int(s2['combined_action_budget'])}")
+    print(f"PROVENANCE_API_CALL_BUDGET={int(s2['provenance_api_call_budget'])}")
     print(f"ABSOLUTE_ACTION_CEILING={int(s2['absolute_action_ceiling'])}")
     print(f"ARM_COUNT={len(REAL_ARM_IDS)}")
     print(f"PER_ARM_CALL_CAP={S2_PER_ARM_CALL_CAP}")
@@ -312,6 +337,7 @@ def _run_mock(args: argparse.Namespace) -> int:
             "selected_models": list(S2_MODEL_NAMES),
             "predecessor_run": S2_PREDECESSOR_RUN,
             "predecessor_verdict": S2_PREDECESSOR_VERDICT,
+            "external_provenance_api_calls": 0,
         },
         mock=True,
     )
@@ -330,13 +356,20 @@ def _run_real(args: argparse.Namespace) -> int:
     settings = dict(s2.get("ollama") or {})
     base_url = str(settings.get("base_url") or "http://127.0.0.1:11434")
     base_adapters = {name: _adapter(name, settings) for name in S2_MODEL_NAMES}
-    before = _provenance_snapshot(base_url, S2_MODEL_NAMES)
+    combined = CombinedActionBudget(S2_COMBINED_ACTION_BUDGET)
+    before = _provenance_snapshot(base_url, S2_MODEL_NAMES, combined)
 
     progress = InPlaceS2Progress()
     tracker = S2ProgressTracker(progress, total_trials=S2_TRIAL_COUNT, call_budget=S2_EXACT_BUDGET)
     adapters = {name: ProgressReportingAdapter(adapter, tracker) for name, adapter in base_adapters.items()}
     try:
-        runtime = run_s2_screen(cases=build_holdout_b(), model_by_name=adapters, run_id=args.run_id, exact_budget=S2_EXACT_BUDGET)
+        runtime = run_s2_screen(
+            cases=build_holdout_b(),
+            model_by_name=adapters,
+            run_id=args.run_id,
+            exact_budget=S2_EXACT_BUDGET,
+            action_budget=combined,
+        )
     except BaseException:
         tracker.finish(mark_current_complete=False)
         raise
@@ -348,9 +381,17 @@ def _run_real(args: argparse.Namespace) -> int:
     anomalies: list[dict[str, Any]] = []
     after: dict[str, Any] | None = None
     try:
-        after = _provenance_snapshot(base_url, S2_MODEL_NAMES)
+        after = _provenance_snapshot(base_url, S2_MODEL_NAMES, combined)
     except Exception as exc:
         anomalies.append({"classification": "post_run_model_identity_snapshot_failed", "error_class": type(exc).__name__, "error": str(exc)})
+    runtime["action_budget"] = combined.snapshot()
+    provenance_api_calls = int(runtime["action_budget"].get("by_kind", {}).get("provenance_api_call", 0))
+    if not anomalies and provenance_api_calls != S2_PROVENANCE_API_CALL_BUDGET:
+        anomalies.append({
+            "classification": "provenance_api_call_accounting_mismatch",
+            "expected": S2_PROVENANCE_API_CALL_BUDGET,
+            "actual": provenance_api_calls,
+        })
 
     provenance = {
         "run_id": args.run_id,
@@ -365,6 +406,7 @@ def _run_real(args: argparse.Namespace) -> int:
         "predecessor_verdict": S2_PREDECESSOR_VERDICT,
         "ollama_before": before,
         "ollama_after": after,
+        "external_provenance_api_calls": provenance_api_calls,
     }
     evidence = _assemble_evidence(runtime=runtime, config=config, provenance=provenance, mock=False)
     evidence["instrumentation_anomalies"].extend(anomalies)
@@ -373,7 +415,7 @@ def _run_real(args: argparse.Namespace) -> int:
             **evidence["verdict"],
             "verdict": "S2_INSTRUMENTATION_WARNING",
             "tier_a_architecture_claim": False,
-            "reason": "S2 inference completed but post-run model identity provenance could not be fully verified; evidence retained and architecture claim withheld.",
+            "reason": "S2 inference completed but provenance instrumentation was incomplete or inconsistent; evidence retained and architecture claim withheld.",
         }
         evidence["report"] = _report(evidence["verdict"], runtime, evidence)
     Test3S2ArtifactWriter(args.output_dir).write_all(evidence)
