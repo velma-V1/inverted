@@ -42,7 +42,7 @@ def test_s2_real_run_requires_explicit_tier_a_authorization(tmp_path, capsys):
     assert "TIER_A_AUTHORIZATION_REQUIRED" in capsys.readouterr().err
 
 
-def test_s2_mock_run_writes_complete_exact_720_evidence(tmp_path):
+def test_s2_mock_run_writes_complete_exact_720_evidence_and_progress(tmp_path, capsys):
     output = tmp_path / "mock"
     assert main([
         "mock-run",
@@ -50,6 +50,12 @@ def test_s2_mock_run_writes_complete_exact_720_evidence(tmp_path):
         "--output-dir", str(output),
         "--run-id", "s2-cli-mock",
     ]) == 0
+    progress = capsys.readouterr().out
+    assert "%" in progress
+    assert "720/720" in progress
+    assert "elapsed" in progress.lower()
+    assert "left" in progress.lower()
+    assert "eta" in progress.lower()
     assert all((output / name).is_file() for name in REQUIRED_S2_FILES)
     master = (output / "00-MASTER-INDEX.json").read_text(encoding="utf-8")
     assert '"physical_model_calls": 720' in master
