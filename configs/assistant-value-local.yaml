@@ -1,0 +1,52 @@
+# Real-model architecture evidence configuration.
+# The three default matrices are deliberately bounded below their immutable hard caps.
+assistant_value:
+  capture_content: true
+  seed: 20260901
+  long_horizon:
+    call_cap: 1152
+    per_horizon: 2
+    horizons: [8, 16, 30]
+    arms: [DIRECT, CHECKED, INVERTED]
+  evidence_trust:
+    call_cap: 1080
+    cases_per_regime: 20
+    arms: [DIRECT, CHECKED, INVERTED]
+  authority:
+    call_cap: 1152
+    cases_per_class: 15
+    arms: [DIRECT, CHECKED, INVERTED]
+models:
+  - provider: ollama
+    model: ${INVERTED_MODEL_1}
+    base_url: http://127.0.0.1:11434
+    temperature: 0.0
+    max_tokens: 768
+    timeout_s: 600
+    max_retries: 2
+    retry_backoff_s: 5
+    think: false
+    format_json: true
+    context_limit: 8192
+  - provider: ollama
+    model: ${INVERTED_MODEL_2}
+    base_url: http://127.0.0.1:11434
+    temperature: 0.0
+    max_tokens: 768
+    timeout_s: 600
+    max_retries: 2
+    retry_backoff_s: 5
+    think: false
+    format_json: true
+    context_limit: 8192
+  - provider: ollama
+    model: ${INVERTED_MODEL_3}
+    base_url: http://127.0.0.1:11434
+    temperature: 0.0
+    max_tokens: 768
+    timeout_s: 600
+    max_retries: 2
+    retry_backoff_s: 5
+    think: false
+    format_json: true
+    context_limit: 8192
