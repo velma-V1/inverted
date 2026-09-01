@@ -57,6 +57,28 @@ def _load_config(path: str | Path) -> dict[str, Any]:
     for key, required in expected.items():
         if s1.get(key) != required:
             raise ValueError(f"S1-R2 config {key} must be exactly {required!r}")
+    frozen_verdict_rules = {
+        "large_signal_rule": {
+            "min_net_wins_vs_baseline": 5,
+            "min_net_wins_vs_random_control": 3,
+            "max_catastrophes_added_vs_baseline": 0,
+        },
+        "category_signal_rule": {
+            "min_net_wins_vs_baseline": 2,
+            "min_net_wins_vs_random_control": 1,
+            "min_strong_families": 2,
+            "require_positive_aggregate_net_wins": True,
+            "max_aggregate_catastrophes_added_vs_baseline": 0,
+        },
+        "harmful_signal_rule": {
+            "both_fixed_max_net_wins_vs_baseline": -3,
+            "catastrophe_condition_min_added": 1,
+            "catastrophe_condition_require_nonpositive_net_wins": True,
+        },
+    }
+    for key, required in frozen_verdict_rules.items():
+        if s1.get(key) != required:
+            raise ValueError(f"S1-R2 config {key} must be exactly {required!r}")
     if s1.get("no_outcome_dependent_early_stopping") is not True:
         raise ValueError("S1-R2 forbids outcome-dependent early stopping")
     ollama = dict(s1.get("ollama") or {})
