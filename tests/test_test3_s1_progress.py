@@ -51,6 +51,7 @@ def test_s1_progress_auto_fits_narrow_terminal_without_wrapping(monkeypatch):
     assert len(line) <= 71
     assert "%" in line
     assert "50/200" in line
+    assert "elapsed" in lower
     assert "left" in lower
     assert "eta" in lower
-    assert "s1-a1" in lower
+    assert lower.endswith("a1")
