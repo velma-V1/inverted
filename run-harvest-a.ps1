@@ -2,7 +2,9 @@ param(
     [string[]]$Models,
     [string]$RunId,
     [string]$OutputDir = "runs",
-    [switch]$SkipRepoTests
+    [switch]$SkipRepoTests,
+    [switch]$NoLiveProgress,
+    [switch]$NoGitHubCheckpoints
 )
 
 Set-StrictMode -Version Latest
@@ -20,6 +22,57 @@ function Fail([string]$Message) {
 function Require-Command([string]$Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         Fail "Required command '$Name' was not found."
+    }
+}
+
+function Start-HarvestObservers {
+    param(
+        [Parameter(Mandatory = $true)][string]$EvidenceRoot,
+        [Parameter(Mandatory = $true)][string]$ObserverRoot,
+        [Parameter(Mandatory = $true)][string]$StopSignal,
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [Parameter(Mandatory = $true)][string]$CodeSha,
+        [Parameter(Mandatory = $true)][string]$StartedAtUtc
+    )
+
+    New-Item -ItemType Directory -Force -Path $ObserverRoot | Out-Null
+    if (Test-Path $StopSignal) { Remove-Item $StopSignal -Force }
+
+    if (-not $NoGitHubCheckpoints) {
+        $publisher = Join-Path $RepoRoot "scripts\publish-black-magic-harvest-a.ps1"
+        if (-not (Test-Path $publisher)) { Fail "Missing Harvest A checkpoint publisher: $publisher" }
+        $publisherCommand = "& '$publisher' -RepoPath '$RepoRoot' -EvidenceRoot '$EvidenceRoot' -StagingRoot '$ObserverRoot' -RunId '$RunId' -CodeSha '$CodeSha' -StopSignal '$StopSignal' -TotalActions 1200 -PublishEveryActions 225 -PublishEverySeconds 300 -PollSeconds 15"
+        Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $publisherCommand
+        ) | Out-Null
+        Write-Host "  GitHub checkpoints: evidence/harvest-a-$RunId" -ForegroundColor DarkGray
+    }
+
+    if (-not $NoLiveProgress) {
+        $monitor = Join-Path $RepoRoot "scripts\watch-black-magic-harvest-a.ps1"
+        if (-not (Test-Path $monitor)) { Fail "Missing Harvest A progress monitor: $monitor" }
+        $monitorCommand = "& '$monitor' -EvidenceRoot '$EvidenceRoot' -RunId '$RunId' -StopSignal '$StopSignal' -TotalActions 1200 -BaseActions 900 -RefreshSeconds 2 -StartedAtUtc '$StartedAtUtc'"
+        if (Get-Command wt.exe -ErrorAction SilentlyContinue) {
+            try {
+                Start-Process wt.exe -ArgumentList @(
+                    "-w", "0", "split-pane", "-V",
+                    "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $monitorCommand
+                ) | Out-Null
+                Write-Host "  Live progress: Windows Terminal split pane" -ForegroundColor DarkGray
+            }
+            catch {
+                Start-Process powershell.exe -ArgumentList @(
+                    "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $monitorCommand
+                ) | Out-Null
+                Write-Host "  Live progress: separate PowerShell window (split-pane fallback)" -ForegroundColor DarkGray
+            }
+        }
+        else {
+            Start-Process powershell.exe -ArgumentList @(
+                "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $monitorCommand
+            ) | Out-Null
+            Write-Host "  Live progress: separate PowerShell window (Windows Terminal not found)" -ForegroundColor DarkGray
+        }
     }
 }
 
@@ -167,6 +220,10 @@ if (-not (Test-Path $Config)) { Fail "Missing $Config." }
 $LogDir = Join-Path $RepoRoot "$OutputDir\launcher-logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $LogPath = Join-Path $LogDir "$RunId.txt"
+$EvidenceRoot = Join-Path $RepoRoot "$OutputDir\black-magic\decision_harvest\$RunId"
+$ObserverRoot = Join-Path $RepoRoot "$OutputDir\observers\$RunId"
+$StopSignal = Join-Path $ObserverRoot "run-finished.signal"
+$StartedAtUtc = [DateTime]::UtcNow.ToString("o")
 
 Write-Host "`nREAL HARVEST A" -ForegroundColor Magenta
 Write-Host "  Run ID: $RunId"
@@ -175,19 +232,25 @@ Write-Host "  Base matrix: 3 models x 100 cases x 3 arms = 900"
 Write-Host "  Diagnostic reserve: up to 300"
 Write-Host "  Output dir: $OutputDir"
 Write-Host "  Launcher log: $LogPath"
-Write-Host "`nStarting foreground run. Do not close this terminal." -ForegroundColor Yellow
+Write-Host "  Evidence: $EvidenceRoot"
 
 $startRecord = [ordered]@{
     run_id = $RunId
     code_sha = $HeadSha
-    started_at = (Get-Date).ToString("o")
+    started_at = $StartedAtUtc
     model_1 = $selected[0]
     model_2 = $selected[1]
     model_3 = $selected[2]
     config = $Config
+    evidence_root = $EvidenceRoot
+    github_checkpoint_branch = if ($NoGitHubCheckpoints) { $null } else { "evidence/harvest-a-$RunId" }
 }
 ($startRecord | ConvertTo-Json) | Set-Content -Encoding UTF8 $LogPath
 
+Write-Host "`nStarting live observers ..." -ForegroundColor Cyan
+Start-HarvestObservers -EvidenceRoot $EvidenceRoot -ObserverRoot $ObserverRoot -StopSignal $StopSignal -RunId $RunId -CodeSha $HeadSha -StartedAtUtc $StartedAtUtc
+
+Write-Host "`nStarting foreground run. Keep the main terminal open." -ForegroundColor Yellow
 & $VenvPython -m inverted.black_magic.cli `
     --config $Config `
     --stage decision_harvest `
@@ -195,11 +258,14 @@ $startRecord = [ordered]@{
     --run-id $RunId 2>&1 | Tee-Object -FilePath $LogPath -Append
 $exitCode = $LASTEXITCODE
 
+New-Item -ItemType Directory -Force -Path $ObserverRoot | Out-Null
+New-Item -ItemType File -Force -Path $StopSignal | Out-Null
+Start-Sleep -Seconds 2
+
 if ($exitCode -ne 0) {
-    Fail "Harvest A exited with code $exitCode. Evidence/logs were preserved at $OutputDir and $LogPath."
+    Fail "Harvest A exited with code $exitCode. Evidence/logs were preserved at $OutputDir and $LogPath. GitHub checkpoint publisher was signaled to preserve the partial run."
 }
 
-$EvidenceRoot = Join-Path $RepoRoot "$OutputDir\black-magic\decision_harvest\$RunId"
 if (-not (Test-Path $EvidenceRoot)) {
     Fail "Runner exited successfully but expected evidence root was not found: $EvidenceRoot"
 }
@@ -219,4 +285,5 @@ Write-Host "`n=== HARVEST A COMPLETE ===" -ForegroundColor Green
 Write-Host "Evidence: $EvidenceRoot"
 Write-Host "Integrity: $($integrity.status)"
 Write-Host "External actions used: $($budget.used) / $($budget.cap)"
+if (-not $NoGitHubCheckpoints) { Write-Host "GitHub evidence branch: evidence/harvest-a-$RunId" }
 Write-Host "Code SHA: $HeadSha"
