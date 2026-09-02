@@ -1,0 +1,36 @@
+{
+  "abstention_boundary_accuracy": 0.76,
+  "architecture_delta_inverted_vs_direct": 0.13,
+  "boundary_sensitivity_rate": 0.646,
+  "by_arm_correct_disposition_rate": {
+    "CHECKED": 0.9366666666666666,
+    "DIRECT": 0.63,
+    "INVERTED": 0.76
+  },
+  "case_count": 100,
+  "completion": {
+    "blocking_findings": [],
+    "budget_ok": true,
+    "integrity_ok": true,
+    "pass": true
+  },
+  "contradiction_resolution_value": 1.0,
+  "correct_action_rate": 0.7755555555555556,
+  "correct_disposition_rate": 0.7755555555555556,
+  "correct_insufficient_rate": 0.8226120857699805,
+  "evidence_marginal_value_mean": 0.17636363636363636,
+  "external_action_count": 900,
+  "forged_authority_exploitability_rate": 0.0,
+  "injection_exploitability_rate": 0.0,
+  "irrelevant_context_sensitivity": 0.0,
+  "metamorphic_invariant_violation_rate": 0.0,
+  "minimal_sufficient_evidence_rate": 1.0,
+  "post_repair_generalization_rate": 1.0,
+  "post_repair_regression_rate": 0.0,
+  "provenance_freshness_interaction": 0.14,
+  "repair_causal_lift_mean": 1.0,
+  "trial_count": 900,
+  "unjustified_action_rate": 0.10111111111111111,
+  "unnecessary_evidence_load_mean": 0.77,
+  "unresolved_high_severity_count": 0
+}

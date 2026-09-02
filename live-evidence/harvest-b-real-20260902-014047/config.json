@@ -1,0 +1,22 @@
+{
+  "black_magic": {
+    "capture_content": true,
+    "epistemic_harvest": {
+      "action_cap": 1200,
+      "arms": [
+        "DIRECT",
+        "CHECKED",
+        "INVERTED"
+      ],
+      "case_count": 100,
+      "diagnostic_reserve": 300
+    },
+    "seed": 20260901
+  },
+  "effective_arms": [
+    "DIRECT",
+    "CHECKED",
+    "INVERTED"
+  ],
+  "effective_case_count": 100
+}

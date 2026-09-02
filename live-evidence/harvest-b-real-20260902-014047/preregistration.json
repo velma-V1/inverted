@@ -1,0 +1,10 @@
+{
+  "configured_external_action_cap": 1200,
+  "diagnostic_reserve": 300,
+  "experiment": "epistemic_harvest",
+  "hard_external_action_cap": 1200,
+  "hidden_oracle_model_visible": false,
+  "planned_max_external_actions": 1200,
+  "seed": 20260901,
+  "status": "REAL-MODEL EVIDENCE HARVEST"
+}
