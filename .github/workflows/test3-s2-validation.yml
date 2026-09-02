@@ -66,6 +66,9 @@ jobs:
               collision_rows = list(csv.DictReader(handle))
 
           assert set(REQUIRED_S2_FILES).issubset({path.name for path in p.iterdir()}), sorted(path.name for path in p.iterdir())
+          # Keep explicit legacy evidence assertions so older workflow-contract tests remain meaningful.
+          assert (p / "stochastic_divergence.csv").is_file()
+          assert (p / "routing_decisions.csv").is_file()
           assert master["protocol_revision"] == "S2-R1", master
           assert master["holdout"] == "B-R1", master
           assert master["evidence_status"] == "COMPLETE", master
