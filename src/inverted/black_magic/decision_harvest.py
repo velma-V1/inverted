@@ -174,7 +174,7 @@ def derive_system_candidate(public: dict[str, Any]) -> dict[str, Any]:
     candidates = []
     for action in public.get("actions") or []:
         if (
-            action.get("operation") == "set"
+            action.get("operation", "set") == "set"
             and action.get("path") == required_path
             and action.get("value") == required_value
             and not bool(action.get("touches_protected"))
