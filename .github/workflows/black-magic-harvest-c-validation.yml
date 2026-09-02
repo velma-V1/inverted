@@ -1,0 +1,58 @@
+name: black-magic-harvest-c-validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  whole-harvest-c:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Run full repository tests
+        run: python -m pytest -q
+      - name: Run whole Action Mechanics Harvest smoke
+        run: >-
+          python -m inverted.black_magic.action_cli
+          --config configs/black-magic-harvest-c-smoke.yaml
+          --output-dir black-magic-ci
+          --run-id ci-harvest-c
+      - name: Verify Harvest C evidence and completion gate
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          root = Path("black-magic-ci/black-magic/action_harvest/ci-harvest-c")
+          integrity = json.loads((root / "integrity.json").read_text(encoding="utf-8"))
+          metrics = json.loads((root / "metrics.json").read_text(encoding="utf-8"))
+          budget = json.loads((root / "budget.json").read_text(encoding="utf-8"))
+          prereg = json.loads((root / "preregistration.json").read_text(encoding="utf-8"))
+          assert integrity["status"] == "OK", integrity
+          assert integrity["call_prompt_response_external_parity"] is True
+          assert budget["used"] == 48, budget
+          assert prereg["status"] == "INSTRUMENT VALIDATION — NOT ARCHITECTURE EVIDENCE"
+          assert metrics["completion"]["pass"] is True
+          assert metrics["unresolved_high_severity_count"] == 0
+          assert metrics["preventable_damage"] > 0
+          assert metrics["repair_causal_lift_mean"] > 0
+          assert (root / "interventions.jsonl").stat().st_size > 0
+          assert (root / "shams.jsonl").stat().st_size > 0
+          assert (root / "coverage.jsonl").stat().st_size > 0
+          assert (root / "COMPLETE-EVIDENCE.txt").stat().st_size > 0
+          assert (root / "SHA256SUMS.csv").stat().st_size > 0
+      - name: Prove cap-plus-one planning refusal
+        shell: python
+        run: |
+          from inverted.black_magic.action_harvest import planned_action_harvest_actions
+          assert planned_action_harvest_actions(3, 100, 3, 300) == 1200
+          assert planned_action_harvest_actions(3, 101, 3, 300) == 1209
+      - uses: actions/upload-artifact@v4
+        with:
+          name: black-magic-harvest-c-instrument-evidence
+          path: black-magic-ci/black-magic/action_harvest/ci-harvest-c
+          if-no-files-found: error

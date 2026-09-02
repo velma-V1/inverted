@@ -1,0 +1,14 @@
+black_magic:
+  capture_content: true
+  seed: 20260901
+  action_harvest:
+    action_cap: 1200
+    case_count: 16
+    diagnostic_reserve: 0
+    arms: [DIRECT, CHECKED, INVERTED]
+models:
+  - provider: mock
+    model: black-magic-action-mock
+    seed: 20260901
+    executor_accuracy: 0.80
+    auditor_accuracy: 0.94
