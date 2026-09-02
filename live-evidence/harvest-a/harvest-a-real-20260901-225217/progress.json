@@ -1,0 +1,19 @@
+﻿{
+    "run_id":  "harvest-a-real-20260901-225217",
+    "experiment":  "decision_harvest",
+    "branch":  "evidence/harvest-a-harvest-a-real-20260901-225217",
+    "code_sha":  "f10ac653d23c4e76d56d342e8bc6568ae49f40fe",
+    "external_actions_completed":  1,
+    "total_action_ceiling":  1200,
+    "percent_of_ceiling":  0.0833,
+    "checkpoint_policy":  {
+                              "publish_every_actions":  225,
+                              "publish_every_seconds":  300
+                          },
+    "final_signal_seen":  false,
+    "final_verified":  false,
+    "integrity_status":  null,
+    "sha256_manifest_hash":  null,
+    "source_evidence_root":  "[REDACTED_USER_PROFILE]\\inverted\\runs\\black-magic\\decision_harvest\\harvest-a-real-20260901-225217",
+    "updated_utc":  "2026-09-02T02:52:19.2747760Z"
+}
