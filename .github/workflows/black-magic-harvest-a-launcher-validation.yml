@@ -16,10 +16,14 @@ jobs:
             'run-harvest-a.ps1',
             'scripts/test-black-magic-harvest-a-publisher.ps1',
             'scripts/test-black-magic-harvest-a-monitor.ps1',
+            'scripts/test-black-magic-harvest-a-native-stderr.ps1',
             'scripts/watch-black-magic-harvest-a.ps1'
           )
           if (Test-Path 'scripts/publish-black-magic-harvest-a.ps1') {
             $files += 'scripts/publish-black-magic-harvest-a.ps1'
+          }
+          if (Test-Path 'scripts/invoke-black-magic-native.ps1') {
+            $files += 'scripts/invoke-black-magic-native.ps1'
           }
           foreach ($file in $files) {
             Write-Host "PARSING: $file"
@@ -33,6 +37,9 @@ jobs:
               throw "PowerShell parse failed: $file"
             }
           }
+      - name: Reproduce and prevent native stderr abort
+        shell: powershell
+        run: .\scripts\test-black-magic-harvest-a-native-stderr.ps1
       - name: Prove isolated remote checkpoint publisher
         shell: powershell
         run: .\scripts\test-black-magic-harvest-a-publisher.ps1
