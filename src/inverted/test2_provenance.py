@@ -23,7 +23,9 @@ def collect_ollama_provenance(
     """Capture Ollama/model identity without performing inference.
 
     Only /api/version, /api/tags, /api/show, and /api/ps are queried. No
-    /api/chat or /api/generate request is issued.
+    /api/chat or /api/generate request is issued. The complete returned JSON
+    payloads are retained alongside normalized fields and hashes so later
+    forensic analysis is not limited to fields known at collection time.
     """
     base = base_url.rstrip("/")
     client = httpx.Client(transport=transport, timeout=timeout_s)
@@ -42,10 +44,12 @@ def collect_ollama_provenance(
 
         tag_rows = {str(row.get("name") or row.get("model")): row for row in (tags_payload.get("models") or [])}
         model_rows: dict[str, Any] = {}
+        show_payloads: dict[str, Any] = {}
         for model in models:
             show_response = client.post(f"{base}/api/show", json={"model": model})
             show_response.raise_for_status()
             show_payload = show_response.json()
+            show_payloads[model] = show_payload
             tag = tag_rows.get(model, {})
             model_rows[model] = {
                 "requested_name": model,
@@ -72,6 +76,12 @@ def collect_ollama_provenance(
             "loaded_models": ps_payload.get("models") or [],
             "loaded_models_payload_sha256": _canonical_sha256(ps_payload),
             "models": model_rows,
+            "raw_payloads": {
+                "version": version_payload,
+                "tags": tags_payload,
+                "ps": ps_payload,
+                "show": show_payloads,
+            },
             "zero_inference_endpoints": ["/api/version", "/api/tags", "/api/show", "/api/ps"],
         }
     finally:
