@@ -17,6 +17,7 @@ dist/
 # Local experiment / CI outputs
 runs/
 ci-runs/
+test3-s2-results/
 
 # Local environment files
 .env
