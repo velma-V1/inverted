@@ -18,6 +18,14 @@ REQUIRED_S2_FILES = (
     "model_calls.jsonl",
     "events.jsonl",
     "routing_state_snapshots.jsonl",
+    "forensic_journal.jsonl",
+    "raw_model_transactions.jsonl",
+    "parse_and_composition_failures.jsonl",
+    "external_action_ledger.jsonl",
+    "environment_provenance.json",
+    "abort_state.json",
+    "router_observability_summary.json",
+    "journal_integrity.json",
     "holdout_manifest.csv",
     "trials.csv",
     "validator_results.csv",
@@ -35,6 +43,7 @@ REQUIRED_S2_FILES = (
     "shadow_counterfactuals.csv",
     "regret_to_oracle.csv",
     "fault_mode_effects.csv",
+    "router_observability_collisions.csv",
     "prompt_fingerprints.csv",
     "stochastic_divergence.csv",
     "action_budget.csv",
@@ -210,13 +219,28 @@ def _action_budget_rows(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def _master_index(data: dict[str, Any]) -> dict[str, Any]:
+def _partial_verdict(data: dict[str, Any]) -> dict[str, Any]:
+    original = dict(data.get("verdict") or {})
+    return {
+        **original,
+        "verdict": "S2_ABORTED_PARTIAL_EVIDENCE",
+        "reason": "S2 execution did not complete. The largest durable evidence prefix was retained; primary and architecture claims are withheld.",
+        "winning_arm_id": None,
+        "protocol_valid_for_primary_claim": False,
+        "tier_a_architecture_claim": False,
+        "protocol_revision": data.get("protocol_revision") or original.get("protocol_revision") or "S2-R1",
+        "holdout": data.get("holdout") or original.get("holdout") or "B-R1",
+    }
+
+
+def _master_index(data: dict[str, Any], *, partial: bool = False) -> dict[str, Any]:
     calls = list(data.get("model_calls") or [])
     trials = list(data.get("trials") or [])
     verdict = dict(data.get("verdict") or {})
     provenance = dict(data.get("provenance") or {})
     prereg = dict(data.get("preregistration") or {})
     action_budget = dict(data.get("action_budget") or {})
+    observability = dict(data.get("router_observability_summary") or {})
     matched = verdict.get("matched_case_count") or data.get("matched_case_count")
     if matched is None:
         matched = len({str(row.get("task_id")) for row in trials if row.get("task_id")})
@@ -224,14 +248,15 @@ def _master_index(data: dict[str, Any]) -> dict[str, Any]:
         "experiment": "test3-section2-adaptive-routing",
         "section": "S2",
         "mode": "tier-a" if data.get("real_model_inference") else "mock-validation",
+        "evidence_status": "PARTIAL_ABORTED" if partial else "COMPLETE",
         "run_id": provenance.get("run_id") or data.get("run_id"),
-        "protocol_revision": verdict.get("protocol_revision") or provenance.get("protocol_revision") or prereg.get("protocol_revision"),
-        "holdout": verdict.get("holdout") or provenance.get("execution_holdout") or prereg.get("holdout"),
-        "protocol_valid_for_primary_claim": bool(verdict.get("protocol_valid_for_primary_claim", False)),
+        "protocol_revision": verdict.get("protocol_revision") or provenance.get("protocol_revision") or prereg.get("protocol_revision") or data.get("protocol_revision"),
+        "holdout": verdict.get("holdout") or provenance.get("execution_holdout") or prereg.get("holdout") or data.get("holdout"),
+        "protocol_valid_for_primary_claim": False if partial else bool(verdict.get("protocol_valid_for_primary_claim", False)),
         "physical_model_calls": int(data.get("physical_model_calls") or len(calls)),
         "combined_external_actions": int(action_budget.get("combined_used") or 0),
         "combined_action_limit": int(action_budget.get("limit") or 0),
-        "architecture_claims_authorized": bool(verdict.get("tier_a_architecture_claim", False)),
+        "architecture_claims_authorized": False if partial else bool(verdict.get("tier_a_architecture_claim", False)),
         "verdict": verdict.get("verdict"),
         "trial_rows": len(trials),
         "matched_case_count": int(matched or 0),
@@ -244,6 +269,14 @@ def _master_index(data: dict[str, Any]) -> dict[str, Any]:
         "edge_case_count": len(data.get("edge_cases") or []),
         "instrumentation_anomaly_count": len(data.get("instrumentation_anomalies") or []),
         "protocol_failure_count": len(data.get("protocol_failures") or []),
+        "router_observation_group_count": int(observability.get("observation_group_count") or 0),
+        "router_observability_collision_count": int(observability.get("collision_count") or 0),
+        "router_observability_collision_rate": float(observability.get("collision_rate") or 0.0),
+        "router_observability_ambiguous_case_count": int(observability.get("ambiguous_case_count") or 0),
+        "router_observability_ambiguous_case_rate": float(observability.get("ambiguous_case_rate") or 0.0),
+        "router_observability_largest_collision_group_size": int(observability.get("largest_collision_group_size") or 0),
+        "router_b2_to_b3_collisions_resolved": int(observability.get("b2_to_b3_collisions_resolved") or 0),
+        "router_b3_collisions_remaining": int(observability.get("b3_collisions_remaining") or 0),
     }
 
 
@@ -252,8 +285,10 @@ class Test3S2ArtifactWriter:
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
 
-    def write_all(self, evidence: dict[str, Any]) -> dict[str, str]:
+    def write_all(self, evidence: dict[str, Any], *, partial: bool = False) -> dict[str, str]:
         data = dict(evidence)
+        if partial:
+            data["verdict"] = _partial_verdict(data)
         trials = [dict(row) for row in (data.get("trials") or [])]
         model_calls = [dict(row) for row in (data.get("model_calls") or [])]
         data.setdefault("protocol_failures", [])
@@ -281,6 +316,15 @@ class Test3S2ArtifactWriter:
         data.setdefault("action_budget", {})
         data.setdefault("edge_cases", [])
         data.setdefault("instrumentation_anomalies", [])
+        data.setdefault("raw_model_transactions", [])
+        data.setdefault("parse_and_composition_failures", [])
+        data.setdefault("external_action_ledger", [])
+        data.setdefault("environment_provenance", {})
+        data.setdefault("abort_state", {})
+        data.setdefault("router_observability_collisions", [])
+        data.setdefault("router_observability_summary", {})
+        data.setdefault("journal_integrity", {})
+        data.setdefault("forensic_journal_records", [])
         data.setdefault("failures", [row for row in trials if row.get("success") is False])
         data.setdefault("wins", [row for row in trials if row.get("success") is True])
         data.setdefault("losses", [row for row in trials if row.get("success") is False])
@@ -300,7 +344,7 @@ class Test3S2ArtifactWriter:
         data.setdefault("shadow_counterfactuals", _shadow_rows(model_calls))
         data.setdefault("action_budget_rows", _action_budget_rows(dict(data.get("action_budget") or {})))
         data.setdefault("report", "VELMA TEST 3 — SECTION 2 S2-R1 ADAPTIVE ROUTING\nNo report text supplied.\n")
-        data.setdefault("master_index", _master_index(data))
+        data["master_index"] = _master_index(data, partial=partial)
 
         json_files = {
             "00-MASTER-INDEX.json": data["master_index"],
@@ -310,11 +354,18 @@ class Test3S2ArtifactWriter:
             "router_policy_snapshot.json": data["router_policy_snapshot"],
             "protocol_failures.json": data["protocol_failures"],
             "verdict.json": data.get("verdict", {}),
+            "environment_provenance.json": data["environment_provenance"],
+            "abort_state.json": data["abort_state"],
+            "router_observability_summary.json": data["router_observability_summary"],
+            "journal_integrity.json": data["journal_integrity"],
         }
         jsonl_files = {
             "model_calls.jsonl": model_calls,
             "events.jsonl": data["events"],
             "routing_state_snapshots.jsonl": data["routing_state_snapshots"],
+            "raw_model_transactions.jsonl": data["raw_model_transactions"],
+            "parse_and_composition_failures.jsonl": data["parse_and_composition_failures"],
+            "external_action_ledger.jsonl": data["external_action_ledger"],
         }
         csv_files = {
             "holdout_manifest.csv": data["holdout_manifest"],
@@ -334,6 +385,7 @@ class Test3S2ArtifactWriter:
             "shadow_counterfactuals.csv": data["shadow_counterfactuals"],
             "regret_to_oracle.csv": data["regret_to_oracle"],
             "fault_mode_effects.csv": data["fault_mode_effects"],
+            "router_observability_collisions.csv": data["router_observability_collisions"],
             "prompt_fingerprints.csv": data["prompt_fingerprints"],
             "stochastic_divergence.csv": data["stochastic_divergence"],
             "action_budget.csv": data["action_budget_rows"],
@@ -364,14 +416,23 @@ class Test3S2ArtifactWriter:
             _write_csv(path, rows)
             written.append(path)
 
+        journal_path = self.run_dir / "forensic_journal.jsonl"
+        if not journal_path.exists():
+            _write_jsonl(journal_path, data["forensic_journal_records"])
+        written.append(journal_path)
+
         report = self.run_dir / "report.txt"
         report.write_text(str(data["report"]), encoding="utf-8")
         written.append(report)
 
         complete = self.run_dir / "COMPLETE-EVIDENCE.txt"
         with complete.open("w", encoding="utf-8", newline="\n") as handle:
-            handle.write("VELMA TEST 3 — SECTION 2 S2-R1 COMPLETE EVIDENCE\n")
+            if partial:
+                handle.write("VELMA TEST 3 — SECTION 2 S2-R1 PARTIAL/ABORTED EVIDENCE\n")
+            else:
+                handle.write("VELMA TEST 3 — SECTION 2 S2-R1 COMPLETE EVIDENCE\n")
             handle.write("====================================================\n")
+            handle.write(f"EVIDENCE STATUS: {data['master_index'].get('evidence_status')}\n")
             handle.write(f"PROTOCOL: {data['master_index'].get('protocol_revision')}\n")
             handle.write(f"HOLDOUT: {data['master_index'].get('holdout')}\n")
             handle.write(f"PHYSICAL MODEL CALLS: {data['master_index'].get('physical_model_calls', 0)}\n")
