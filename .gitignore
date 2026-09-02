@@ -1,0 +1,29 @@
+# Local Python environments
+.venv/
+venv/
+
+# Python caches / build metadata
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local experiment / CI outputs
+runs/
+ci-runs/
+
+# Local environment files
+.env
+.env.*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
