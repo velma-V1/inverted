@@ -43,7 +43,7 @@ if ($waitPos -lt 0 -or $switchPos -lt 0 -or $switchPos -lt $waitPos) {
 }
 
 $ignoreText = Get-Content $GitIgnore -Raw
-if ($ignoreText -notmatch '(?m)^test3-s2-results/$') {
+if ($ignoreText -notmatch '(?m)^test3-s2-results/\r?$') {
     throw ".gitignore must ignore S2 evidence after handoff"
 }
 
