@@ -1,0 +1,135 @@
+{
+  "artifact_count": 26,
+  "artifacts": [
+    {
+      "bytes": 178678,
+      "path": "actions.jsonl",
+      "sha256": "a0790aeae004e17f3e6109a8fce681df30c73e86d416880befa90f3657a9e7c9"
+    },
+    {
+      "bytes": 1723,
+      "path": "anomalies.jsonl",
+      "sha256": "781d293d7f2404cc0549833ed4ad73423da2895a9b29712b1a657c75dfeb0b36"
+    },
+    {
+      "bytes": 237391,
+      "path": "budget.json",
+      "sha256": "f06bc290a47ca38500d69096c68bf2411de0a844aa742419eda9564ad9a6a13e"
+    },
+    {
+      "bytes": 398,
+      "path": "config.json",
+      "sha256": "0aef78ef1b40efc729c0465b737f7f5d01a721cc8d8b59b66cc6c6705c156a80"
+    },
+    {
+      "bytes": 1087,
+      "path": "coverage.jsonl",
+      "sha256": "77affaea924457ad0bd573994a2542111565ac27a919ed187f0cce1225db86fa"
+    },
+    {
+      "bytes": 182872,
+      "path": "decisions.jsonl",
+      "sha256": "d2a0e8094aa560d7507dd1bfc65e5fc21b1349c90d5561b0ffb73c34aace0746"
+    },
+    {
+      "bytes": 153633,
+      "path": "error_lifecycle.jsonl",
+      "sha256": "3a43e22c3176c2ec7331b1659d040702ce2de3b9663872b6d5deef4c5f92706c"
+    },
+    {
+      "bytes": 351,
+      "path": "events.jsonl",
+      "sha256": "6c8dcf2ce9ebf80a24399d7b0d2007b8b965b90e208006c5b7db0b7893514233"
+    },
+    {
+      "bytes": 152460,
+      "path": "external_actions.jsonl",
+      "sha256": "8717b6cca13e98cc21bc9501ed17b21aefd3cf282f5a96b89f2ad66f5e5f9e95"
+    },
+    {
+      "bytes": 121621,
+      "path": "findings.jsonl",
+      "sha256": "317f4ac2ff1588b4ac250636b13250e6a7ba45bdaff7157528073d4f1f8cc0a7"
+    },
+    {
+      "bytes": 940,
+      "path": "integrity.json",
+      "sha256": "358220ad5762630cb0d39b9db4dbbca1c27acfa475fe059ae2670a7df8f72ac1"
+    },
+    {
+      "bytes": 75516,
+      "path": "interventions.jsonl",
+      "sha256": "100de27b9c5d094e442616dea9b80c5bf614a8668a8c8787843d12fd35b6152f"
+    },
+    {
+      "bytes": 19500,
+      "path": "metamorphic_pairs.jsonl",
+      "sha256": "3e14c27be04eea33080bef72c502575c2f56a63fb9e575351a483885ef03aa39"
+    },
+    {
+      "bytes": 899,
+      "path": "metrics.json",
+      "sha256": "9c5971af4c7156b023f26edc5cf75d2f2be2bd0b6da0d005d2566b78504aa483"
+    },
+    {
+      "bytes": 3899785,
+      "path": "model_calls.jsonl",
+      "sha256": "a4698a00830f97cd2d9771e0d8723bd67340eaeb7238ec93941b1c1a84bc28a4"
+    },
+    {
+      "bytes": 226872,
+      "path": "oracle_results.jsonl",
+      "sha256": "add8bda3ca2901f6f3c6d4de4e60f53fbfd488331d0dd2f03043aba8aa1de53c"
+    },
+    {
+      "bytes": 450,
+      "path": "preregistration.json",
+      "sha256": "6c6eae0442227cdb4e0915eba8abc6f1992cca14bfc5b7dcf67769eefd224a5a"
+    },
+    {
+      "bytes": 1734926,
+      "path": "prompts.jsonl",
+      "sha256": "41876388f904663808c60ae98db96cba80a3dd6bbcf7dd0890135c1e8edc0235"
+    },
+    {
+      "bytes": 1461,
+      "path": "provenance.json",
+      "sha256": "94208d311890b0d3892665c72483a3034523ec98b00277125697b7a8a3d9840a"
+    },
+    {
+      "bytes": 1237712,
+      "path": "responses.jsonl",
+      "sha256": "37b6c7e6bb5d7a11dd955341a81bbaf26a276101a379f1e745f009416753c53c"
+    },
+    {
+      "bytes": 82858,
+      "path": "shams.jsonl",
+      "sha256": "83ef0ad5ad1e8e1b8be32c4fb5821553ece1555a920d8e555966a8f4c5e95a93"
+    },
+    {
+      "bytes": 248200,
+      "path": "state_snapshots.jsonl",
+      "sha256": "f9b5912d89121f9899b7acd27ec185fd754a7be0c88b6eecf5fc347aeff98b0b"
+    },
+    {
+      "bytes": 111130,
+      "path": "tasks.jsonl",
+      "sha256": "ea703a77d70596fb5f95321ec5ffc222d52f0dfe0d5cf700ea349a54dfc2d025"
+    },
+    {
+      "bytes": 139300,
+      "path": "tool_results.jsonl",
+      "sha256": "b7201403501dfac95852ba0c5e16a1edddd74c1114c38d087edcfbfbe289dad4"
+    },
+    {
+      "bytes": 191500,
+      "path": "transitions.jsonl",
+      "sha256": "8bd418fb5dfc3608263d8422fb70f9445f055f35b58e3f52ad912a50dfc755b3"
+    },
+    {
+      "bytes": 406584,
+      "path": "trials.jsonl",
+      "sha256": "f9793260aec68ea017d43163916a972b0f4c6700820d7dd30c5a778fa6063d18"
+    }
+  ]
+}

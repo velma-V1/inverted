@@ -1,0 +1,2 @@
+{"configured_cap": 1200, "event_type": "run_started", "experiment": "decision_harvest", "planned_external_actions": 1200, "run_id": "harvest-a-real-20260902-003040", "sequence": 1}
+{"event_type": "run_completed", "experiment": "decision_harvest", "findings": 267, "run_id": "harvest-a-real-20260902-003040", "sequence": 2, "trials": 900, "used": 912}

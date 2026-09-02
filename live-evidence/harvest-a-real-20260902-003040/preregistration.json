@@ -1,0 +1,17 @@
+{
+  "arms": [
+    "DIRECT",
+    "CHECKED",
+    "INVERTED"
+  ],
+  "configured_external_action_cap": 1200,
+  "deterministic_oracle_is_authority": true,
+  "diagnostic_reserve": 300,
+  "experiment": "decision_harvest",
+  "hard_external_action_cap": 1200,
+  "hidden_oracle_model_visible": false,
+  "llm_judge_is_ground_truth": false,
+  "planned_max_external_actions": 1200,
+  "seed": 20260901,
+  "status": "REAL-MODEL EVIDENCE HARVEST"
+}

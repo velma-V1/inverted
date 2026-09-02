@@ -1,0 +1,30 @@
+{
+  "architecture_delta_inverted_vs_direct": -0.66,
+  "auditor_override_value": -20,
+  "by_arm_correct_action_rate": {
+    "CHECKED": 0.9233333333333333,
+    "DIRECT": 0.9233333333333333,
+    "INVERTED": 0.2633333333333333
+  },
+  "case_count": 100,
+  "completion": {
+    "blocking_findings": [],
+    "budget_ok": true,
+    "integrity_ok": true,
+    "pass": true
+  },
+  "correct_action_rate": 0.7033333333333334,
+  "error_propagation_depth_mean": 1.0,
+  "external_action_count": 912,
+  "externalized_correction_probe_count": 12,
+  "first_divergence_count": 267,
+  "first_unrecovered_divergence_count": 267,
+  "local_global_conflict_count": 45,
+  "recovery_opportunity_count": 267,
+  "recovery_success_count": 267,
+  "repair_causal_lift_mean": 1.0,
+  "sham_replay_count": 267,
+  "targeted_replay_count": 267,
+  "trial_count": 900,
+  "unresolved_high_severity_count": 0
+}
