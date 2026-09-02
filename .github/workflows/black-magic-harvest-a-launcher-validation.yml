@@ -9,7 +9,7 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
-      - name: Parse Harvest A launcher, monitor, and publisher scripts
+      - name: Parse Harvest A launcher, monitor, publisher, and chain scripts
         shell: powershell
         run: |
           $files = @(
@@ -18,6 +18,7 @@ jobs:
             'scripts/test-black-magic-harvest-a-publisher.ps1',
             'scripts/test-black-magic-harvest-a-monitor.ps1',
             'scripts/test-black-magic-harvest-a-native-stderr.ps1',
+            'scripts/test-black-magic-chain-gates.ps1',
             'scripts/watch-black-magic-harvest-a.ps1'
           )
           if (Test-Path 'scripts/publish-black-magic-harvest-a.ps1') {
@@ -25,6 +26,12 @@ jobs:
           }
           if (Test-Path 'scripts/invoke-black-magic-native.ps1') {
             $files += 'scripts/invoke-black-magic-native.ps1'
+          }
+          if (Test-Path 'scripts/black-magic-chain-gates.ps1') {
+            $files += 'scripts/black-magic-chain-gates.ps1'
+          }
+          if (Test-Path 'scripts/watch-s2-then-harvest.ps1') {
+            $files += 'scripts/watch-s2-then-harvest.ps1'
           }
           foreach ($file in $files) {
             Write-Host "PARSING: $file"
@@ -41,6 +48,9 @@ jobs:
       - name: Prove launcher CLI and publisher contract
         shell: powershell
         run: .\scripts\test-black-magic-harvest-a-launcher-contract.ps1
+      - name: Prove fail-closed S2 and Harvest chain gates
+        shell: powershell
+        run: .\scripts\test-black-magic-chain-gates.ps1
       - name: Reproduce and prevent native stderr abort
         shell: powershell
         run: .\scripts\test-black-magic-harvest-a-native-stderr.ps1
