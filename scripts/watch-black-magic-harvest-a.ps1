@@ -97,7 +97,7 @@ while ($true) {
     }
 
     Clear-Host
-    Write-Host "INVERTED — HARVEST A LIVE" -ForegroundColor Cyan
+    Write-Host "INVERTED - HARVEST A LIVE" -ForegroundColor Cyan
     Write-Host "Run: $RunId" -ForegroundColor DarkGray
     Write-Host "Phase: $phase" -ForegroundColor Yellow
     Write-Host ""
