@@ -19,6 +19,7 @@ jobs:
             'scripts/test-black-magic-harvest-a-monitor.ps1',
             'scripts/test-black-magic-harvest-a-native-stderr.ps1',
             'scripts/test-black-magic-chain-gates.ps1',
+            'scripts/test-black-magic-chain-contract.ps1',
             'scripts/watch-black-magic-harvest-a.ps1'
           )
           if (Test-Path 'scripts/publish-black-magic-harvest-a.ps1') {
@@ -51,6 +52,9 @@ jobs:
       - name: Prove fail-closed S2 and Harvest chain gates
         shell: powershell
         run: .\scripts\test-black-magic-chain-gates.ps1
+      - name: Prove S2 to Harvest A to B orchestration contract
+        shell: powershell
+        run: .\scripts\test-black-magic-chain-contract.ps1
       - name: Reproduce and prevent native stderr abort
         shell: powershell
         run: .\scripts\test-black-magic-harvest-a-native-stderr.ps1
