@@ -18,6 +18,15 @@ if ($cliText -match 'add_argument\("--real"') {
     throw "test assumption changed: CLI now defines --real; review launcher contract"
 }
 
+$publisherMatch = [regex]::Match(
+    $launcherText,
+    '(?s)\$publisherArgs\s*=\s*@\((.*?)\)\s*\r?\n\$PublisherProcess'
+)
+if (-not $publisherMatch.Success) {
+    throw "could not isolate launcher publisherArgs block"
+}
+$publisherArgsText = $publisherMatch.Groups[1].Value
+
 $requiredPublisherArgs = @(
     '-RepoPath',
     '-EvidenceRoot',
@@ -27,8 +36,8 @@ $requiredPublisherArgs = @(
     '-StopSignal'
 )
 foreach ($arg in $requiredPublisherArgs) {
-    if ($launcherText -notmatch [regex]::Escape('"' + $arg + '"')) {
-        throw "launcher is missing publisher argument $arg"
+    if ($publisherArgsText -notmatch [regex]::Escape('"' + $arg + '"')) {
+        throw "launcher publisherArgs is missing $arg"
     }
     if ($publisherText -notmatch [regex]::Escape($arg.TrimStart('-'))) {
         throw "publisher does not expose expected parameter $arg"
@@ -37,8 +46,8 @@ foreach ($arg in $requiredPublisherArgs) {
 
 $obsoletePublisherArgs = @('-SourceDir', '-SourceSha', '-StopFile', '-ObserverRoot')
 foreach ($arg in $obsoletePublisherArgs) {
-    if ($launcherText -match [regex]::Escape('"' + $arg + '"')) {
-        throw "launcher still uses obsolete publisher argument $arg"
+    if ($publisherArgsText -match [regex]::Escape('"' + $arg + '"')) {
+        throw "launcher publisherArgs still uses obsolete argument $arg"
     }
 }
 
