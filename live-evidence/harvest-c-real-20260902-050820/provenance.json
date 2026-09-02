@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-09-02T15:11:05.477291+00:00",
+  "git_sha": "2dd2fc5131d9a960815d19df534276fb6bfc1fff",
+  "instrument_validation": false,
+  "models": [
+    {
+      "model": "ministral-3:3b-instruct-2512-q8_0",
+      "provider": "ollama"
+    },
+    {
+      "model": "qwen3.5:9b-q8_0",
+      "provider": "ollama"
+    },
+    {
+      "model": "devstral-small-2:24b",
+      "provider": "ollama"
+    }
+  ],
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python_version": "3.14.6 (tags/v3.14.6:c63aec6, Jun 10 2026, 10:26:10) [MSC v.1944 64 bit (AMD64)]"
+}
