@@ -1,14 +1,13 @@
 import json
 from datetime import datetime, timezone
 
-from inverted.models import CompletionResult, MockModelAdapter
+from inverted.models import CompletionResult
 from inverted.oracle import evaluate_task
 from inverted.telemetry import ModelCallRecord
-from inverted.test2_local import BoundedModelCaller
 from inverted.test2_types import PhysicalCallBudget
 from inverted.test3_s2_cases import build_holdout_b, build_seed_failure_s2
 from inverted.test3_s2_forensics import S2ForensicJournal
-from inverted.test3_s2_runtime import decode_s2_candidate_response, decode_s2_repair_response
+from inverted.test3_s2_runtime import S2BoundedModelCaller, decode_s2_candidate_response, decode_s2_repair_response
 
 
 class _RawAdapter:
@@ -77,8 +76,8 @@ def test_s2_forensic_journal_flushes_each_record_and_verifies_hash_chain(tmp_pat
     assert tampered["first_invalid_sequence"] == 1
 
 
-def test_bounded_completion_retains_complete_raw_provider_payload():
-    caller = BoundedModelCaller(PhysicalCallBudget(max_calls=1))
+def test_s2_bounded_completion_retains_complete_raw_provider_payload():
+    caller = S2BoundedModelCaller(PhysicalCallBudget(max_calls=1))
     completion = caller.complete(
         _RawAdapter(),
         [{"role": "user", "content": "test"}],
