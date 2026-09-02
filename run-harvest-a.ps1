@@ -146,9 +146,9 @@ foreach ($model in $Models) {
 Write-Host "Selected models:" -ForegroundColor Green
 $Models | ForEach-Object { Write-Host "  $_" }
 
-$env:INVERTED_OLLAMA_MODEL_1 = $Models[0]
-$env:INVERTED_OLLAMA_MODEL_2 = $Models[1]
-$env:INVERTED_OLLAMA_MODEL_3 = $Models[2]
+$env:INVERTED_MODEL_1 = $Models[0]
+$env:INVERTED_MODEL_2 = $Models[1]
+$env:INVERTED_MODEL_3 = $Models[2]
 
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $RunId = "harvest-a-real-$Timestamp"
@@ -170,11 +170,12 @@ $publisherArgs = @(
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
     "-File", $Publisher,
-    "-SourceDir", $RunDir,
+    "-RepoPath", $RepoRoot,
+    "-EvidenceRoot", $RunDir,
+    "-StagingRoot", $ObserverRoot,
     "-RunId", $RunId,
-    "-SourceSha", $HeadSha,
-    "-StopFile", $StopFile,
-    "-ObserverRoot", $ObserverRoot
+    "-CodeSha", $HeadSha,
+    "-StopSignal", $StopFile
 )
 $PublisherProcess = Start-Process -FilePath "powershell.exe" -ArgumentList $publisherArgs -PassThru -WindowStyle Hidden
 
@@ -215,8 +216,7 @@ $cliArgs = @(
     "-m", "inverted.black_magic.cli",
     "--config", $Config,
     "--output-dir", $OutputDir,
-    "--run-id", $RunId,
-    "--real"
+    "--run-id", $RunId
 )
 
 $exitCode = 1
