@@ -215,3 +215,64 @@ def test_real_cli_preflight_failure_writes_abort_packet_and_action_ledger(tmp_pa
     verdict = json.loads((output / "verdict.json").read_text(encoding="utf-8"))
     assert verdict["protocol_valid_for_primary_claim"] is False
     assert verdict["tier_a_architecture_claim"] is False
+
+
+def test_real_cli_postrun_provenance_failure_preserves_720_calls_and_withholds_claims(tmp_path, monkeypatch):
+    import inverted.test3_s2_cli as cli
+
+    snapshot_count = 0
+
+    def fake_snapshot(base_url, model_names, action_budget, **kwargs):
+        nonlocal snapshot_count
+        ledger = kwargs.get("ledger")
+        journal = kwargs.get("journal")
+        stage = kwargs.get("stage")
+        snapshot_count += 1
+        if snapshot_count == 1:
+            for index in range(6):
+                action_budget.reserve("provenance_api_call")
+                row = {
+                    "kind": "provenance_api_call",
+                    "stage": stage,
+                    "ordinal": index + 1,
+                    "budget_after_reservation": action_budget.snapshot(),
+                }
+                if ledger is not None:
+                    ledger.append(row)
+                if journal is not None:
+                    journal.append("external_action_reserved", row)
+            return {
+                "server_version": "test",
+                "models": {name: {"requested_name": name, "tag_digest": f"digest-{name}"} for name in model_names},
+                "raw_payloads": {"version": {"version": "test"}, "tags": {}, "ps": {}, "show": {}},
+            }
+        action_budget.reserve("provenance_api_call")
+        raise RuntimeError("intentional-postrun-provenance-failure")
+
+    monkeypatch.setattr(cli, "_provenance_snapshot", fake_snapshot)
+    monkeypatch.setattr(cli, "_adapter", lambda name, settings: MockModelAdapter(name))
+    output = tmp_path / "postrun-failure"
+    code = main([
+        "run",
+        "--config", "configs/test3-s2.yaml",
+        "--output-dir", str(output),
+        "--run-id", "postrun-failure",
+        "--authorize-tier-a",
+    ])
+    assert code == 0
+    master = json.loads((output / "00-MASTER-INDEX.json").read_text(encoding="utf-8"))
+    verdict = json.loads((output / "verdict.json").read_text(encoding="utf-8"))
+    assert master["evidence_status"] == "COMPLETE"
+    assert master["physical_model_calls"] == 720
+    assert master["combined_external_actions"] == 727
+    assert verdict["verdict"] == "S2_INSTRUMENTATION_WARNING"
+    assert verdict["protocol_valid_for_primary_claim"] is False
+    assert verdict["tier_a_architecture_claim"] is False
+    assert json.loads((output / "abort_state.json").read_text(encoding="utf-8")) == {}
+    with (output / "raw_model_transactions.jsonl").open(encoding="utf-8") as handle:
+        transactions = [json.loads(line) for line in handle if line.strip()]
+    assert len(transactions) == 720
+    with (output / "external_action_ledger.jsonl").open(encoding="utf-8") as handle:
+        ledger = [json.loads(line) for line in handle if line.strip()]
+    assert sum(row.get("kind") == "provenance_api_call" for row in ledger) == 7
+    assert sum(row.get("kind") == "model_call" for row in ledger) == 720
