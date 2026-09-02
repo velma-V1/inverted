@@ -25,7 +25,7 @@ jobs:
           --config configs/test3-s2.yaml
           --output-dir test3-s2-ci/mock-validation
           --run-id test3-s2-r1-mock
-      - name: Verify S2-R1 routing and complete evidence contract
+      - name: Verify S2-R1 routing and complete forensic evidence contract
         run: |
           python - <<'PY'
           import csv
@@ -34,6 +34,9 @@ jobs:
           from collections import Counter, defaultdict
           from pathlib import Path
 
+          from inverted.test3_s2_artifacts import REQUIRED_S2_FILES
+          from inverted.test3_s2_forensics import S2ForensicJournal
+
           p = Path("test3-s2-ci/mock-validation")
           master = json.loads((p / "00-MASTER-INDEX.json").read_text(encoding="utf-8"))
           prereg = json.loads((p / "preregistration.json").read_text(encoding="utf-8"))
@@ -41,7 +44,15 @@ jobs:
           failures = json.loads((p / "protocol_failures.json").read_text(encoding="utf-8"))
           policy = json.loads((p / "router_policy_snapshot.json").read_text(encoding="utf-8"))
           provenance = json.loads((p / "provenance.json").read_text(encoding="utf-8"))
+          environment = json.loads((p / "environment_provenance.json").read_text(encoding="utf-8"))
+          abort_state = json.loads((p / "abort_state.json").read_text(encoding="utf-8"))
+          observability = json.loads((p / "router_observability_summary.json").read_text(encoding="utf-8"))
+          journal_integrity = json.loads((p / "journal_integrity.json").read_text(encoding="utf-8"))
           calls = [json.loads(line) for line in (p / "model_calls.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+          raw_transactions = [json.loads(line) for line in (p / "raw_model_transactions.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+          transform_failures = [json.loads(line) for line in (p / "parse_and_composition_failures.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+          ledger = [json.loads(line) for line in (p / "external_action_ledger.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+          journal_rows = [json.loads(line) for line in (p / "forensic_journal.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
           snapshots = [json.loads(line) for line in (p / "routing_state_snapshots.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
           with (p / "trials.csv").open(encoding="utf-8", newline="") as handle:
               trials = list(csv.DictReader(handle))
@@ -51,9 +62,13 @@ jobs:
               action_budget = list(csv.DictReader(handle))
           with (p / "prompt_fingerprints.csv").open(encoding="utf-8", newline="") as handle:
               fingerprints = list(csv.DictReader(handle))
+          with (p / "router_observability_collisions.csv").open(encoding="utf-8", newline="") as handle:
+              collision_rows = list(csv.DictReader(handle))
 
+          assert set(REQUIRED_S2_FILES).issubset({path.name for path in p.iterdir()}), sorted(path.name for path in p.iterdir())
           assert master["protocol_revision"] == "S2-R1", master
           assert master["holdout"] == "B-R1", master
+          assert master["evidence_status"] == "COMPLETE", master
           assert master["protocol_valid_for_primary_claim"] is True, master
           assert master["physical_model_calls"] == 720, master
           assert master["combined_external_actions"] == 720, master
@@ -75,6 +90,8 @@ jobs:
           assert prereg["execution_mode"] == "balanced_task_blocks", prereg
           assert prereg["equal_compute"] is True, prereg
           assert prereg["terminal_second_call"] == "shadow_non_mutating", prereg
+          assert prereg["forensic_event_sourcing"] is True, prereg
+          assert prereg["forensic_spec"].endswith("test3-s2-complete-forensics-design.md"), prereg
           assert set(prereg["perturbation_classes"]) == {"localized", "compound", "structural"}, prereg
           assert set(prereg["intervention_library"]) == {"retry_qwen", "repair_cogito", "switch_llama"}, prereg
           assert set(prereg["models"]) == {
@@ -83,6 +100,9 @@ jobs:
               "llama3.1:8b",
           }, prereg
           assert provenance["external_provenance_api_calls"] == 0, provenance
+          assert environment["python_version"], environment
+          assert environment["platform"], environment
+          assert abort_state == {}, abort_state
 
           assert failures == [], failures
           assert verdict["protocol_valid_for_primary_claim"] is True, verdict
@@ -98,7 +118,37 @@ jobs:
           assert all(bool(row.get("active_intervention")) != bool(row.get("shadow_only")) for row in calls)
           assert all(row.get("prompt_fingerprint") for row in calls)
           assert all(row.get("response_digest") for row in calls)
+          assert all(row.get("raw_provider_response") == {"mock": True} for row in calls)
           assert len(fingerprints) == 720
+
+          assert len(raw_transactions) == 720, len(raw_transactions)
+          assert all(row.get("raw_provider_response") == {"mock": True} for row in raw_transactions)
+          assert all(row.get("provider_request_payload") for row in raw_transactions)
+          assert transform_failures == [], transform_failures
+          assert len(ledger) == 720, len(ledger)
+          assert Counter(row["kind"] for row in ledger) == Counter({"model_call": 720}), Counter(row["kind"] for row in ledger)
+          assert all(row.get("call_id") for row in ledger)
+          assert all((row.get("budget_after_reservation") or {}).get("limit") == 732 for row in ledger)
+
+          assert journal_rows, "forensic journal must not be empty"
+          assert [row["sequence"] for row in journal_rows] == list(range(1, len(journal_rows) + 1))
+          assert journal_rows[0]["previous_sha256"] is None
+          for previous, current in zip(journal_rows, journal_rows[1:]):
+              assert current["previous_sha256"] == previous["record_sha256"]
+          live_integrity = S2ForensicJournal(p, "test3-s2-r1-mock").snapshot_integrity()
+          assert live_integrity["valid"] is True, live_integrity
+          assert journal_integrity["valid"] is True, journal_integrity
+          assert journal_integrity["record_count"] == live_integrity["record_count"], (journal_integrity, live_integrity)
+          assert journal_integrity["last_record_sha256"] == live_integrity["last_record_sha256"], (journal_integrity, live_integrity)
+          event_types = Counter(row["event_type"] for row in journal_rows)
+          assert event_types["runtime_started"] == 1, event_types
+          assert event_types["trial_started"] == 360, event_types
+          assert event_types["router_decision"] == 720, event_types
+          assert event_types["model_call_completed"] == 720, event_types
+          assert event_types["validator_result"] == 720, event_types
+          assert event_types["trial_completed"] == 360, event_types
+          assert event_types["runtime_completed"] == 1, event_types
+          assert event_types["artifact_finalization_completed"] == 1, event_types
 
           assert len(trials) == 360, len(trials)
           assert Counter(row["arm_id"] for row in trials) == Counter({
@@ -128,6 +178,14 @@ jobs:
               elif row["arm_id"] == "S2-B4":
                   assert view == {}, view
 
+          assert observability["observation_group_count"] > 0, observability
+          assert observability["collision_count"] >= 0, observability
+          assert observability["ambiguous_case_count"] >= 0, observability
+          assert observability["largest_collision_group_size"] >= 0, observability
+          assert observability["b2_to_b3_collisions_resolved"] >= 0, observability
+          assert observability["b3_collisions_remaining"] >= 0, observability
+          assert collision_rows, "router observability rows must be materialized"
+
           assert policy["arms"]["S2-B0"]["sequence"] == ["retry_qwen", "repair_cogito"], policy
           assert set(policy["intervention_library"]) == {"retry_qwen", "repair_cogito", "switch_llama"}, policy
           assert policy["arms"]["S2-B4"]["features"] == [], policy
@@ -142,20 +200,26 @@ jobs:
           assert int(model_calls["used"]) == 720, model_calls
           assert "provenance_api_call" not in budget_by_kind, action_budget
 
-          # The files exist even when mock determinism produces zero rows.
-          assert (p / "stochastic_divergence.csv").is_file()
-          assert (p / "routing_decisions.csv").is_file()
-          assert (p / "shadow_counterfactuals.csv").is_file()
-          assert (p / "regret_to_oracle.csv").is_file()
+          with (p / "COMPLETE-EVIDENCE.txt").open(encoding="utf-8") as handle:
+              complete = handle.read()
+          assert "S2-R1 COMPLETE EVIDENCE" in complete
+          assert "PARTIAL/ABORTED EVIDENCE" not in complete
+          for name in REQUIRED_S2_FILES:
+              if name not in {"SHA256SUMS.csv", "COMPLETE-EVIDENCE.txt"}:
+                  assert f"BEGIN FILE: {name}" in complete, name
 
           with (p / "SHA256SUMS.csv").open(encoding="utf-8", newline="") as handle:
               hashes = list(csv.DictReader(handle))
           assert hashes
-          for row in hashes:
-              path = p / row["path"]
-              assert path.is_file(), row
-              assert int(row["bytes"]) == path.stat().st_size, row
-              assert row["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest(), row
+          indexed = {row["path"]: row for row in hashes}
+          for name in REQUIRED_S2_FILES:
+              if name == "SHA256SUMS.csv":
+                  continue
+              assert name in indexed, name
+              path = p / name
+              assert path.is_file(), name
+              assert int(indexed[name]["bytes"]) == path.stat().st_size, name
+              assert indexed[name]["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest(), name
           PY
       - name: Upload Section 2 mock validation evidence
         uses: actions/upload-artifact@v4
