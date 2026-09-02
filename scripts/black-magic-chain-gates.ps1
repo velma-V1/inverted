@@ -91,3 +91,12 @@ function Assert-HarvestCompletionPacket {
     }
     return [pscustomobject]@{ integrity = $integrity; metrics = $metrics }
 }
+
+function Test-BlackMagicChainContinuation {
+    param(
+        [Parameter(Mandatory=$true)][bool]$StageSucceeded,
+        [Parameter(Mandatory=$true)][bool]$ContinueOnStageFailure
+    )
+
+    return ($StageSucceeded -or $ContinueOnStageFailure)
+}
