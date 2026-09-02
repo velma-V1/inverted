@@ -1,7 +1,8 @@
 param(
     [string[]]$Models,
     [switch]$SkipRepoTests,
-    [switch]$ThenHarvestB
+    [switch]$ThenHarvestB,
+    [switch]$ContinueOnStageFailure
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,10 +32,13 @@ if (-not (Test-Path $NativeHelper)) { Fail "Missing native process capture helpe
 . $NativeHelper
 
 $ChainGates = Join-Path $RepoRoot "scripts\black-magic-chain-gates.ps1"
-if (-not (Test-Path $ChainGates)) { Fail "Missing fail-closed chain gate helper: $ChainGates" }
+if (-not (Test-Path $ChainGates)) { Fail "Missing chain gate helper: $ChainGates" }
 . $ChainGates
 
 Write-Host "=== INVERTED HARVEST A - REAL RUN LAUNCHER ===" -ForegroundColor Cyan
+if ($ContinueOnStageFailure) {
+    Write-Host "OVERNIGHT MODE: invalid/failed Harvest A evidence will NOT be promoted as valid, but Harvest B will still run." -ForegroundColor Yellow
+}
 
 Require-Command git
 Require-Command ollama
@@ -244,27 +248,41 @@ finally {
     catch { }
 }
 
+$HarvestAValid = $false
+$HarvestAFailureExit = 0
 if ($exitCode -ne 0) {
+    $HarvestAFailureExit = $exitCode
     Write-Host "HARVEST A RUN FAILED (exit $exitCode). Full native output is saved in:" -ForegroundColor Red
     Write-Host "  $LauncherLog" -ForegroundColor Red
     Write-Host "The failure log and partial evidence are also published to the evidence branch when GitHub is reachable." -ForegroundColor Yellow
-    exit $exitCode
+}
+else {
+    try {
+        Assert-HarvestCompletionPacket -EvidenceDir $RunDir -Label "Harvest A" | Out-Null
+        $HarvestAValid = $true
+    }
+    catch {
+        $HarvestAFailureExit = 1
+        Write-Host "HARVEST A EVIDENCE GATE FAILED: $($_.Exception.Message)" -ForegroundColor Red
+    }
 }
 
-try {
-    Assert-HarvestCompletionPacket -EvidenceDir $RunDir -Label "Harvest A" | Out-Null
+if ($HarvestAValid) {
+    Write-Host "HARVEST A RUN COMPLETE." -ForegroundColor Green
+    Write-Host "Local evidence: $RunDir"
+    Write-Host "Remote evidence: evidence/harvest-a-$RunId"
 }
-catch {
-    Write-Host "HARVEST A EVIDENCE GATE FAILED: $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
+elseif (-not (Test-BlackMagicChainContinuation -StageSucceeded $false -ContinueOnStageFailure ([bool]$ContinueOnStageFailure))) {
+    exit $HarvestAFailureExit
+}
+else {
+    Write-Host "CONTINUING OVERNIGHT CHAIN: Harvest A is NOT valid evidence; Harvest B will still run independently." -ForegroundColor Yellow
 }
 
-Write-Host "HARVEST A RUN COMPLETE." -ForegroundColor Green
-Write-Host "Local evidence: $RunDir"
-Write-Host "Remote evidence: evidence/harvest-a-$RunId"
+$AnyStageFailed = (-not $HarvestAValid)
 
 if ($ThenHarvestB) {
-    Write-Host "Harvest A evidence gate passed. Starting Harvest B automatically." -ForegroundColor Cyan
+    Write-Host "Starting Harvest B automatically." -ForegroundColor Cyan
 
     $HarvestBTimestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $HarvestBRunId = "harvest-b-real-$HarvestBTimestamp"
@@ -312,4 +330,9 @@ if ($ThenHarvestB) {
 
     Write-Host "HARVEST B RUN COMPLETE." -ForegroundColor Green
     Write-Host "Harvest B evidence: $HarvestBRunDir"
+}
+
+if ($AnyStageFailed) {
+    Write-Host "OVERNIGHT CHAIN FINISHED: one or more earlier stages were invalid/failed, but all later independent stages were attempted." -ForegroundColor Yellow
+    exit 2
 }
