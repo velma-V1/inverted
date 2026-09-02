@@ -46,19 +46,19 @@ try {
     $index.physical_model_calls = 719
     $index | ConvertTo-Json | Set-Content -Path (Join-Path $S2 "00-MASTER-INDEX.json") -Encoding ASCII
     Write-Manifest $S2
-    Expect-Throw { Assert-S2CompletionPacket -EvidenceDir $S2 -RunId "tier-a-real" -ExpectedModelCalls 720 } "719 calls must not hand off"
+    Expect-Throw { Assert-S2CompletionPacket -EvidenceDir $S2 -RunId "tier-a-real" -ExpectedModelCalls 720 } "719 calls must not hand off as valid evidence"
 
     $index.physical_model_calls = 720
     $index.protocol_valid_for_primary_claim = $false
     $index | ConvertTo-Json | Set-Content -Path (Join-Path $S2 "00-MASTER-INDEX.json") -Encoding ASCII
     Write-Manifest $S2
-    Expect-Throw { Assert-S2CompletionPacket -EvidenceDir $S2 -RunId "tier-a-real" -ExpectedModelCalls 720 } "protocol-invalid S2 must not hand off"
+    Expect-Throw { Assert-S2CompletionPacket -EvidenceDir $S2 -RunId "tier-a-real" -ExpectedModelCalls 720 } "protocol-invalid S2 must not hand off as valid evidence"
 
     $index.protocol_valid_for_primary_claim = $true
     $index | ConvertTo-Json | Set-Content -Path (Join-Path $S2 "00-MASTER-INDEX.json") -Encoding ASCII
     Write-Manifest $S2
     Add-Content -Path (Join-Path $S2 "COMPLETE-EVIDENCE.txt") -Value "tamper" -Encoding ASCII
-    Expect-Throw { Assert-S2CompletionPacket -EvidenceDir $S2 -RunId "tier-a-real" -ExpectedModelCalls 720 } "tampered S2 packet must not hand off"
+    Expect-Throw { Assert-S2CompletionPacket -EvidenceDir $S2 -RunId "tier-a-real" -ExpectedModelCalls 720 } "tampered S2 packet must not hand off as valid evidence"
 
     $Harvest = Join-Path $TempRoot "harvest"
     New-Item -ItemType Directory -Force -Path $Harvest | Out-Null
@@ -67,7 +67,20 @@ try {
     Assert-HarvestCompletionPacket -EvidenceDir $Harvest -Label "Harvest A"
 
     @{ completion = @{ pass = $false } } | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $Harvest "metrics.json") -Encoding ASCII
-    Expect-Throw { Assert-HarvestCompletionPacket -EvidenceDir $Harvest -Label "Harvest A" } "completion=false must not hand off"
+    Expect-Throw { Assert-HarvestCompletionPacket -EvidenceDir $Harvest -Label "Harvest A" } "completion=false must not count as valid evidence"
+
+    if (-not (Get-Command Test-BlackMagicChainContinuation -ErrorAction SilentlyContinue)) {
+        throw "Missing Test-BlackMagicChainContinuation policy helper"
+    }
+    if (-not (Test-BlackMagicChainContinuation -StageSucceeded $false -ContinueOnStageFailure $true)) {
+        throw "Overnight policy must continue after an invalid/failed independent stage"
+    }
+    if (Test-BlackMagicChainContinuation -StageSucceeded $false -ContinueOnStageFailure $false) {
+        throw "Default fail-closed policy must still stop after a failed stage"
+    }
+    if (-not (Test-BlackMagicChainContinuation -StageSucceeded $true -ContinueOnStageFailure $false)) {
+        throw "Successful stage must always continue"
+    }
 
     Write-Host "BLACK_MAGIC_CHAIN_GATES_OK"
 }
