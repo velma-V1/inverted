@@ -4,8 +4,11 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
+import platform
 import sys
+import traceback
 from typing import Any
 
 import httpx
@@ -17,6 +20,8 @@ from .test3_s2_analysis import derive_s2_verdict, summarize_s2
 from .test3_s2_artifacts import Test3S2ArtifactWriter
 from .test3_s2_budget import ABSOLUTE_PER_TEST_ACTION_CEILING, CombinedActionBudget
 from .test3_s2_cases import S2_HOLDOUT, S2_PERTURBATIONS, S2_PROTOCOL_REVISION, build_holdout_b
+from .test3_s2_forensics import S2ForensicJournal
+from .test3_s2_observability import router_observability_analysis
 from .test3_s2_policy import INTERVENTION_LIBRARY, REAL_ARM_IDS
 from .test3_s2_progress import InPlaceS2Progress, ProgressReportingAdapter, S2ProgressTracker
 from .test3_s2_runtime import (
@@ -36,6 +41,7 @@ from .test3_s2_runtime import (
 
 
 S2_SPEC = "docs/superpowers/specs/2026-09-01-test3-s2-adaptive-routing-design.md"
+S2_FORENSICS_SPEC = "docs/superpowers/specs/2026-09-01-test3-s2-complete-forensics-design.md"
 S2_PREDECESSOR_RUN = "test3-s1-r3-20260901-154839"
 S2_PREDECESSOR_VERDICT = "S1_R3_SCREEN_NON_DECISIVE"
 
@@ -67,15 +73,51 @@ class S2OllamaAdapter(OllamaAdapter):
 
 
 class _BudgetedTransport(httpx.BaseTransport):
-    """Count each real provenance HTTP request before it leaves the process."""
+    """Count and persist each real provenance HTTP request before dispatch."""
 
-    def __init__(self, budget: CombinedActionBudget):
+    def __init__(
+        self,
+        budget: CombinedActionBudget,
+        *,
+        journal: S2ForensicJournal | None = None,
+        ledger: list[dict[str, Any]] | None = None,
+        stage: str = "provenance",
+    ):
         self._budget = budget
+        self._journal = journal
+        self._ledger = ledger if ledger is not None else []
+        self._stage = str(stage)
         self._inner = httpx.HTTPTransport()
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         self._budget.reserve("provenance_api_call")
-        return self._inner.handle_request(request)
+        row = {
+            "kind": "provenance_api_call",
+            "stage": self._stage,
+            "method": request.method,
+            "url": str(request.url),
+            "path": request.url.path,
+            "budget_after_reservation": self._budget.snapshot(),
+        }
+        self._ledger.append(row)
+        if self._journal is not None:
+            self._journal.append("external_action_reserved", row)
+            self._journal.append("provenance_request_started", row)
+        try:
+            response = self._inner.handle_request(request)
+        except BaseException as exc:
+            if self._journal is not None:
+                self._journal.append(
+                    "provenance_request_failed",
+                    {**row, "error_class": type(exc).__name__, "error": str(exc)},
+                )
+            raise
+        if self._journal is not None:
+            self._journal.append(
+                "provenance_response_received",
+                {**row, "status_code": response.status_code},
+            )
+        return response
 
     def close(self) -> None:
         self._inner.close()
@@ -186,11 +228,19 @@ def _adapter(name: str, settings: dict[str, Any]) -> S2OllamaAdapter:
     )
 
 
-def _provenance_snapshot(base_url: str, model_names: tuple[str, ...], action_budget: CombinedActionBudget) -> dict[str, Any]:
+def _provenance_snapshot(
+    base_url: str,
+    model_names: tuple[str, ...],
+    action_budget: CombinedActionBudget,
+    *,
+    journal: S2ForensicJournal | None = None,
+    ledger: list[dict[str, Any]] | None = None,
+    stage: str = "provenance",
+) -> dict[str, Any]:
     snapshot = collect_ollama_provenance(
         base_url,
         model_names,
-        transport=_BudgetedTransport(action_budget),
+        transport=_BudgetedTransport(action_budget, journal=journal, ledger=ledger, stage=stage),
     )
     models = snapshot.get("models") if isinstance(snapshot, dict) else None
     if not isinstance(models, dict) or set(models) != set(model_names):
@@ -209,6 +259,7 @@ def _preregistration(*, mock: bool) -> dict[str, Any]:
         "protocol_revision": S2_PROTOCOL_REVISION,
         "holdout": S2_HOLDOUT,
         "spec": S2_SPEC,
+        "forensic_spec": S2_FORENSICS_SPEC,
         "predecessor_run": S2_PREDECESSOR_RUN,
         "predecessor_verdict": S2_PREDECESSOR_VERDICT,
         "exact_budget": S2_EXACT_BUDGET,
@@ -229,6 +280,23 @@ def _preregistration(*, mock: bool) -> dict[str, Any]:
         "no_outcome_dependent_early_stopping": True,
         "stochastic_divergence_gate": "promotion_must_survive_exclusion",
         "tier_a_inference_authorized": not mock,
+        "forensic_event_sourcing": True,
+    }
+
+
+def _environment_provenance() -> dict[str, Any]:
+    return {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "python_version": platform.python_version(),
+        "python_implementation": platform.python_implementation(),
+        "python_executable": sys.executable,
+        "platform": platform.platform(),
+        "system": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "cwd": os.getcwd(),
+        "pid": os.getpid(),
     }
 
 
@@ -255,13 +323,17 @@ def _report(verdict: dict[str, Any], runtime: dict[str, Any], analysis: dict[str
 
 
 def _assemble_evidence(
-    *, runtime: dict[str, Any],
+    *,
+    runtime: dict[str, Any],
     config: dict[str, Any],
     provenance: dict[str, Any],
     mock: bool,
+    environment: dict[str, Any] | None = None,
+    abort_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     analysis = summarize_s2(runtime)
     verdict = derive_s2_verdict(analysis)
+    observability = router_observability_analysis(runtime)
     snapshot = _policy_snapshot()
     divergences = list(runtime.get("stochastic_divergence") or [])
     edge_cases: list[dict[str, Any]] = []
@@ -285,8 +357,12 @@ def _assemble_evidence(
         "preregistration": _preregistration(mock=mock),
         "config": config,
         "provenance": provenance,
+        "environment_provenance": environment or {},
+        "abort_state": abort_state or {},
         "router_policy_snapshot": snapshot,
         "router_policy_hashes": _policy_hash_rows(snapshot),
+        "router_observability_collisions": observability["rows"],
+        "router_observability_summary": observability["summary"],
         "protocol_failures": list(analysis.get("protocol_failures") or []),
         "edge_cases": edge_cases,
         "instrumentation_anomalies": divergences,
@@ -320,8 +396,89 @@ def _dry_plan(config: dict[str, Any]) -> None:
     print("TIER_A_INFERENCE_AUTHORIZED=false")
 
 
+def _sync_provenance_ledger(
+    combined: CombinedActionBudget,
+    ledger: list[dict[str, Any]],
+    journal: S2ForensicJournal,
+    *,
+    stage: str,
+) -> None:
+    expected = int(combined.snapshot().get("by_kind", {}).get("provenance_api_call", 0))
+    observed = sum(1 for row in ledger if row.get("kind") == "provenance_api_call")
+    while observed < expected:
+        observed += 1
+        row = {
+            "kind": "provenance_api_call",
+            "stage": stage,
+            "reconciled_after_failure": True,
+            "ordinal": observed,
+            "budget_snapshot": combined.snapshot(),
+        }
+        ledger.append(row)
+        journal.append("external_action_reconciled", row)
+
+
+def _write_evidence(
+    output_dir: str | Path,
+    evidence: dict[str, Any],
+    journal: S2ForensicJournal,
+    *,
+    partial: bool,
+) -> None:
+    journal.append("artifact_finalization_started", {"partial": partial})
+    evidence["journal_integrity"] = journal.snapshot_integrity()
+    writer = Test3S2ArtifactWriter(output_dir)
+    written = writer.write_all(evidence, partial=partial)
+    journal.append("artifact_finalization_completed", {"partial": partial, "files": sorted(written)})
+    evidence["journal_integrity"] = journal.snapshot_integrity()
+    writer.write_all(evidence, partial=partial)
+
+
+def _minimal_partial_runtime(
+    *,
+    run_id: str,
+    combined: CombinedActionBudget,
+    external_action_ledger: list[dict[str, Any]],
+    journal: S2ForensicJournal,
+) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "protocol_revision": S2_PROTOCOL_REVISION,
+        "holdout": S2_HOLDOUT,
+        "execution_mode": "balanced_task_blocks",
+        "exact_budget": S2_EXACT_BUDGET,
+        "combined_action_budget_limit": combined.limit,
+        "matched_cases": S2_MATCHED_CASES,
+        "trial_count": S2_TRIAL_COUNT,
+        "physical_model_calls": 0,
+        "inference_action_delta": 0,
+        "action_budget": combined.snapshot(),
+        "holdout_manifest": [],
+        "trials": [],
+        "model_calls": [],
+        "validator_results": [],
+        "routing_decisions": [],
+        "routing_state_snapshots": [],
+        "events": [],
+        "arm_accounting": [],
+        "stochastic_divergence": [],
+        "real_model_inference": True,
+        "intervention_library": list(INTERVENTION_LIBRARY),
+        "raw_model_transactions": [],
+        "parse_and_composition_failures": [],
+        "external_action_ledger": list(external_action_ledger),
+        "journal_integrity": journal.snapshot_integrity(),
+        "runtime_complete": False,
+    }
+
+
 def _run_mock(args: argparse.Namespace) -> int:
     config = _load_config(args.config)
+    environment = _environment_provenance()
+    journal = S2ForensicJournal(args.output_dir, args.run_id)
+    journal.append("run_initialized", {"mode": "mock-validation", "protocol_revision": S2_PROTOCOL_REVISION, "holdout": S2_HOLDOUT})
+    journal.append("config_snapshot", config)
+    journal.append("environment_snapshot", environment)
     progress = InPlaceS2Progress()
     tracker = S2ProgressTracker(progress, total_trials=S2_TRIAL_COUNT, call_budget=S2_EXACT_BUDGET)
     models = {
@@ -334,36 +491,70 @@ def _run_mock(args: argparse.Namespace) -> int:
             model_by_name=models,
             run_id=args.run_id,
             exact_budget=S2_EXACT_BUDGET,
+            journal=journal,
         )
-    except BaseException:
+    except Exception as exc:
         tracker.finish(mark_current_complete=False)
-        raise
+        abort = {
+            "stage": "mock_runtime",
+            "error_class": type(exc).__name__,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }
+        journal.append("run_aborted", abort)
+        runtime = getattr(exc, "s2_partial_runtime", _minimal_partial_runtime(
+            run_id=args.run_id,
+            combined=CombinedActionBudget(S2_COMBINED_ACTION_BUDGET),
+            external_action_ledger=[],
+            journal=journal,
+        ))
+        evidence = _assemble_evidence(
+            runtime=runtime,
+            config=config,
+            provenance={
+                "run_id": args.run_id,
+                "mode": "mock-validation",
+                "protocol_revision": S2_PROTOCOL_REVISION,
+                "execution_holdout": S2_HOLDOUT,
+                "external_provenance_api_calls": 0,
+            },
+            mock=True,
+            environment=environment,
+            abort_state=abort,
+        )
+        _write_evidence(args.output_dir, evidence, journal, partial=True)
+        return 1
     else:
         tracker.finish(mark_current_complete=True)
     if tracker.physical_calls != int(runtime["physical_model_calls"]):
         raise AssertionError(
             f"S2 mock progress call accounting diverged: {tracker.physical_calls} != {runtime['physical_model_calls']}"
         )
+    provenance = {
+        "run_id": args.run_id,
+        "mode": "mock-validation",
+        "protocol_revision": S2_PROTOCOL_REVISION,
+        "execution_holdout": S2_HOLDOUT,
+        "spec": S2_SPEC,
+        "forensic_spec": S2_FORENSICS_SPEC,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "selected_models": list(S2_MODEL_NAMES),
+        "predecessor_run": S2_PREDECESSOR_RUN,
+        "predecessor_verdict": S2_PREDECESSOR_VERDICT,
+        "external_provenance_api_calls": 0,
+    }
     evidence = _assemble_evidence(
         runtime=runtime,
         config=config,
-        provenance={
-            "run_id": args.run_id,
-            "mode": "mock-validation",
-            "protocol_revision": S2_PROTOCOL_REVISION,
-            "execution_holdout": S2_HOLDOUT,
-            "spec": S2_SPEC,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "selected_models": list(S2_MODEL_NAMES),
-            "predecessor_run": S2_PREDECESSOR_RUN,
-            "predecessor_verdict": S2_PREDECESSOR_VERDICT,
-            "external_provenance_api_calls": 0,
-        },
+        provenance=provenance,
         mock=True,
+        environment=environment,
     )
+    journal.append("analysis_completed", {"protocol_failures": evidence.get("protocol_failures"), "observability": evidence.get("router_observability_summary")})
+    journal.append("verdict_derived", evidence["verdict"])
     if evidence["verdict"].get("protocol_valid_for_primary_claim") is not True:
         raise AssertionError("S2-R1 mock validation failed protocol gates")
-    Test3S2ArtifactWriter(args.output_dir).write_all(evidence)
+    _write_evidence(args.output_dir, evidence, journal, partial=False)
     return 0
 
 
@@ -371,13 +562,72 @@ def _run_real(args: argparse.Namespace) -> int:
     if not args.authorize_tier_a:
         print("TIER_A_AUTHORIZATION_REQUIRED: pass --authorize-tier-a to permit local physical model calls", file=sys.stderr)
         return 2
+
     config = _load_config(args.config)
+    environment = _environment_provenance()
+    journal = S2ForensicJournal(args.output_dir, args.run_id)
+    journal.append("run_initialized", {"mode": "tier-a-local", "protocol_revision": S2_PROTOCOL_REVISION, "holdout": S2_HOLDOUT})
+    journal.append("config_snapshot", config)
+    journal.append("environment_snapshot", environment)
+    combined = CombinedActionBudget(S2_COMBINED_ACTION_BUDGET)
+    provenance_ledger: list[dict[str, Any]] = []
     s2 = dict(config["s2"])
     settings = dict(s2.get("ollama") or {})
     base_url = str(settings.get("base_url") or "http://127.0.0.1:11434")
     base_adapters = {name: _adapter(name, settings) for name in S2_MODEL_NAMES}
-    combined = CombinedActionBudget(S2_COMBINED_ACTION_BUDGET)
-    before = _provenance_snapshot(base_url, S2_MODEL_NAMES, combined)
+
+    before: dict[str, Any] | None = None
+    try:
+        journal.append("provenance_snapshot_started", {"stage": "pre_run_provenance", "models": list(S2_MODEL_NAMES)})
+        before = _provenance_snapshot(
+            base_url,
+            S2_MODEL_NAMES,
+            combined,
+            journal=journal,
+            ledger=provenance_ledger,
+            stage="pre_run_provenance",
+        )
+        journal.append("provenance_snapshot_completed", {"stage": "pre_run_provenance", "snapshot": before})
+    except Exception as exc:
+        _sync_provenance_ledger(combined, provenance_ledger, journal, stage="pre_run_provenance")
+        abort = {
+            "stage": "pre_run_provenance",
+            "error_class": type(exc).__name__,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+            "action_budget": combined.snapshot(),
+        }
+        journal.append("run_aborted", abort)
+        runtime = _minimal_partial_runtime(
+            run_id=args.run_id,
+            combined=combined,
+            external_action_ledger=provenance_ledger,
+            journal=journal,
+        )
+        provenance = {
+            "run_id": args.run_id,
+            "mode": "tier-a-local",
+            "protocol_revision": S2_PROTOCOL_REVISION,
+            "execution_holdout": S2_HOLDOUT,
+            "execution_mode": "balanced_task_blocks",
+            "spec": S2_SPEC,
+            "forensic_spec": S2_FORENSICS_SPEC,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "selected_models": list(S2_MODEL_NAMES),
+            "ollama_before": None,
+            "ollama_after": None,
+            "external_provenance_api_calls": int(combined.snapshot().get("by_kind", {}).get("provenance_api_call", 0)),
+        }
+        evidence = _assemble_evidence(
+            runtime=runtime,
+            config=config,
+            provenance=provenance,
+            mock=False,
+            environment=environment,
+            abort_state=abort,
+        )
+        _write_evidence(args.output_dir, evidence, journal, partial=True)
+        return 1
 
     progress = InPlaceS2Progress()
     tracker = S2ProgressTracker(progress, total_trials=S2_TRIAL_COUNT, call_budget=S2_EXACT_BUDGET)
@@ -389,22 +639,83 @@ def _run_real(args: argparse.Namespace) -> int:
             run_id=args.run_id,
             exact_budget=S2_EXACT_BUDGET,
             action_budget=combined,
+            journal=journal,
         )
-    except BaseException:
+    except Exception as exc:
         tracker.finish(mark_current_complete=False)
-        raise
+        abort = {
+            "stage": "runtime",
+            "error_class": type(exc).__name__,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+            "action_budget": combined.snapshot(),
+        }
+        journal.append("run_aborted", abort)
+        runtime = getattr(exc, "s2_partial_runtime", _minimal_partial_runtime(
+            run_id=args.run_id,
+            combined=combined,
+            external_action_ledger=[],
+            journal=journal,
+        ))
+        runtime["action_budget"] = combined.snapshot()
+        runtime["external_action_ledger"] = [*provenance_ledger, *(runtime.get("external_action_ledger") or [])]
+        provenance = {
+            "run_id": args.run_id,
+            "mode": "tier-a-local",
+            "protocol_revision": S2_PROTOCOL_REVISION,
+            "execution_holdout": S2_HOLDOUT,
+            "execution_mode": "balanced_task_blocks",
+            "spec": S2_SPEC,
+            "forensic_spec": S2_FORENSICS_SPEC,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "selected_models": list(S2_MODEL_NAMES),
+            "ollama_before": before,
+            "ollama_after": None,
+            "external_provenance_api_calls": int(combined.snapshot().get("by_kind", {}).get("provenance_api_call", 0)),
+        }
+        evidence = _assemble_evidence(
+            runtime=runtime,
+            config=config,
+            provenance=provenance,
+            mock=False,
+            environment=environment,
+            abort_state=abort,
+        )
+        _write_evidence(args.output_dir, evidence, journal, partial=True)
+        return 1
     else:
         tracker.finish(mark_current_complete=True)
 
     if tracker.physical_calls != int(runtime["physical_model_calls"]):
         raise AssertionError(f"S2 progress call accounting diverged: {tracker.physical_calls} != {runtime['physical_model_calls']}")
+
     anomalies: list[dict[str, Any]] = []
     after: dict[str, Any] | None = None
     try:
-        after = _provenance_snapshot(base_url, S2_MODEL_NAMES, combined)
+        journal.append("provenance_snapshot_started", {"stage": "post_run_provenance", "models": list(S2_MODEL_NAMES)})
+        after = _provenance_snapshot(
+            base_url,
+            S2_MODEL_NAMES,
+            combined,
+            journal=journal,
+            ledger=provenance_ledger,
+            stage="post_run_provenance",
+        )
+        journal.append("provenance_snapshot_completed", {"stage": "post_run_provenance", "snapshot": after})
     except Exception as exc:
-        anomalies.append({"classification": "post_run_model_identity_snapshot_failed", "error_class": type(exc).__name__, "error": str(exc)})
+        _sync_provenance_ledger(combined, provenance_ledger, journal, stage="post_run_provenance")
+        anomaly = {
+            "classification": "post_run_model_identity_snapshot_failed",
+            "error_class": type(exc).__name__,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }
+        anomalies.append(anomaly)
+        journal.append("provenance_snapshot_failed", {"stage": "post_run_provenance", **anomaly})
+
     runtime["action_budget"] = combined.snapshot()
+    runtime["external_action_ledger"] = [*provenance_ledger, *(runtime.get("external_action_ledger") or [])]
+    runtime["journal_integrity"] = journal.snapshot_integrity()
     provenance_api_calls = int(runtime["action_budget"].get("by_kind", {}).get("provenance_api_call", 0))
     if not anomalies and provenance_api_calls != S2_PROVENANCE_API_CALL_BUDGET:
         anomalies.append({
@@ -420,6 +731,7 @@ def _run_real(args: argparse.Namespace) -> int:
         "execution_holdout": S2_HOLDOUT,
         "execution_mode": "balanced_task_blocks",
         "spec": S2_SPEC,
+        "forensic_spec": S2_FORENSICS_SPEC,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "selected_models": list(S2_MODEL_NAMES),
         "predecessor_run": S2_PREDECESSOR_RUN,
@@ -428,17 +740,28 @@ def _run_real(args: argparse.Namespace) -> int:
         "ollama_after": after,
         "external_provenance_api_calls": provenance_api_calls,
     }
-    evidence = _assemble_evidence(runtime=runtime, config=config, provenance=provenance, mock=False)
+    evidence = _assemble_evidence(
+        runtime=runtime,
+        config=config,
+        provenance=provenance,
+        mock=False,
+        environment=environment,
+    )
     evidence["instrumentation_anomalies"].extend(anomalies)
     if anomalies:
         evidence["verdict"] = {
             **evidence["verdict"],
             "verdict": "S2_INSTRUMENTATION_WARNING",
+            "protocol_valid_for_primary_claim": False,
             "tier_a_architecture_claim": False,
-            "reason": "S2 inference completed but provenance instrumentation was incomplete or inconsistent; evidence retained and architecture claim withheld.",
+            "winning_arm_id": None,
+            "reason": "S2 inference completed but provenance instrumentation was incomplete or inconsistent; evidence retained and all primary/architecture claims withheld.",
         }
         evidence["report"] = _report(evidence["verdict"], runtime, evidence)
-    Test3S2ArtifactWriter(args.output_dir).write_all(evidence)
+    journal.append("analysis_completed", {"protocol_failures": evidence.get("protocol_failures"), "observability": evidence.get("router_observability_summary")})
+    journal.append("verdict_derived", evidence["verdict"])
+    _write_evidence(args.output_dir, evidence, journal, partial=False)
+
     print(f"RUN_ID={args.run_id}")
     print(f"PROTOCOL={S2_PROTOCOL_REVISION}")
     print(f"HOLDOUT={S2_HOLDOUT}")
