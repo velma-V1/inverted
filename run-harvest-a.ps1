@@ -76,7 +76,7 @@ function Start-HarvestObservers {
     }
 }
 
-Write-Host "=== INVERTED HARVEST A — REAL RUN LAUNCHER ===" -ForegroundColor Cyan
+Write-Host "=== INVERTED HARVEST A - REAL RUN LAUNCHER ===" -ForegroundColor Cyan
 
 Require-Command git
 Require-Command ollama
