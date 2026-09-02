@@ -7,11 +7,11 @@ import pytest
 
 from inverted.models import MockModelAdapter
 from inverted.test2_provenance import collect_ollama_provenance
-from inverted.test3_s2_analysis import router_observability_analysis
 from inverted.test3_s2_artifacts import REQUIRED_S2_FILES, Test3S2ArtifactWriter
 from inverted.test3_s2_cases import build_holdout_b
 from inverted.test3_s2_cli import main
 from inverted.test3_s2_forensics import S2ForensicJournal
+from inverted.test3_s2_observability import router_observability_analysis
 from inverted.test3_s2_runtime import run_s2_screen
 
 
