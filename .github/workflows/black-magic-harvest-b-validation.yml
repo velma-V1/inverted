@@ -1,0 +1,58 @@
+name: black-magic-harvest-b-validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  whole-harvest-b:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Run full repository tests
+        run: python -m pytest -q
+      - name: Run whole Epistemic Mechanics Harvest smoke
+        run: >-
+          python -m inverted.black_magic.epistemic_cli
+          --config configs/black-magic-harvest-b-smoke.yaml
+          --output-dir black-magic-ci
+          --run-id ci-harvest-b
+      - name: Verify Harvest B evidence and completion gate
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          root = Path("black-magic-ci/black-magic/epistemic_harvest/ci-harvest-b")
+          integrity = json.loads((root / "integrity.json").read_text(encoding="utf-8"))
+          metrics = json.loads((root / "metrics.json").read_text(encoding="utf-8"))
+          budget = json.loads((root / "budget.json").read_text(encoding="utf-8"))
+          prereg = json.loads((root / "preregistration.json").read_text(encoding="utf-8"))
+          assert integrity["status"] == "OK", integrity
+          assert integrity["call_prompt_response_external_parity"] is True
+          assert budget["used"] == 42, budget
+          assert prereg["status"] == "INSTRUMENT VALIDATION — NOT ARCHITECTURE EVIDENCE"
+          assert metrics["completion"]["pass"] is True
+          assert metrics["unresolved_high_severity_count"] == 0
+          assert metrics["metamorphic_invariant_violation_rate"] == 0
+          assert metrics["boundary_sensitivity_rate"] > 0
+          assert (root / "interventions.jsonl").stat().st_size > 0
+          assert (root / "shams.jsonl").stat().st_size > 0
+          assert (root / "metamorphic_pairs.jsonl").stat().st_size > 0
+          assert (root / "COMPLETE-EVIDENCE.txt").stat().st_size > 0
+          assert (root / "SHA256SUMS.csv").stat().st_size > 0
+      - name: Prove cap-plus-one planning refusal
+        shell: python
+        run: |
+          from inverted.black_magic.epistemic_harvest import planned_epistemic_harvest_actions
+          assert planned_epistemic_harvest_actions(3, 100, 3, 300) == 1200
+          assert planned_epistemic_harvest_actions(3, 101, 3, 300) == 1209
+      - uses: actions/upload-artifact@v4
+        with:
+          name: black-magic-harvest-b-instrument-evidence
+          path: black-magic-ci/black-magic/epistemic_harvest/ci-harvest-b
+          if-no-files-found: error
