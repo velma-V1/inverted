@@ -1,0 +1,62 @@
+name: black-magic-harvest-a-validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  whole-harvest-a:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Run full repository tests
+        run: python -m pytest -q
+      - name: Run whole Decision Mechanics Harvest smoke
+        run: >-
+          python -m inverted.black_magic.cli
+          --config configs/black-magic-harvest-a-smoke.yaml
+          --stage decision_harvest
+          --output-dir black-magic-ci
+          --run-id ci-harvest-a
+      - name: Verify Harvest A evidence and completion gate
+        shell: python
+        run: |
+          import csv
+          import json
+          from pathlib import Path
+
+          root = Path("black-magic-ci/black-magic/decision_harvest/ci-harvest-a")
+          integrity = json.loads((root / "integrity.json").read_text(encoding="utf-8"))
+          metrics = json.loads((root / "metrics.json").read_text(encoding="utf-8"))
+          budget = json.loads((root / "budget.json").read_text(encoding="utf-8"))
+          prereg = json.loads((root / "preregistration.json").read_text(encoding="utf-8"))
+          findings = [json.loads(line) for line in (root / "findings.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+          assert integrity["status"] == "OK", integrity
+          assert integrity["call_prompt_response_external_parity"] is True
+          assert budget["used"] == 64, budget
+          assert budget["used"] <= 1200
+          assert prereg["status"] == "INSTRUMENT VALIDATION — NOT ARCHITECTURE EVIDENCE"
+          assert metrics["completion"]["pass"] is True, metrics["completion"]
+          assert metrics["externalized_correction_probe_count"] == 4
+          assert metrics["targeted_replay_count"] > 0
+          assert metrics["sham_replay_count"] == metrics["targeted_replay_count"]
+          assert not [f for f in findings if f.get("severity") == "high" and f.get("status") == "UNRESOLVED"]
+          assert (root / "COMPLETE-EVIDENCE.txt").stat().st_size > 0
+          rows = list(csv.DictReader((root / "SHA256SUMS.csv").open(encoding="utf-8")))
+          assert rows and all(row["sha256"] for row in rows)
+      - name: Prove cap-plus-one planning refusal
+        shell: python
+        run: |
+          from inverted.black_magic.decision_harvest import planned_decision_harvest_actions
+          assert planned_decision_harvest_actions(3, 101, 3, 300) == 1209
+      - name: Upload Harvest A instrument evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: black-magic-harvest-a-instrument-evidence
+          path: black-magic-ci/black-magic/decision_harvest/ci-harvest-a
+          if-no-files-found: error
