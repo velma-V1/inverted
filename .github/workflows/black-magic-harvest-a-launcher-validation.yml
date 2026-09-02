@@ -14,6 +14,7 @@ jobs:
         run: |
           $files = @(
             'run-harvest-a.ps1',
+            'scripts/test-black-magic-harvest-a-launcher-contract.ps1',
             'scripts/test-black-magic-harvest-a-publisher.ps1',
             'scripts/test-black-magic-harvest-a-monitor.ps1',
             'scripts/test-black-magic-harvest-a-native-stderr.ps1',
@@ -37,6 +38,9 @@ jobs:
               throw "PowerShell parse failed: $file"
             }
           }
+      - name: Prove launcher CLI and publisher contract
+        shell: powershell
+        run: .\scripts\test-black-magic-harvest-a-launcher-contract.ps1
       - name: Reproduce and prevent native stderr abort
         shell: powershell
         run: .\scripts\test-black-magic-harvest-a-native-stderr.ps1
