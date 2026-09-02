@@ -13,7 +13,9 @@ function Invoke-BlackMagicNative {
             Write-Host $line
             Add-Content -Path $LogPath -Value $line -Encoding UTF8
         }
-        return [int]$LASTEXITCODE
+        $nativeExitCode = [int]$LASTEXITCODE
+        $global:LASTEXITCODE = 0
+        return $nativeExitCode
     }
     finally {
         $ErrorActionPreference = $previousPreference
