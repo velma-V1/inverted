@@ -1,0 +1,45 @@
+# Real-model Decision Mechanics evidence harvest.
+# 3 models x 100 matched cases x 3 arms = 900 base decisions.
+# Up to 300 additional external actions are reserved for high-information diagnostics/correction probes.
+black_magic:
+  capture_content: true
+  seed: 20260901
+  decision_harvest:
+    action_cap: 1200
+    case_count: 100
+    diagnostic_reserve: 300
+    arms: [DIRECT, CHECKED, INVERTED]
+models:
+  - provider: ollama
+    model: ${INVERTED_MODEL_1}
+    base_url: http://127.0.0.1:11434
+    temperature: 0.0
+    max_tokens: 768
+    timeout_s: 600
+    max_retries: 0
+    retry_backoff_s: 5
+    think: false
+    format_json: true
+    context_limit: 8192
+  - provider: ollama
+    model: ${INVERTED_MODEL_2}
+    base_url: http://127.0.0.1:11434
+    temperature: 0.0
+    max_tokens: 768
+    timeout_s: 600
+    max_retries: 0
+    retry_backoff_s: 5
+    think: false
+    format_json: true
+    context_limit: 8192
+  - provider: ollama
+    model: ${INVERTED_MODEL_3}
+    base_url: http://127.0.0.1:11434
+    temperature: 0.0
+    max_tokens: 768
+    timeout_s: 600
+    max_retries: 0
+    retry_backoff_s: 5
+    think: false
+    format_json: true
+    context_limit: 8192
