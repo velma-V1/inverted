@@ -22,11 +22,14 @@ jobs:
             $files += 'scripts/publish-black-magic-harvest-a.ps1'
           }
           foreach ($file in $files) {
+            Write-Host "PARSING: $file"
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -gt 0) {
-              $errors | ForEach-Object { Write-Error $_.Message }
+              foreach ($err in $errors) {
+                Write-Host ("PARSE ERROR file={0} line={1} col={2} message={3}" -f $file, $err.Extent.StartLineNumber, $err.Extent.StartColumnNumber, $err.Message)
+              }
               throw "PowerShell parse failed: $file"
             }
           }
