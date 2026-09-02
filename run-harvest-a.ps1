@@ -1,6 +1,7 @@
 param(
     [string[]]$Models,
-    [switch]$SkipRepoTests
+    [switch]$SkipRepoTests,
+    [switch]$ThenHarvestB
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,6 +29,10 @@ function Quote-PowerShellSingle([string]$Value) {
 $NativeHelper = Join-Path $RepoRoot "scripts\invoke-black-magic-native.ps1"
 if (-not (Test-Path $NativeHelper)) { Fail "Missing native process capture helper: $NativeHelper" }
 . $NativeHelper
+
+$ChainGates = Join-Path $RepoRoot "scripts\black-magic-chain-gates.ps1"
+if (-not (Test-Path $ChainGates)) { Fail "Missing fail-closed chain gate helper: $ChainGates" }
+. $ChainGates
 
 Write-Host "=== INVERTED HARVEST A - REAL RUN LAUNCHER ===" -ForegroundColor Cyan
 
@@ -246,6 +251,65 @@ if ($exitCode -ne 0) {
     exit $exitCode
 }
 
+try {
+    Assert-HarvestCompletionPacket -EvidenceDir $RunDir -Label "Harvest A" | Out-Null
+}
+catch {
+    Write-Host "HARVEST A EVIDENCE GATE FAILED: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
 Write-Host "HARVEST A RUN COMPLETE." -ForegroundColor Green
 Write-Host "Local evidence: $RunDir"
 Write-Host "Remote evidence: evidence/harvest-a-$RunId"
+
+if ($ThenHarvestB) {
+    Write-Host "Harvest A evidence gate passed. Starting Harvest B automatically." -ForegroundColor Cyan
+
+    $HarvestBTimestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $HarvestBRunId = "harvest-b-real-$HarvestBTimestamp"
+    $HarvestBOutputDir = Join-Path $RepoRoot "runs"
+    $HarvestBRunDir = Join-Path $HarvestBOutputDir "black-magic\epistemic_harvest\$HarvestBRunId"
+    $HarvestBConfig = Join-Path $RepoRoot "configs\black-magic-harvest-b-local.yaml"
+    $HarvestBLog = Join-Path $HarvestBRunDir "launcher-native.log"
+
+    New-Item -ItemType Directory -Force -Path $HarvestBRunDir | Out-Null
+
+    Write-Host "Harvest B run ID: $HarvestBRunId" -ForegroundColor Cyan
+    Write-Host "Harvest B evidence directory: $HarvestBRunDir"
+
+    $harvestBArgs = @(
+        "-m", "inverted.black_magic.epistemic_cli",
+        "--config", $HarvestBConfig,
+        "--output-dir", $HarvestBOutputDir,
+        "--run-id", $HarvestBRunId
+    )
+
+    $harvestBExit = 1
+    try {
+        $harvestBExit = Invoke-BlackMagicNative -Executable $VenvPython -ArgumentList $harvestBArgs -LogPath $HarvestBLog
+    }
+    catch {
+        $failureText = $_ | Out-String
+        Write-Host $failureText -ForegroundColor Red
+        Add-Content -Path $HarvestBLog -Value $failureText -Encoding UTF8
+        $harvestBExit = 1
+    }
+
+    if ($harvestBExit -ne 0) {
+        Write-Host "HARVEST B RUN FAILED (exit $harvestBExit). Full native output is saved in:" -ForegroundColor Red
+        Write-Host "  $HarvestBLog" -ForegroundColor Red
+        exit $harvestBExit
+    }
+
+    try {
+        Assert-HarvestCompletionPacket -EvidenceDir $HarvestBRunDir -Label "Harvest B" | Out-Null
+    }
+    catch {
+        Write-Host "HARVEST B EVIDENCE GATE FAILED: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host "HARVEST B RUN COMPLETE." -ForegroundColor Green
+    Write-Host "Harvest B evidence: $HarvestBRunDir"
+}
