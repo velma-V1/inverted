@@ -76,6 +76,10 @@ function Start-HarvestObservers {
     }
 }
 
+$NativeHelper = Join-Path $RepoRoot "scripts\invoke-black-magic-native.ps1"
+if (-not (Test-Path $NativeHelper)) { Fail "Missing native process capture helper: $NativeHelper" }
+. $NativeHelper
+
 Write-Host "=== INVERTED HARVEST A - REAL RUN LAUNCHER ===" -ForegroundColor Cyan
 
 Require-Command git
@@ -251,12 +255,21 @@ Write-Host "`nStarting live observers ..." -ForegroundColor Cyan
 Start-HarvestObservers -EvidenceRoot $EvidenceRoot -ObserverRoot $ObserverRoot -StopSignal $StopSignal -RunId $RunId -CodeSha $HeadSha -StartedAtUtc $StartedAtUtc
 
 Write-Host "`nStarting foreground run. Keep the main terminal open." -ForegroundColor Yellow
-& $VenvPython -m inverted.black_magic.cli `
-    --config $Config `
-    --stage decision_harvest `
-    --output-dir $OutputDir `
-    --run-id $RunId 2>&1 | Tee-Object -FilePath $LogPath -Append
-$exitCode = $LASTEXITCODE
+$runnerArgs = @(
+    "-m", "inverted.black_magic.cli",
+    "--config", $Config,
+    "--stage", "decision_harvest",
+    "--output-dir", $OutputDir,
+    "--run-id", $RunId
+)
+$exitCode = Invoke-BlackMagicNative -Executable $VenvPython -ArgumentList $runnerArgs -LogPath $LogPath
+
+if ($exitCode -ne 0) {
+    New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
+    $failureArtifact = Join-Path $EvidenceRoot "launcher-failure.txt"
+    Copy-Item -Path $LogPath -Destination $failureArtifact -Force
+    Add-Content -Path $failureArtifact -Value ("runner_exit_code=" + $exitCode) -Encoding UTF8
+}
 
 New-Item -ItemType Directory -Force -Path $ObserverRoot | Out-Null
 New-Item -ItemType File -Force -Path $StopSignal | Out-Null
