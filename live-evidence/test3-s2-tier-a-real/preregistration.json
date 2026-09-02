@@ -1,0 +1,41 @@
+{
+  "absolute_action_ceiling": 1000,
+  "arm_count": 5,
+  "calls_per_arm_task": 2,
+  "combined_action_budget": 732,
+  "equal_compute": true,
+  "exact_budget": 720,
+  "execution_mode": "balanced_task_blocks",
+  "forensic_event_sourcing": true,
+  "forensic_spec": "docs/superpowers/specs/2026-09-01-test3-s2-complete-forensics-design.md",
+  "holdout": "B-R1",
+  "intervention_library": [
+    "retry_qwen",
+    "repair_cogito",
+    "switch_llama"
+  ],
+  "intervention_start": "deterministic_verified_failure",
+  "matched_cases": 72,
+  "models": [
+    "qwen3.5:9b-q8_0",
+    "cogito:3b-v1-preview-llama-q8_0",
+    "llama3.1:8b"
+  ],
+  "no_outcome_dependent_early_stopping": true,
+  "perturbation_classes": [
+    "localized",
+    "compound",
+    "structural"
+  ],
+  "physical_call_cap_per_arm": 144,
+  "predecessor_run": "test3-s1-r3-20260901-154839",
+  "predecessor_verdict": "S1_R3_SCREEN_NON_DECISIVE",
+  "protocol_revision": "S2-R1",
+  "provenance_api_call_budget": 12,
+  "section": "S2_ADAPTIVE_ROUTING",
+  "spec": "docs/superpowers/specs/2026-09-01-test3-s2-adaptive-routing-design.md",
+  "status": "FROZEN_TIER_A_EXECUTION",
+  "stochastic_divergence_gate": "promotion_must_survive_exclusion",
+  "terminal_second_call": "shadow_non_mutating",
+  "tier_a_inference_authorized": true
+}

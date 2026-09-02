@@ -1,0 +1,10 @@
+{
+  "ambiguous_case_count": 72,
+  "ambiguous_case_rate": 1.0,
+  "b2_to_b3_collisions_resolved": 5,
+  "b3_collisions_remaining": 0,
+  "collision_count": 21,
+  "collision_rate": 0.10344827586206896,
+  "largest_collision_group_size": 72,
+  "observation_group_count": 203
+}

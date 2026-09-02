@@ -1,0 +1,63 @@
+{
+  "s2": {
+    "absolute_action_ceiling": 1000,
+    "adaptive_signal_rule": {
+      "max_catastrophes_added_vs_fixed": 0,
+      "min_net_wins_vs_fixed": 4,
+      "min_net_wins_vs_random": 4,
+      "min_stratum_net_wins": 2,
+      "min_success_rate_delta_vs_fixed": 0.05,
+      "min_supported_strata": 3,
+      "require_divergence_exclusion_survival": true,
+      "require_lower_oracle_regret": true
+    },
+    "arm_count": 5,
+    "calls_per_arm_task": 2,
+    "combined_action_budget": 732,
+    "execution_mode": "balanced_task_blocks",
+    "failure_evidence_incremental_rule": {
+      "max_catastrophes_added_b2_vs_b1": 0,
+      "min_net_wins_b2_vs_b1": 3
+    },
+    "hard_call_limit": 720,
+    "harmful_rule": {
+      "catastrophe_condition_min_added": 2,
+      "catastrophe_condition_require_nonpositive_net_wins": true,
+      "max_net_wins_vs_fixed": -4
+    },
+    "holdout": "B-R1",
+    "intervention_library": [
+      "retry_qwen",
+      "repair_cogito",
+      "switch_llama"
+    ],
+    "intervention_start": "deterministic_verified_failure",
+    "matched_cases": 72,
+    "models": {
+      "llama": "llama3.1:8b",
+      "qwen": "qwen3.5:9b-q8_0",
+      "repair": "cogito:3b-v1-preview-llama-q8_0"
+    },
+    "no_outcome_dependent_early_stopping": true,
+    "ollama": {
+      "base_url": "http://127.0.0.1:11434",
+      "context_limit": 8192,
+      "format_json": true,
+      "max_tokens": 1024,
+      "retry_backoff_s": 0,
+      "temperature": 0,
+      "think": false,
+      "timeout_s": 600,
+      "transport_retries": 0
+    },
+    "per_arm_call_cap": 144,
+    "perturbation_classes": [
+      "localized",
+      "compound",
+      "structural"
+    ],
+    "protocol_revision": "S2-R1",
+    "provenance_api_call_budget": 12,
+    "section": "S2_ADAPTIVE_ROUTING"
+  }
+}

@@ -1,0 +1,6 @@
+arm_id,sha256,policy
+S2-B0,eb6e4b71de50116d323df06ce08ff07a0cd702e839b591cb2cd0ff7bd2a3fb88,"{""features"":[],""router"":""fixed"",""sequence"":[""retry_qwen"",""repair_cogito""]}"
+S2-B1,398f932f13e9bf3188b6648a5a0e65a15cca96fd02fedc4c36b945fff2a2e89b,"{""features"":[""family""],""router"":""task_family""}"
+S2-B2,5e4660c940cefe465990ebb3f998c3c5294073d89cfb1cd06b445f08e6b3feaf,"{""features"":[""failed_requirement_ids"",""failed_requirement_kinds"",""failed_count"",""failure_signature"",""deterministic_success"",""catastrophic""],""router"":""failure_signature""}"
+S2-B3,3a9df0213d6f11a0bfba2a3f8624661f064e37b17b788ffd05e8aae726e37f47,"{""features"":[""family"",""complexity"",""failed_requirement_ids"",""failed_requirement_kinds"",""failed_count"",""failure_signature"",""deterministic_success"",""catastrophic"",""previous_action"",""previous_model"",""retry_count"",""budget_spent"",""budget_remaining""],""router"":""rich_evidence_state""}"
+S2-B4,2466d97fccc3a57b1b641c68ba9d104863da9f11e06ba2ae876c120e549d97cc,"{""features"":[],""rng"":""sha256 outcome-independent frozen seed stream"",""router"":""seeded_random_negative_control""}"

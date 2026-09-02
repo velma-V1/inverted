@@ -1,0 +1,13 @@
+{
+  "failure_evidence_incremental_signal": false,
+  "holdout": "B-R1",
+  "matched_case_count": 72,
+  "protocol_failures": [],
+  "protocol_revision": "S2-R1",
+  "protocol_valid_for_primary_claim": true,
+  "reason": "S2-R1 completed validly but the frozen adaptive-routing promotion/harm thresholds were not met.",
+  "stochastic_divergence_exclusion_survives": false,
+  "tier_a_architecture_claim": false,
+  "verdict": "S2_SCREEN_NON_DECISIVE",
+  "winning_arm_id": null
+}

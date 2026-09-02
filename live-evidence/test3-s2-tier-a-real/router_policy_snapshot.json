@@ -1,0 +1,66 @@
+{
+  "arms": {
+    "S2-B0": {
+      "features": [],
+      "router": "fixed",
+      "sequence": [
+        "retry_qwen",
+        "repair_cogito"
+      ]
+    },
+    "S2-B1": {
+      "features": [
+        "family"
+      ],
+      "router": "task_family"
+    },
+    "S2-B2": {
+      "features": [
+        "failed_requirement_ids",
+        "failed_requirement_kinds",
+        "failed_count",
+        "failure_signature",
+        "deterministic_success",
+        "catastrophic"
+      ],
+      "router": "failure_signature"
+    },
+    "S2-B3": {
+      "features": [
+        "family",
+        "complexity",
+        "failed_requirement_ids",
+        "failed_requirement_kinds",
+        "failed_count",
+        "failure_signature",
+        "deterministic_success",
+        "catastrophic",
+        "previous_action",
+        "previous_model",
+        "retry_count",
+        "budget_spent",
+        "budget_remaining"
+      ],
+      "router": "rich_evidence_state"
+    },
+    "S2-B4": {
+      "features": [],
+      "rng": "sha256 outcome-independent frozen seed stream",
+      "router": "seeded_random_negative_control"
+    }
+  },
+  "forbidden_features": [
+    "target_state",
+    "hidden_gold",
+    "injected_faults",
+    "perturbation_class",
+    "future_outcome",
+    "oracle_selected_action"
+  ],
+  "intervention_library": [
+    "retry_qwen",
+    "repair_cogito",
+    "switch_llama"
+  ],
+  "protocol_revision": "S2-R1"
+}
