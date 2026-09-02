@@ -10,6 +10,9 @@ $launcherText = Get-Content $Launcher -Raw
 if ($launcherText -notmatch '\[switch\]\$ThenHarvestB') {
     throw "Harvest A launcher does not expose -ThenHarvestB"
 }
+if ($launcherText -notmatch '\[switch\]\$ContinueOnStageFailure') {
+    throw "Harvest A launcher does not expose -ContinueOnStageFailure"
+}
 if ($launcherText -notmatch 'inverted\.black_magic\.epistemic_cli') {
     throw "Harvest A launcher does not invoke Harvest B epistemic CLI"
 }
@@ -19,6 +22,9 @@ if ($launcherText -notmatch 'black-magic-harvest-b-local\.yaml') {
 if ($launcherText -notmatch 'Assert-HarvestCompletionPacket') {
     throw "Harvest A launcher does not gate A/B completion evidence"
 }
+if ($launcherText -notmatch 'Test-BlackMagicChainContinuation') {
+    throw "Harvest A launcher does not separate evidence validity from overnight continuation"
+}
 
 if (-not (Test-Path $Watcher)) {
     throw "Missing S2 handoff watcher: $Watcher"
@@ -26,6 +32,8 @@ if (-not (Test-Path $Watcher)) {
 $watcherText = Get-Content $Watcher -Raw
 foreach ($required in @(
     'Assert-S2CompletionPacket',
+    'Test-BlackMagicChainContinuation',
+    'ContinueOnStageFailure',
     'test3-s2-results\\tier-a',
     'tier-a-real',
     'build/black-magic-evidence-tests',
@@ -40,6 +48,10 @@ $waitPos = $watcherText.IndexOf('WaitForS2')
 $switchPos = $watcherText.IndexOf('git switch')
 if ($waitPos -lt 0 -or $switchPos -lt 0 -or $switchPos -lt $waitPos) {
     throw "Watcher must wait for S2 before switching branches"
+}
+
+if ($watcherText -notmatch '-ThenHarvestB\s+-ContinueOnStageFailure') {
+    throw "Watcher does not start the resilient A -> B overnight chain"
 }
 
 $ignoreText = Get-Content $GitIgnore -Raw
