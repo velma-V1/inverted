@@ -81,13 +81,13 @@ def test_production_campaign_writes_zero_call_assistance_replays_without_extra_m
         tmp_path,
         adapters={"SMALL_A": adapter},
         planner=planner,
-        max_calls=67,
+        max_calls=264,
         progress_stream=StringIO(),
         scheduler=D3Scheduler.default(random_stream_fraction=0.0),
     )
     result = campaign.run()
-    assert result.calls_used == 67
-    assert adapter.calls == 67
+    assert result.calls_used == 264
+    assert adapter.calls == 264
     replay_lines = (tmp_path / "d3_counterfactuals.jsonl").read_text(encoding="utf-8").splitlines()
     assert replay_lines
     rows = [json.loads(line) for line in replay_lines]
