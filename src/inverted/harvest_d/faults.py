@@ -21,6 +21,8 @@ class FaultLayer(str, Enum):
     VERIFIER_ORACLE = "VERIFIER_ORACLE"
     RECOVERY = "RECOVERY"
     ROUTING = "ROUTING"
+    GLOBAL_INTERACTION = "GLOBAL_INTERACTION"
+    NOVELTY = "NOVELTY"
 
 
 @dataclass(frozen=True)
