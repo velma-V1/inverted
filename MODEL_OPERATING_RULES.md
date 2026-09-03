@@ -1,12 +1,14 @@
 # INVERTED — Permanent Model Operating Rules
 
-## Constitutional authority
+## Governance authority
 
-Before applying these operating rules, read and obey [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md). The Constitution defines the highest-level project objectives; this document defines the detailed operating discipline beneath it.
+Before applying this convenience operating summary, read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md), the sole canonical repository lawbook, then the owner-approved six-law amendment in [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md).
+
+This file provides a compact operating layer beneath those authorities. It may not weaken, replace, or outrank them.
 
 ## Status
 
-**MANDATORY PROJECT-WIDE RULES FOR ALL FUTURE MODELS, AGENTS, CONTRIBUTORS, EXPERIMENT DESIGNERS, AND IMPLEMENTATION WORK.**
+**MANDATORY PROJECT-WIDE OPERATING SUMMARY FOR ALL FUTURE MODELS, AGENTS, CONTRIBUTORS, EXPERIMENT DESIGNERS, AND IMPLEMENTATION WORK.**
 
 These rules apply across INVERTED unless an explicit later repository decision supersedes them. They are not limited to Harvest D, D3, Test 5, Harvest E, or Test 6.
 
@@ -97,4 +99,4 @@ These rules apply to:
 - handoffs between models/agents;
 - future optimization and compression work.
 
-When another repository document gives more specific instructions, follow both unless they conflict. If a conflict exists, prefer the more specific experiment's frozen safety/scientific constraints while preserving the Constitution and principles above wherever possible.
+When another repository document gives more specific instructions, follow both unless they conflict. If a conflict exists, use the precedence defined by `REPO_LAWS_AND_REGULATIONS.md`, preserve frozen experiment/safety constraints, and incorporate the owner-approved constitutional amendment wherever applicable.
