@@ -5,10 +5,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$caseFile = "cases\harvest_d\d2-small-a-seed-v1.jsonl"
+$caseFile = "cases\harvest_d\d2-small-a-seed-v2.jsonl"
 $systemPrompt = "configs\harvest-d-d2-system.txt"
+$measurementVersion = "HARVEST-D-LAYERED-SCORING-v2"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$out = "harvest-d-runs\D2-SMALLA-SEED-$stamp"
+$out = "harvest-d-runs\D2-SMALLA-SEED-V2-$stamp"
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
 $modelRow = ollama list | Select-String -SimpleMatch $Model
@@ -24,6 +25,10 @@ $prov = [ordered]@{
   pool = "development"
   role = "SMALL_A"
   model = $Model
+  measurement_version = $measurementVersion
+  seed_version = "v2"
+  prior_seed_v1_boundary_admissible = $false
+  prior_seed_v1_use = "HARNESS_DIAGNOSIS_ONLY"
   git_head = $gitHead
   ollama_version = $ollamaVersion
   ollama_list_row = $modelListRow
@@ -32,9 +37,14 @@ $prov = [ordered]@{
   route = "ROUTINE_LOCAL"
   max_calls = 18
   retries = 0
+  generation_options = [ordered]@{
+    temperature = 0.0
+    seed = 20260902
+    num_ctx = 4096
+  }
   started_at = (Get-Date).ToString("o")
 }
-$prov | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 "$out\D2-PROVENANCE.json"
+$prov | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 "$out\D2-PROVENANCE.json"
 $showText | Set-Content -Encoding utf8 "$out\OLLAMA-SHOW.txt"
 
 $invoke = "$Python -m inverted.harvest_d.local_run --cases `"$caseFile`" --output `"$out`" --model `"$Model`" --max-calls 18 --route ROUTINE_LOCAL --system-prompt-file `"$systemPrompt`""
@@ -46,9 +56,14 @@ $ps | Set-Content -Encoding utf8 "$out\OLLAMA-PS-AFTER.txt"
 $summary = Get-Content "$out\00-HARVEST-D-LOCAL-RUN.json" -Raw | ConvertFrom-Json
 $prov.completed_at = (Get-Date).ToString("o")
 $prov.semantic_successes = $summary.semantic_successes
+$prov.contract_successes = $summary.contract_successes
+$prov.format_valid = $summary.format_valid
+$prov.schema_valid = $summary.schema_valid
+$prov.disposition_correct = $summary.disposition_correct
+$prov.answer_correct = $summary.answer_correct
 $prov.calls = $summary.calls
 $prov.ollama_ps_after = $ps
-$prov | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 "$out\D2-PROVENANCE.json"
+$prov | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 "$out\D2-PROVENANCE.json"
 
 Get-ChildItem $out -File | Where-Object { $_.Name -ne "D2-SHA256SUMS.csv" } | Sort-Object Name | ForEach-Object {
   $h = Get-FileHash $_.FullName -Algorithm SHA256
@@ -56,7 +71,7 @@ Get-ChildItem $out -File | Where-Object { $_.Name -ne "D2-SHA256SUMS.csv" } | So
 } | Export-Csv "$out\D2-SHA256SUMS.csv" -NoTypeInformation
 
 Write-Host ""
-Write-Host "=== HARVEST D D2 SMALL_A SEED COMPLETE ==="
+Write-Host "=== HARVEST D D2 SMALL_A SEED V2 COMPLETE ==="
 Write-Host "Output: $out"
 Get-Content "$out\00-HARVEST-D-LOCAL-RUN.json"
 Write-Host ""
