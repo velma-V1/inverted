@@ -126,7 +126,7 @@ Capture enough runtime metadata to distinguish model behavior from harness/runti
 - runtime-reported load duration, prompt-eval duration, eval duration, total duration, and throughput values when available;
 - wall-clock latency independently measured by the harness.
 
-If the runtime exposes additional stable, non-sensitive timing or inference counters, retain the raw values rather than discarding them.
+If the runtime exposes additional stable, non-sensitive timing, token-level probability, token timing, cache-state, or inference counters **without changing generation semantics**, retain the raw values rather than discarding them. Do not alter generation merely to collect optional telemetry.
 
 ## 5. Hardware and execution-environment metadata
 
@@ -134,8 +134,11 @@ Record a safe allowlisted environment snapshot at run start and relevant changes
 
 - OS/version/build;
 - Python version;
+- PowerShell version for launcher provenance;
 - INVERTED package/repo commit;
 - git branch and dirty/clean state;
+- dirty diff/patch hash and preserved patch artifact if a dirty run is explicitly allowed;
+- project dependency/lockfile hashes and relevant installed package versions;
 - CPU model and logical/physical core counts where available;
 - installed RAM;
 - GPU model(s), VRAM, driver/runtime versions where available;
@@ -160,6 +163,7 @@ Where collection is practical and does not materially perturb the experiment, re
 - system RAM utilization;
 - GPU utilization;
 - GPU VRAM utilization;
+- warm/cold model-load status where inferable;
 - model load/unload events;
 - queue/wait time if observable;
 - runtime error/timeout durations;
@@ -221,11 +225,15 @@ For every scheduling decision, retain:
 - evidence counts available to each candidate;
 - current sequential decision state;
 - estimated information value/priority features used by the scheduler;
+- deterministic candidate scores/ranks;
+- randomized selection probability/propensity when randomization is used;
+- randomization seed and block/assignment ID;
 - reason the selected experiment outranked alternatives;
 - calls remaining globally and by protected reserve;
 - calls reallocated from killed/futile mechanisms;
 - stopping reason for any experiment arm;
-- promotion/defer/reject state changes.
+- promotion/defer/reject state changes;
+- hash/version of the preregistered experiment option set in force at that moment.
 
 Do not store hidden chain-of-thought from any model used by the scheduler. Store deterministic scores, structured reason codes, and observable scheduler inputs/outputs.
 
@@ -299,7 +307,20 @@ Every derived score must preserve:
 - adjudication event if used;
 - timestamp/order showing the hidden oracle was revealed only after the model decision when required.
 
-Re-scoring stored raw responses with a later scorer must create a new derived layer and never overwrite original scores.
+For every sequential/statistical decision, additionally preserve:
+
+- unit of analysis and matching/block structure;
+- current effective sample size;
+- estimator/effect measure;
+- confidence-sequence/e-value/sequential method name and version;
+- superiority/noninferiority margin;
+- look/index number;
+- lower/upper bounds or equivalent evidence statistic;
+- stopping boundary/threshold;
+- decision returned;
+- multiplicity/alpha-spending or other error-control parameters when applicable.
+
+Re-scoring or re-analysis of stored raw responses with a later scorer/statistical method must create a new derived layer and never overwrite original results.
 
 ## 13. Case-generation and perturbation provenance
 
@@ -317,7 +338,9 @@ For every case retain:
 - contamination status;
 - prior exposure status;
 - neighbor/fresh/sealed lineage;
-- semantic oracle derivation/provenance.
+- semantic oracle derivation/provenance;
+- randomization/block assignment and presentation order;
+- matched target/sham/control pairing IDs.
 
 The exact final case payload used for each model call is immutable evidence.
 
@@ -356,6 +379,8 @@ When a deterministic shadow/counterfactual can be computed without a new model c
 - information-field ablation results that do not require a new physical model call;
 - deterministic post-hoc state/effect checks.
 
+For every counterfactual that could not be computed, store an explicit `COUNTERFACTUAL_UNAVAILABLE` record with the reason when the missing counterfactual would otherwise be expected.
+
 Counterfactual records must be explicitly marked as replay/shadow rather than physical execution.
 
 ## 16. Data integrity and schema evolution
@@ -378,6 +403,14 @@ Required protections:
 A physical model call is not considered fully admissible until required capture artifacts have been durably written and validated.
 
 If an essential raw artifact cannot be captured after the model call, record the call as `CAPTURE_INCOMPLETE` and exclude it from promotion claims while retaining every available byte/field.
+
+Maintain a per-call capture completeness matrix distinguishing:
+
+- REQUIRED_CAPTURE_PRESENT;
+- REQUIRED_CAPTURE_MISSING;
+- OPTIONAL_CAPTURE_PRESENT;
+- OPTIONAL_CAPTURE_UNAVAILABLE;
+- OPTIONAL_CAPTURE_SKIPPED_TO_AVOID_PERTURBATION.
 
 If the capture subsystem itself becomes unreliable or repeatedly loses essential evidence, D3 must halt before spending further model calls. Cheap storage failure must never cause expensive inference to continue producing scientifically unusable data.
 
@@ -402,7 +435,64 @@ In addition to raw JSON/JSONL, D3 should emit normalized flat/index tables suffi
 
 The final evidence package should include a machine-readable schema/data dictionary describing every field and allowable enum/value.
 
-## 19. Mandatory final data products
+## 19. Field-level information provenance and transformation lineage
+
+Every information field that enters the system or model-visible packet should preserve, where applicable:
+
+- field ID/name;
+- raw value or safe payload reference;
+- source ID and source type;
+- trust class;
+- producing component;
+- creation/observation timestamp;
+- entity/resource it is bound to;
+- canonical state version it is bound to;
+- expiry/TTL or staleness status;
+- confidence/verification status when meaningful;
+- whether it was model-visible, system-only, or both;
+- reason it was included, omitted, masked, or removed;
+- original position/order;
+- byte and token contribution where measurable;
+- transformation chain from source to rendered packet;
+- compression/summarization/rendering algorithm and version;
+- parent source fields used in any derived/compressed field.
+
+This enables later distinction between **which fact helped** and **which transformation of that fact helped**.
+
+## 20. Human/operator and external-intervention provenance
+
+Any manual action that can affect the campaign must become an event, including:
+
+- initial command line/launcher invocation;
+- operator pause/resume;
+- manual restart;
+- approved provenance segmentation;
+- config/model change;
+- manual disposition of a hard-stop;
+- case-bank repair or quarantine;
+- code/config patch during the campaign;
+- model load/unload forced by the operator.
+
+Record timestamp, operator-action type, safe reason code/notes, before/after hashes, affected run/block/cases, and whether evidence comparability was preserved, segmented, or invalidated.
+
+Human actions must never be silently folded into automated behavior.
+
+## 21. Component and dependency manifest
+
+At each run start and whenever it changes, preserve a machine-readable manifest of:
+
+- active architecture components/mechanisms and versions;
+- component configuration hashes;
+- scorer/parser/verifier versions;
+- router/scheduler version;
+- information renderer/compressor versions;
+- recovery policy version;
+- case generator/mutator version;
+- project dependency lock hashes and relevant runtime package versions.
+
+A later analysis must be able to determine exactly which implementation produced each event.
+
+## 22. Mandatory final data products
 
 Add these to the existing D3 outputs:
 
@@ -410,11 +500,16 @@ Add these to the existing D3 outputs:
 - `d3_raw_model_responses.jsonl`;
 - `d3_normalized_model_calls.jsonl`;
 - `d3_information_packets.jsonl`;
+- `d3_information_field_lineage.jsonl`;
 - `d3_state_snapshots.jsonl`;
 - `d3_evidence_snapshots.jsonl`;
 - `d3_authority_snapshots.jsonl`;
 - `d3_assistance_events.jsonl`;
 - `d3_scheduler_events.jsonl`;
+- `d3_randomization_assignments.jsonl`;
+- `d3_sequential_analysis_state.jsonl`;
+- `d3_operator_events.jsonl`;
+- `d3_component_manifest.jsonl`;
 - `d3_recovery_trajectories.jsonl`;
 - `d3_edge_cases.jsonl`;
 - `d3_errors.jsonl`;
@@ -423,24 +518,30 @@ Add these to the existing D3 outputs:
 - `d3_scores_normalized.jsonl`;
 - `d3_runtime_telemetry.jsonl`;
 - `d3_environment_provenance.json`;
+- `d3_dependency_provenance.json`;
 - `d3_case_lineage.jsonl`;
 - `d3_data_dictionary.json`;
+- `d3_capture_field_matrix.jsonl`;
 - `d3_capture_completeness.json`;
 - existing event log, call ledger, journal, resume state, hashes, and final report.
 
-## 20. Final data-value test
+## 23. Final data-value test
 
 Before D3 is declared complete, the stored evidence must support retrospective answers without additional model inference to questions such as:
 
 - What exact information did the model see before every wrong disposition?
 - Which information source/representation/order/timing changed the answer versus merely changed the disposition?
 - What did the system know that the model did not?
+- Which exact transformation/compression/order of a useful fact caused the gain or loss?
 - Which assistance mechanism first changed each trajectory?
 - Which rejected candidate action would have been admissible?
 - Which recovery path fixed the failure, migrated it, or worsened it?
 - What runtime/model/hardware differences correlate with anomalous behavior?
 - Which edge cases were excluded and why?
-- Can the original scorer be reproduced exactly from raw artifacts?
+- Was an apparent effect confounded by adaptive case selection or stopping?
+- Can the scheduler's choice of every experiment be reconstructed from its recorded candidate set and scores?
+- Can every manual intervention be identified and its effect on comparability assessed?
+- Can the original scorer/statistical decision be reproduced exactly from raw artifacts?
 - Can a new scorer or deterministic rule be replayed against the original raw model responses?
 - Can every promoted architecture claim be traced to raw calls, exact inputs, system state, interventions, and verified outcomes?
 
