@@ -34,6 +34,7 @@ _RECORD_FILES = (
     "d3_operator_events.jsonl",
     "d3_component_manifest.jsonl",
     "d3_recovery_trajectories.jsonl",
+    "d3_reproducibility_calibration.jsonl",
     "d3_edge_cases.jsonl",
     "d3_errors.jsonl",
     "d3_counterfactuals.jsonl",
@@ -114,6 +115,7 @@ class D3EvidenceStore:
         self._call_ids: set[str] = set()
         self._capture_status: dict[str, CallCaptureStatus] = {}
         self._last_event_sequence = 0
+        self._call_order: list[str] = []
         self._load_existing_identity_state()
 
     def _load_existing_identity_state(self) -> None:
@@ -143,6 +145,7 @@ class D3EvidenceStore:
             if not call_id or call_id in self._call_ids:
                 raise D3IntegrityError("existing physical model call identity is missing or duplicated")
             self._call_ids.add(call_id)
+            self._call_order.append(call_id)
             missing = tuple(str(x) for x in row.get("missing_required", []))
             self._capture_status[call_id] = CallCaptureStatus(
                 call_id,
@@ -151,12 +154,21 @@ class D3EvidenceStore:
             )
 
     def _append(self, name: str, value: object) -> None:
+        if name not in _RECORD_FILES:
+            raise D3IntegrityError(f"unknown D3 record family: {name}")
         path = self.root / name
         payload = _canonical_line(value)
         with path.open("a", encoding="utf-8", newline="") as handle:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
+
+    def append_record(self, name: str, value: object) -> None:
+        self._append(name, value)
+
+    @property
+    def last_call_id(self) -> str | None:
+        return self._call_order[-1] if self._call_order else None
 
     def append_event(self, event: D3Event) -> None:
         if not event.event_id or event.event_id in self._event_ids:
@@ -215,8 +227,33 @@ class D3EvidenceStore:
             },
         )
         self._call_ids.add(call_id)
+        self._call_order.append(call_id)
         self._capture_status[call_id] = status
         return status
+
+    def _record_for_call(self, filename: str, physical_model_call_id: str) -> dict[str, Any]:
+        path = self.root / filename
+        matches: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if str(row.get("physical_model_call_id", "")) == physical_model_call_id:
+                matches.append(row)
+        if len(matches) != 1:
+            raise D3IntegrityError(
+                f"expected exactly one {filename} record for {physical_model_call_id}, got {len(matches)}"
+            )
+        return matches[0]
+
+    def raw_request(self, physical_model_call_id: str) -> dict[str, Any]:
+        return self._record_for_call("d3_raw_model_requests.jsonl", physical_model_call_id)
+
+    def raw_response(self, physical_model_call_id: str) -> dict[str, Any]:
+        return self._record_for_call("d3_raw_model_responses.jsonl", physical_model_call_id)
+
+    def normalized_call(self, physical_model_call_id: str) -> dict[str, Any]:
+        return self._record_for_call("d3_normalized_model_calls.jsonl", physical_model_call_id)
 
     def capture_status(self, physical_model_call_id: str) -> CallCaptureStatus:
         try:
