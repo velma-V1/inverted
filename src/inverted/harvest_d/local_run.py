@@ -12,35 +12,116 @@ from .telemetry import SystemInvolvement
 from .types import RouteMode
 
 
-def run_cases(case_path: str | Path, output: str | Path, adapter: ModelAdapter, *, route: RouteMode,
-              max_calls: int, system_prompt: str | None = None, involvement: SystemInvolvement | None = None) -> dict[str, object]:
-    cases = load_cases(case_path); budget = CallBudget(max_calls); runner = ModelTrialRunner(); writer = ArtifactWriter(output)
+MEASUREMENT_VERSION = "HARVEST-D-LAYERED-SCORING-v2"
+
+
+def run_cases(
+    case_path: str | Path,
+    output: str | Path,
+    adapter: ModelAdapter,
+    *,
+    route: RouteMode,
+    max_calls: int,
+    system_prompt: str | None = None,
+    involvement: SystemInvolvement | None = None,
+) -> dict[str, object]:
+    cases = load_cases(case_path)
+    budget = CallBudget(max_calls)
+    runner = ModelTrialRunner()
+    writer = ArtifactWriter(output)
     involvement = involvement or SystemInvolvement()
     trials, prompts, responses, token_rows, latency_rows = [], [], [], [], []
+
     for case in cases:
         budget.consume()
         result = runner.run(case, adapter, route=route, involvement=involvement, system_prompt=system_prompt)
-        trials.append(result.to_dict())
-        prompts.append({"case_id": case.case_id, "physical_model_call_id": result.physical_model_call_id,
-                        "prompt": case.model_prompt(), "system_prompt": system_prompt})
-        responses.append({"case_id": case.case_id, "physical_model_call_id": result.physical_model_call_id,
-                          "model": result.model, "response_text": result.response_text, "semantic_success": result.semantic_success})
-        token_rows.append({"physical_model_call_id": result.physical_model_call_id, "input_tokens": result.input_tokens, "output_tokens": result.output_tokens})
-        latency_rows.append({"physical_model_call_id": result.physical_model_call_id, "latency_ms": result.latency_ms})
-    writer.write_jsonl("trials.jsonl", trials); writer.write_jsonl("prompts.jsonl", prompts); writer.write_jsonl("responses.jsonl", responses)
-    writer.write_jsonl("model_calls.jsonl", [{"physical_model_call_id": r["physical_model_call_id"], "model": r["model"], "route": r["route"]} for r in trials])
+        row = result.to_dict()
+        trials.append(row)
+        prompts.append(
+            {
+                "case_id": case.case_id,
+                "physical_model_call_id": result.physical_model_call_id,
+                "prompt": case.model_prompt(),
+                "system_prompt": system_prompt,
+            }
+        )
+        responses.append(
+            {
+                "case_id": case.case_id,
+                "physical_model_call_id": result.physical_model_call_id,
+                "model": result.model,
+                "response_text": result.response_text,
+                "semantic_success": result.semantic_success,
+                "format_valid": result.format_valid,
+                "schema_valid": result.schema_valid,
+                "disposition_correct": result.disposition_correct,
+                "answer_correct": result.answer_correct,
+                "contract_success": result.contract_success,
+            }
+        )
+        token_rows.append(
+            {
+                "physical_model_call_id": result.physical_model_call_id,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+            }
+        )
+        latency_rows.append(
+            {
+                "physical_model_call_id": result.physical_model_call_id,
+                "latency_ms": result.latency_ms,
+            }
+        )
+
+    writer.write_jsonl("trials.jsonl", trials)
+    writer.write_jsonl("prompts.jsonl", prompts)
+    writer.write_jsonl("responses.jsonl", responses)
+    writer.write_jsonl(
+        "model_calls.jsonl",
+        [
+            {
+                "physical_model_call_id": r["physical_model_call_id"],
+                "model": r["model"],
+                "route": r["route"],
+                "measurement_version": MEASUREMENT_VERSION,
+            }
+            for r in trials
+        ],
+    )
     writer.write_csv("tokens.csv", token_rows, fieldnames=("physical_model_call_id", "input_tokens", "output_tokens"))
     writer.write_csv("latency.csv", latency_rows, fieldnames=("physical_model_call_id", "latency_ms"))
-    summary = {"mode": "explicit-local-model-run", "model": adapter.model_id, "route": route.value, "cases": len(cases),
-               "calls": budget.used, "max_calls": max_calls, "retries": 0, "semantic_successes": sum(bool(r["semantic_success"]) for r in trials)}
-    writer.write_json("00-HARVEST-D-LOCAL-RUN.json", summary); writer.finalize(); return summary
+
+    summary = {
+        "mode": "explicit-local-model-run",
+        "measurement_version": MEASUREMENT_VERSION,
+        "model": adapter.model_id,
+        "route": route.value,
+        "cases": len(cases),
+        "calls": budget.used,
+        "max_calls": max_calls,
+        "retries": 0,
+        "semantic_successes": sum(bool(r["semantic_success"]) for r in trials),
+        "contract_successes": sum(bool(r["contract_success"]) for r in trials),
+        "format_valid": sum(bool(r["format_valid"]) for r in trials),
+        "schema_valid": sum(bool(r["schema_valid"]) for r in trials),
+        "disposition_correct": sum(bool(r["disposition_correct"]) for r in trials),
+        "answer_correct": sum(bool(r["answer_correct"]) for r in trials),
+        "generation_options": dict(getattr(adapter, "generation_options", {})),
+    }
+    writer.write_json("00-HARVEST-D-LOCAL-RUN.json", summary)
+    writer.finalize()
+    return summary
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Run an explicit local-model Harvest D case set")
-    p.add_argument("--cases", required=True); p.add_argument("--output", required=True); p.add_argument("--model", required=True)
-    p.add_argument("--base-url", default="http://127.0.0.1:11434"); p.add_argument("--max-calls", type=int, required=True)
-    p.add_argument("--route", choices=[x.value for x in RouteMode], default=RouteMode.QWEN_STANDARD.value); p.add_argument("--system-prompt-file")
+    p.add_argument("--cases", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--model", required=True)
+    p.add_argument("--base-url", default="http://127.0.0.1:11434")
+    p.add_argument("--max-calls", type=int, required=True)
+    p.add_argument("--route", choices=[x.value for x in RouteMode], default=RouteMode.QWEN_STANDARD.value)
+    p.add_argument("--system-prompt-file")
     return p
 
 
@@ -48,7 +129,14 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     system_prompt = Path(args.system_prompt_file).read_text(encoding="utf-8") if args.system_prompt_file else None
     adapter = OllamaChatAdapter(args.model, base_url=args.base_url)
-    run_cases(args.cases, args.output, adapter, route=RouteMode(args.route), max_calls=args.max_calls, system_prompt=system_prompt)
+    run_cases(
+        args.cases,
+        args.output,
+        adapter,
+        route=RouteMode(args.route),
+        max_calls=args.max_calls,
+        system_prompt=system_prompt,
+    )
     return 0
 
 
