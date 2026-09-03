@@ -6,6 +6,18 @@ A falsifiable experiment for one narrow architectural question:
 
 The benchmark does **not** claim universal proof. A decisive campaign returns `SUPPORTED`, `REFUTED`, or `INCONCLUSIVE` for the preregistered tested hypothesis. Smoke/development runs return `NON-DECISIVE` by design.
 
+## Permanent model operating rules
+
+Before meaningful design, testing, analysis, or implementation work, AI models and agents must read and obey [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md). Model-specific entry points are also provided in [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md), and [`.github/copilot-instructions.md`](.github/copilot-instructions.md).
+
+Two project-wide rules are mandatory:
+
+> **Your requirements define the minimum. I am responsible for identifying higher-value options, missing experiments, better architecture, better telemetry, and failure modes you did not explicitly name.**
+
+> **Do not merely satisfy the requested experiment. Ask what we will wish we had recorded six months later, and capture it now when it is cheap.**
+
+Also enforce: **something has to prove it belongs.** Complexity and mechanisms must earn their place through evidence.
+
 ## Why this benchmark is hard to fake
 
 Six matched arms run on identical seeded tasks:
