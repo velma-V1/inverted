@@ -1,8 +1,8 @@
 # INVERTED Agent Instructions
 
-All agents working in this repository must read and obey [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md) first, then [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md), before meaningful design, testing, analysis, or implementation work.
+All agents working in this repository must read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md) first. It is the sole canonical repository lawbook.
 
-The Constitution defines the highest-level project objectives. The operating rules define the detailed discipline beneath them.
+Then read the explicit owner-approved six-law amendment in [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md), followed by the compact operating summary in [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md), before meaningful design, testing, analysis, or implementation work.
 
 Two permanent operating rules are especially important:
 
@@ -14,4 +14,4 @@ These are project-wide requirements, not suggestions. Literal task completion is
 
 Additional rule: **something has to prove it belongs.** Do not add mechanisms or complexity without causal evidence or a clearly defined experiment that can earn their place.
 
-For long-term optimization, model uplift, experiment decision value, decision-ready project memory, and shipping discipline, the canonical source is [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md). For evidence capture, failure causality, retesting avoidance, promotion gates, and scope, use [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
+The six-law amendment additionally governs project-first truth, highest capability with minimum machinery, maximum decision value from experiments, model + system capability ratcheting, decision-ready project memory, and research termination into the highest justified shipping tier.
