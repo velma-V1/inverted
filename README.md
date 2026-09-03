@@ -8,7 +8,9 @@ The benchmark does **not** claim universal proof. A decisive campaign returns `S
 
 ## Permanent model operating rules
 
-Before meaningful design, testing, analysis, or implementation work, AI models and agents must read and obey [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md) first, then [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md). The Constitution defines the highest-level project objectives; the operating rules define the detailed discipline beneath them. Model-specific entry points are also provided in [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md), and [`.github/copilot-instructions.md`](.github/copilot-instructions.md).
+Before meaningful design, testing, analysis, or implementation work, AI models and agents must read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md) first. It is the sole canonical repository lawbook.
+
+Then read the explicit owner-approved six-law amendment in [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md), followed by the compact operating summary in [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md). Model-specific entry points are also provided in [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md), and [`.github/copilot-instructions.md`](.github/copilot-instructions.md).
 
 Two project-wide operating rules are mandatory:
 
@@ -16,7 +18,7 @@ Two project-wide operating rules are mandatory:
 
 > **Do not merely satisfy the requested experiment. Ask what we will wish we had recorded six months later, and capture it now when it is cheap.**
 
-The Constitution additionally requires project-first truth, highest verified capability with minimum necessary machinery, maximum valid decision value from experiments, upward ratcheting of both whole-system and model-in-system capability, decision-ready project memory, and research that terminates in the highest justified shipping tier.
+The six-law amendment additionally requires project-first truth, highest verified capability with minimum necessary machinery, maximum valid decision value from experiments, upward ratcheting of both whole-system and model-in-system capability, decision-ready project memory, and research that terminates in the highest justified shipping tier.
 
 Also enforce: **something has to prove it belongs.** Complexity and mechanisms must earn their place through evidence.
 
