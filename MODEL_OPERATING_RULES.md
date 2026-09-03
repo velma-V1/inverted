@@ -1,5 +1,9 @@
 # INVERTED — Permanent Model Operating Rules
 
+## Constitutional authority
+
+Before applying these operating rules, read and obey [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md). The Constitution defines the highest-level project objectives; this document defines the detailed operating discipline beneath it.
+
 ## Status
 
 **MANDATORY PROJECT-WIDE RULES FOR ALL FUTURE MODELS, AGENTS, CONTRIBUTORS, EXPERIMENT DESIGNERS, AND IMPLEMENTATION WORK.**
@@ -93,4 +97,4 @@ These rules apply to:
 - handoffs between models/agents;
 - future optimization and compression work.
 
-When another repository document gives more specific instructions, follow both unless they conflict. If a conflict exists, prefer the more specific experiment's frozen safety/scientific constraints while preserving the principles above wherever possible.
+When another repository document gives more specific instructions, follow both unless they conflict. If a conflict exists, prefer the more specific experiment's frozen safety/scientific constraints while preserving the Constitution and principles above wherever possible.
