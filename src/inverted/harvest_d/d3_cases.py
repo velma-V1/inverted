@@ -169,7 +169,7 @@ def _scenario(family: str, rng: random.Random, index: int) -> tuple[Disposition,
             actions=answers,
             dependencies={"independent_verification_before_commit": True},
             recovery={"previous_verified": "verifier disagreement", "recovery_state": "EVIDENCE_REQUIRED"},
-            uncertainty={"oracle_model_mismatch": True},
+            uncertainty={"verifier_model_mismatch": True},
         )
     elif family == "RECOVERY":
         answers = ["REPLAN", "BLIND_RETRY"]
