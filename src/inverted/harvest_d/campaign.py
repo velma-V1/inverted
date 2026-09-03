@@ -12,7 +12,7 @@ class ConfigError(ValueError):
     pass
 
 _ALLOWED_STAGES = ("D0", "D1", "D2", "D3", "D4", "D5", "D6", "D6B", "D7")
-_DEFAULT_CEILINGS = {"D0": 0, "D1": 0, "D2": 70, "D3": 110, "D4": 60, "D5": 50, "D6": 70, "D6B": 30, "D7": 0}
+_DEFAULT_CEILINGS = {"D0": 0, "D1": 0, "D2": 70, "D3": 1000, "D4": 60, "D5": 50, "D6": 70, "D6B": 30, "D7": 0}
 
 @dataclass(frozen=True)
 class HarvestDConfig:
@@ -22,7 +22,7 @@ class HarvestDConfig:
     scope_frozen: bool = True
     normal_ci_model_free: bool = True
     cloud_required: bool = False
-    primary_call_ceiling: int = 390
+    primary_call_ceiling: int = 1280
 
     @classmethod
     def default(cls) -> "HarvestDConfig": return cls()
