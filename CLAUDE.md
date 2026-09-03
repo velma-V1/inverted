@@ -1,8 +1,8 @@
 # INVERTED Claude Instructions
 
-Before meaningful work in this repository, read and obey [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md) first, then [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
+Before meaningful work in this repository, read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md) first. It is the sole canonical repository lawbook.
 
-The Constitution defines the highest-level project objectives. The operating rules define the detailed discipline beneath them.
+Then read the explicit owner-approved six-law amendment in [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md), followed by the compact operating summary in [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
 
 Permanent operating rules:
 
@@ -14,4 +14,4 @@ These rules apply project-wide. Do not stop at literal compliance when a materia
 
 Also enforce: **something has to prove it belongs.** Complexity is not a virtue; mechanisms must earn their place through evidence.
 
-For long-term optimization, model uplift, experiment decision value, decision-ready project memory, and shipping discipline, follow [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md). For evidence capture, retesting avoidance, causal failure analysis, promotion discipline, and scope, follow [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
+The six-law amendment additionally governs project-first truth, highest capability with minimum machinery, maximum decision value from experiments, model + system capability ratcheting, decision-ready project memory, and research termination into the highest justified shipping tier.
