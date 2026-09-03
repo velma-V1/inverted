@@ -738,6 +738,154 @@ Distinguish:
 
 Never hide one category inside another.
 
+## 16.1 TEST-AUTOMATION-BY-DEFAULT LAW
+
+**Every repeatable INVERTED test must be automated wherever technically and scientifically possible.**
+
+This applies project-wide to:
+
+- unit and integration tests;
+- benchmarks;
+- experiments and campaigns;
+- regression suites;
+- stress tests;
+- red-team/adversarial tests;
+- local-model evaluations;
+- model-free validation;
+- sealed confirmation runs;
+- recovery/replay tests;
+- release qualification.
+
+The user should not have to manually perform repeatable mechanical work that a reliable harness can perform itself.
+
+Where applicable, automation should own preflight, scheduling, deterministic randomization, budget accounting, execution, model/tool/API calls, evidence capture, scoring, replay, failure/recovery classification, sequential stopping, crash/resume, artifact generation, checksums/provenance, regression checks, and final completeness validation.
+
+Human intervention is reserved for a protocol-defined reason that cannot safely or validly be automated, including:
+
+- a hard-stop condition;
+- an owner-only authority decision;
+- an unresolved external effect requiring adjudication;
+- a security/safety boundary requiring human authorization;
+- or another explicitly frozen human gate.
+
+Automation executes the protocol. It may not rewrite the protocol because of observed results.
+
+Automation must not silently modify:
+
+- oracle logic;
+- success criteria;
+- sealed evidence;
+- authority boundaries;
+- action/call ceilings;
+- randomization policy;
+- evidence admissibility;
+- or preregistered decision logic.
+
+A repeatable test is not operationally complete merely because it can be run correctly by hand. If the execution path can reasonably be automated, automation is part of the test's definition of done.
+
+## 16.2 SAME-TERMINAL PROGRESS LAW
+
+**Every user-invoked test with measurable work must automatically show a compact live progress display in the same terminal session from which the test was launched.**
+
+No special progress flag should be required for a normal local run.
+
+The progress interface must not require or launch:
+
+- another terminal window;
+- a browser or localhost dashboard;
+- a GUI;
+- a separate monitor process;
+- or a second manual command.
+
+The required operating target includes a **small terminal window beside ChatGPT in a split-screen configuration**.
+
+At minimum the display must expose:
+
+- a visible progress bar;
+- percent completed;
+- tasks/work units completed;
+- tasks/work units remaining;
+- completed/total work when a meaningful total exists;
+- physical model calls used/available when inference is part of the test;
+- estimated time remaining / time to completion;
+- ETA clock time;
+- and, when useful and space permits, current phase/arm/task and elapsed time.
+
+A compact normal form may resemble:
+
+```text
+[#######---] 70% | done 140/200 | left 60 | 18m left | ETA 09:41
+```
+
+A narrow-terminal form may reduce labels while preserving the required information:
+
+```text
+[####---] 70% 140/200 L60 18m ETA09:41
+```
+
+### 16.2.1 Narrow-window behavior
+
+The progress renderer must be width-aware when practical and must provide a deliberately compact minimum-width mode.
+
+Do not build full-screen terminal dashboards, multi-line animated panels, or cursor-addressing UIs for ordinary test progress. The default must remain readable in a narrow same-terminal split-window configuration.
+
+### 16.2.2 In-place update and split-window repaint tolerance
+
+The expected environment may sometimes convert an attempted in-place progress repaint into a new output line while the terminal and ChatGPT share the screen.
+
+Therefore the renderer must:
+
+1. prefer a single-line carriage-return/terminal-safe in-place update when supported;
+2. make every update independently understandable if it is emitted as a new line;
+3. throttle repaint frequency so the known split-window repaint behavior cannot flood the terminal;
+4. automatically fall back to periodic compact status lines when in-place repaint is unreliable or output is non-interactive;
+5. avoid depending on advanced cursor movement or terminal state that can break when the window is resized;
+6. finish with one final completed status line and newline.
+
+A cosmetic repaint failure must not alter scientific execution or evidence.
+
+### 16.2.3 Adaptive/sequential test progress
+
+For adaptive tests where the final executed workload is not fixed, do not calculate `% complete` as though the maximum model/action ceiling were a quota.
+
+Progress should be computed against the **currently committed/scheduled executable workload**, with the unused call/action ceiling shown separately when useful. If adaptive scheduling legitimately changes the committed denominator, update the display and preserve that scheduling change in telemetry.
+
+### 16.2.4 ETA isolation
+
+Percent, time remaining, and ETA are operational display telemetry only.
+
+They must not influence:
+
+- prompts;
+- case selection;
+- scientific scheduling except where the independently defined scheduler already requires it;
+- arm selection;
+- early stopping;
+- verdicts;
+- retries;
+- model routing;
+- call/action budgets;
+- or evidence admissibility.
+
+### 16.2.5 Progress-bar verification requirement
+
+A new test runner is not ready for local execution until automated tests verify its progress interface.
+
+Where applicable, test at least:
+
+- normal terminal width;
+- narrow split-window width;
+- initial/zero progress;
+- 100% completion;
+- remaining-task accounting;
+- ETA/time-remaining formatting;
+- unknown or unstable early ETA;
+- adaptive denominator changes;
+- non-interactive fallback;
+- and divide-by-zero/negative-counter protection.
+
+The progress interface is observability. It must not perturb the experiment.
+
 ---
 
 # 17. SEALED EVIDENCE AND SCIENTIFIC INTEGRITY LAW
@@ -1066,6 +1214,8 @@ A future model has understood these laws when it behaves like this:
 - it forces every mechanism to pay complexity rent;
 - it replaces inferior architecture despite sunk work;
 - it keeps research, testing, governance, and telemetry subordinate to the actual product objective;
+- it automates repeatable testing instead of making the user perform mechanical test orchestration;
+- it makes every measurable local test visibly trackable from the same compact terminal used to launch it;
 - it knows when the right next action is an experiment instead of another search;
 - it knows when the right next action is compression instead of another feature;
 - and it knows when the highest-value action is to freeze and ship.
