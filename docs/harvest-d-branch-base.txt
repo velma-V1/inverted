@@ -1,0 +1,2 @@
+base_commit=96306482153b1ced76fc7a811afe2beb7a1b5b38
+branch=design/harvest-d-identifiability-model-substitution
