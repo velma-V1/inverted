@@ -6,39 +6,91 @@ on:
       - implementation/harvest-d-identifiability-model-substitution
     paths:
       - 'src/inverted/harvest_d/**'
+      - 'src/inverted/progress.py'
       - 'tests/test_harvest_d_*.py'
+      - 'tests/test_progress_display.py'
+      - 'tests/test_campaign_progress_policy.py'
       - 'configs/harvest-d.json'
+      - 'configs/harvest-d-d3.json'
+      - 'scripts/run-harvest-d-d3.ps1'
+      - 'TESTING.md'
       - 'docs/research/2026-09-02-harvest-d-research-synthesis.md'
+      - 'docs/superpowers/specs/*harvest-d-d3*.md'
+      - 'docs/superpowers/specs/2026-09-02-harvest-d-cpu-sentinel-addendum.md'
       - 'docs/superpowers/specs/2026-09-02-harvest-d-identifiability-model-substitution-design.md'
       - 'docs/superpowers/plans/2026-09-02-harvest-d-identifiability-model-substitution.md'
+      - 'docs/superpowers/plans/2026-09-03-harvest-d-d3-automated-tomography.md'
       - '.github/workflows/harvest-d-validation.yml'
   pull_request:
     paths:
       - 'src/inverted/harvest_d/**'
+      - 'src/inverted/progress.py'
       - 'tests/test_harvest_d_*.py'
+      - 'tests/test_progress_display.py'
+      - 'tests/test_campaign_progress_policy.py'
       - 'configs/harvest-d.json'
+      - 'configs/harvest-d-d3.json'
+      - 'scripts/run-harvest-d-d3.ps1'
+      - 'TESTING.md'
+      - 'docs/superpowers/specs/*harvest-d-d3*.md'
+      - 'docs/superpowers/specs/2026-09-02-harvest-d-cpu-sentinel-addendum.md'
+      - 'docs/superpowers/plans/2026-09-03-harvest-d-d3-automated-tomography.md'
       - '.github/workflows/harvest-d-validation.yml'
 
 jobs:
   model-free-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install package and pytest
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e . pytest
-      - name: Harvest D focused tests
-        run: python -m pytest -q tests/test_harvest_d_core.py tests/test_harvest_d_analysis.py tests/test_harvest_d_execution.py tests/test_harvest_d_campaign.py
+          python -m pip install -e ".[test]"
+      - name: D3 focused harness and progress contract
+        run: python -m pytest -q tests/test_harvest_d_d3_*.py tests/test_progress_display.py tests/test_campaign_progress_policy.py
+      - name: All Harvest D regressions
+        run: python -m pytest -q tests/test_harvest_d_core.py tests/test_harvest_d_analysis.py tests/test_harvest_d_execution.py tests/test_harvest_d_campaign.py tests/test_harvest_d_d3_*.py
       - name: Full repository regression
         run: python -m pytest -q
-      - name: Offline/model-free Harvest D dry run
+      - name: D3 zero-call end-to-end package
+        env:
+          OPENAI_API_KEY: ''
+          ANTHROPIC_API_KEY: ''
+          OPENROUTER_API_KEY: ''
+        run: |
+          rm -rf /tmp/harvest-d-d3-model-free
+          python -m inverted.harvest_d.d3_cli --config configs/harvest-d-d3.json --output /tmp/harvest-d-d3-model-free --model-free
+          test -f /tmp/harvest-d-d3-model-free/00-HARVEST-D-D3-MASTER-INDEX.json
+          test -f /tmp/harvest-d-d3-model-free/d3_system_events.jsonl
+          test -f /tmp/harvest-d-d3-model-free/d3_campaign_journal.jsonl
+          test -f /tmp/harvest-d-d3-model-free/d3_call_ledger.jsonl
+          test -f /tmp/harvest-d-d3-model-free/d3_capture_completeness.json
+          test -f /tmp/harvest-d-d3-model-free/d3_data_dictionary.json
+          test -f /tmp/harvest-d-d3-model-free/d3_causal_claim_graph.jsonl
+          test -f /tmp/harvest-d-d3-model-free/d3_coverage_matrix.json
+          test -f /tmp/harvest-d-d3-model-free/d3_data_value_audit.json
+          test -f /tmp/harvest-d-d3-model-free/d4_handoff.json
+          test -f /tmp/harvest-d-d3-model-free/SHA256SUMS.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('/tmp/harvest-d-d3-model-free')
+          master = json.loads((root / '00-HARVEST-D-D3-MASTER-INDEX.json').read_text())
+          audit = json.loads((root / 'd3_data_value_audit.json').read_text())
+          capture = json.loads((root / 'd3_capture_completeness.json').read_text())
+          assert master['physical_model_calls'] == 0
+          assert master['mode'] == 'MODEL_FREE'
+          assert audit['overall_passed'] is True
+          assert len(audit['checks']) == 15
+          assert capture['physical_model_calls'] == 0
+          PY
+      - name: Legacy Harvest D model-free regression
         env:
           OPENAI_API_KEY: ''
           ANTHROPIC_API_KEY: ''
