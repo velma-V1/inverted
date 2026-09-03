@@ -18,4 +18,4 @@ def test_d3_launcher_fails_closed_if_no_focused_tests_are_found() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
 
     assert '$D3Tests.Count -eq 0' in text
-    assert 'no D3 focused tests were found; no model calls were started' in text.lower()
+    assert 'no d3 focused tests were found; no model calls were started' in text.lower()
