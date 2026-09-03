@@ -8,7 +8,7 @@ This document defines the revised D3 stage of Harvest D on branch `implementatio
 
 D3 retains its original architecture-substitution mission and combines it with causal information-delivery tomography, broad deterministic-assistance tomography, explicit failure/recovery tomography, and event-sourced whole-system observability.
 
-D3 is automated as far as sensibly possible, may consume up to 600 admissible physical model calls, and must stop early whenever remaining uncertainty no longer justifies additional calls. The 600-call value is an absolute ceiling, not a quota.
+D3 is automated as far as sensibly possible, may consume up to 1000 admissible physical model calls, and must stop early whenever remaining uncertainty no longer justifies additional calls. The 1000-call value is an absolute ceiling, not a quota.
 
 ## 1. Primary D3 question
 
@@ -505,26 +505,58 @@ A provenance change requires evidence segmentation or campaign halt according to
 
 ## 13. Call budget
 
-D3 has an adaptive hard ceiling of 600 admissible physical model calls.
+D3 has an adaptive hard ceiling of 1000 admissible physical model calls.
 
 Revised envelope:
 
 | Phase | Purpose | Maximum calls |
 |---|---|---:|
 | D3.0 | D2 closure + zero-call compiler screen | 0 |
-| D3.1 | fresh baseline / failure bank | 48 |
-| D3.2 | information content + quality + source | 88 |
-| D3.3 | representation + order + amount + timing | 64 |
-| D3.4 | assistance-mechanism tomography | 80 |
-| D3.5 | failure/recovery tomography | 72 |
-| D3.6 | information x assistance combined substitution | 96 |
-| D3.7 | negative transfer + compound failures | 56 |
-| D3.8 | sealed confirmation | 96 |
-| **Absolute maximum** | | **600** |
+| D3.1 | fresh baseline / failure bank | 80 |
+| D3.2 | information content + quality + source | 150 |
+| D3.3 | representation + order + amount + timing | 120 |
+| D3.4 | assistance-mechanism tomography | 150 |
+| D3.5 | failure/recovery tomography | 150 |
+| D3.6 | information x assistance combined substitution | 160 |
+| D3.7 | negative transfer + compound failures | 90 |
+| D3.8 | sealed confirmation | 100 |
+| **Absolute maximum** | | **1000** |
 
-These are ceilings, not quotas. Calls may move among unsealed discovery phases when the scheduler records why expected information gain is higher elsewhere. Sealed-confirmation capacity may not be consumed for development tuning.
+These are adaptive reservoirs, not equal-sample quotas. Calls may move among unsealed discovery phases when the scheduler records why expected information gain is higher elsewhere. The 100 sealed-confirmation calls are protected and may not be consumed for development tuning.
 
-The campaign may terminate materially below 600 calls.
+The campaign may terminate materially below 1000 calls.
+
+### 13.1 Evidence-depth gates
+
+Call allocation is governed by the evidence needed for a decision, not by a requirement to exhaust a phase reservoir.
+
+Default evidence-depth targets are:
+
+- initial broad screen: approximately 12–16 independent matched observations for an eligible mechanism/variant;
+- mechanism worth pursuing: approximately 24 independent matched observations;
+- architecture candidate: approximately 32–48 fresh matched observations;
+- component/policy promotion candidate: approximately 48–64 independent matched observations spanning multiple relevant families plus matched negative controls;
+- safety-critical authority/recovery mechanisms: additional targeted adversarial exposure with zero hard-invariant violations required.
+
+These are design targets rather than fixed-horizon significance rules. Sequentially valid evidence may stop a comparison earlier for a very large decisive effect or extend an important unresolved comparison within the 1000-call ceiling.
+
+A mechanism may not enter the proposed core build merely because it won a small development screen. It must cross the applicable evidence-depth gate or remain CONDITIONAL/UNRESOLVED.
+
+### 13.2 Adaptive reallocation
+
+When a mechanism is classified HARMFUL or FUTILE, its unused reservoir is reassigned to the highest-value unresolved preregistered comparison. When a mechanism is strongly promising but underpowered, the controller may deepen it beyond its nominal phase share while preserving the sealed-confirmation reserve.
+
+This creates a funnel:
+
+```text
+broad screen
+ -> kill obvious losers
+ -> deepen promising/uncertain mechanisms
+ -> test interactions
+ -> ablate unnecessary support
+ -> fresh generalization
+ -> sealed confirmation
+```
 
 ## 14. Four-condition causal test
 
@@ -537,7 +569,7 @@ ASSISTANCE only
 INFORMATION + ASSISTANCE
 ```
 
-The combined phase receives up to 96 calls, with sequential reallocation toward unresolved high-value comparisons.
+The combined phase receives up to 160 calls, with sequential reallocation toward unresolved high-value comparisons.
 
 Where deterministic assistance can replay the exact same physical response, OFF/TARGET/SHAM comparisons do not consume extra calls.
 
@@ -635,8 +667,9 @@ A D3 mechanism, information packet, assistance mechanism, or recovery policy is 
 7. negative-transfer controls are acceptable;
 8. MSIP/MRS ablation identifies required support;
 9. recovery does not merely migrate failure;
-10. sealed confirmation succeeds;
-11. provenance, event integrity, and call identity remain admissible.
+10. the applicable evidence-depth gate is met;
+11. sealed confirmation succeeds;
+12. provenance, event integrity, and call identity remain admissible.
 
 Mechanism states remain REQUIRED, CONDITIONAL, REDUNDANT, HARMFUL, or UNRESOLVED.
 
