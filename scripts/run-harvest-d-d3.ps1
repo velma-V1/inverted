@@ -14,7 +14,19 @@ if (Test-Path $GateOutput) {
 }
 
 Write-Host "D3 gate: focused model-free tests"
-python -m pytest -q tests/test_harvest_d_d3_*.py tests/test_progress_display.py tests/test_campaign_progress_policy.py
+$D3Tests = @(
+    Get-ChildItem -Path "tests" -Filter "test_harvest_d_d3_*.py" -File |
+        Sort-Object Name |
+        ForEach-Object { $_.FullName }
+)
+if ($D3Tests.Count -eq 0) {
+    throw "No D3 focused tests were found; no model calls were started."
+}
+$ValidationTests = @($D3Tests) + @(
+    "tests/test_progress_display.py",
+    "tests/test_campaign_progress_policy.py"
+)
+python -m pytest -q @ValidationTests
 if ($LASTEXITCODE -ne 0) {
     throw "D3 focused validation failed; no model calls were started."
 }
