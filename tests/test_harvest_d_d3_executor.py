@@ -1,3 +1,4 @@
+from inverted.harvest_d.d3_cases import generate_d3_cases
 from inverted.harvest_d.d3_executor import (
     D3CallExecutor,
     D3CallPlan,
@@ -31,13 +32,14 @@ class CountingAdapter:
         )
 
 
-def _plan(case_id: str = "case-a") -> D3CallPlan:
+def _plan(case_id: str = "case-a", *, case=None) -> D3CallPlan:
     return D3CallPlan(
         case_id=case_id,
         prompt="Return JSON only.",
         system="You are under D3 measurement.",
         information_packet={"packet_id": "p1", "fields": ["I1", "I2"]},
         scheduler_event={"candidate_id": case_id, "selection_mode": "ADAPTIVE"},
+        case=case,
     )
 
 
@@ -73,6 +75,45 @@ def test_executor_records_generation_and_runtime_metadata_without_dropping_unkno
     assert row["output_tokens"] == 3
     assert row["latency_ms"] == 12.5
     assert row["runtime_extras"]["unknown_future_field"] == "preserve-me"
+
+
+def test_executor_scores_hidden_case_oracle_after_call_without_leaking_it_into_request(tmp_path):
+    case = generate_d3_cases(partition="development", seed=20260903, per_family=1)[0]
+    response = case.oracle.expected
+    text = '{"disposition":"%s","answer":"%s"}' % (
+        response["disposition"],
+        response["answer"],
+    )
+    store = D3EvidenceStore(tmp_path)
+    result = D3CallExecutor(store=store).execute_once(
+        _plan(case.case_id, case=case),
+        CountingAdapter(text),
+    )
+
+    assert result.failure_class == "CORRECT"
+    normalized = store.normalized_call(result.physical_model_call_id)
+    assert normalized["score"]["overall_semantic_correct"] is True
+    assert normalized["score"]["disposition_correct"] is True
+    assert normalized["score"]["answer_correct"] is True
+
+    raw_request = store.raw_request(result.physical_model_call_id)
+    request_text = str(raw_request).lower()
+    assert "oracle" not in request_text
+    assert "expected" not in request_text
+    assert str(case.oracle.expected).lower() not in request_text
+
+
+def test_executor_distinguishes_answer_right_disposition_wrong(tmp_path):
+    case = generate_d3_cases(partition="development", seed=20260903, per_family=1)[0]
+    expected = case.oracle.expected
+    wrong_disposition = "SAFE_STOP" if expected["disposition"] != "SAFE_STOP" else "EXECUTE"
+    text = '{"disposition":"%s","answer":"%s"}' % (wrong_disposition, expected["answer"])
+    store = D3EvidenceStore(tmp_path)
+    result = D3CallExecutor(store=store).execute_once(
+        _plan(case.case_id, case=case),
+        CountingAdapter(text),
+    )
+    assert result.failure_class == "ANSWER_RIGHT_DISPOSITION_WRONG"
 
 
 def test_reproducibility_block_defaults_to_24_physical_calls(tmp_path):
