@@ -8,13 +8,15 @@ The benchmark does **not** claim universal proof. A decisive campaign returns `S
 
 ## Permanent model operating rules
 
-Before meaningful design, testing, analysis, or implementation work, AI models and agents must read and obey [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md). Model-specific entry points are also provided in [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md), and [`.github/copilot-instructions.md`](.github/copilot-instructions.md).
+Before meaningful design, testing, analysis, or implementation work, AI models and agents must read and obey [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md) first, then [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md). The Constitution defines the highest-level project objectives; the operating rules define the detailed discipline beneath them. Model-specific entry points are also provided in [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md), and [`.github/copilot-instructions.md`](.github/copilot-instructions.md).
 
-Two project-wide rules are mandatory:
+Two project-wide operating rules are mandatory:
 
 > **Your requirements define the minimum. I am responsible for identifying higher-value options, missing experiments, better architecture, better telemetry, and failure modes you did not explicitly name.**
 
 > **Do not merely satisfy the requested experiment. Ask what we will wish we had recorded six months later, and capture it now when it is cheap.**
+
+The Constitution additionally requires project-first truth, highest verified capability with minimum necessary machinery, maximum valid decision value from experiments, upward ratcheting of both whole-system and model-in-system capability, decision-ready project memory, and research that terminates in the highest justified shipping tier.
 
 Also enforce: **something has to prove it belongs.** Complexity and mechanisms must earn their place through evidence.
 
