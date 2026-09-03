@@ -1,0 +1,3 @@
+# Harvest D Design Freeze
+
+The approved conceptual scope is frozen to D0, D1, D2, D3, D4, D5, D6, D6B, and D7. Further work should increase precision of measurements, controls, promotion/rollback rules, and failure injections rather than add categories. New concepts require an actual Harvest D result exposing a material unexplained failure that current mechanisms cannot discriminate and that could change the responsibility boundary or architecture ranking.
