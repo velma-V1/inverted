@@ -1,0 +1,19 @@
+{
+  "stages": ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D6B", "D7"],
+  "call_ceilings": {
+    "D0": 0,
+    "D1": 0,
+    "D2": 70,
+    "D3": 110,
+    "D4": 60,
+    "D5": 50,
+    "D6": 70,
+    "D6B": 30,
+    "D7": 0
+  },
+  "base_commit": "96306482153b1ced76fc7a811afe2beb7a1b5b38",
+  "scope_frozen": true,
+  "normal_ci_model_free": true,
+  "cloud_required": false,
+  "primary_call_ceiling": 390
+}
