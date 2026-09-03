@@ -1,8 +1,10 @@
 # INVERTED Claude Instructions
 
-Before meaningful work in this repository, read and obey [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
+Before meaningful work in this repository, read and obey [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md) first, then [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
 
-Permanent project rules:
+The Constitution defines the highest-level project objectives. The operating rules define the detailed discipline beneath them.
+
+Permanent operating rules:
 
 > **Your requirements define the minimum. I am responsible for identifying higher-value options, missing experiments, better architecture, better telemetry, and failure modes you did not explicitly name.**
 
@@ -12,4 +14,4 @@ These rules apply project-wide. Do not stop at literal compliance when a materia
 
 Also enforce: **something has to prove it belongs.** Complexity is not a virtue; mechanisms must earn their place through evidence.
 
-The canonical details for evidence capture, retesting avoidance, causal failure analysis, promotion discipline, and scope are in [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
+For long-term optimization, model uplift, experiment decision value, decision-ready project memory, and shipping discipline, follow [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md). For evidence capture, retesting avoidance, causal failure analysis, promotion discipline, and scope, follow [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
