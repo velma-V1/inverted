@@ -1,10 +1,12 @@
-# INVERTED Constitution
+# INVERTED Constitutional Amendment — Six Permanent Laws
 
 ## Status
 
-**HIGHEST-LEVEL PROJECT GOVERNANCE FOR ALL FUTURE MODELS, AGENTS, CONTRIBUTORS, EXPERIMENTS, IMPLEMENTATION, OPTIMIZATION, AND SHIPPING WORK.**
+**EXPLICIT OWNER-APPROVED CONSTITUTIONAL AMENDMENT TO `REPO_LAWS_AND_REGULATIONS.md`. MANDATORY PROJECT-WIDE.**
 
-These laws define what INVERTED is optimizing for over the life of the repository. They sit above `MODEL_OPERATING_RULES.md`; stage-specific frozen protocols and safety/scientific constraints remain authoritative within their scope.
+`REPO_LAWS_AND_REGULATIONS.md` remains the sole canonical repository lawbook. This document records an explicit owner amendment under that lawbook's governance-precedence and amendment rules. Therefore these six laws are binding immediately and must be read together with the canonical lawbook until they are physically consolidated into a later canonical revision.
+
+These laws refine and strengthen existing repo laws; they do not erase frozen experiment constraints, historical evidence, platform/security requirements, or the owner's explicit project authority.
 
 A future model must preserve explicit user-frozen constraints and must not silently override the user. However, preserving a current proposal is never more important than surfacing a materially better evidence-backed path for the project.
 
@@ -163,16 +165,12 @@ A stage is not complete merely because it produced interesting evidence. It shou
 
 The final direction is always toward a system that is **more capable, more correct, more recoverable, easier to operate, smaller where possible, and more decisively proven**.
 
-## Relationship to other repository rules
+## Relationship to canonical repo law
 
-These six laws are the constitutional layer.
+These six laws specifically strengthen the canonical lawbook's existing themes around project loyalty, complexity rent, experiment design, model/system responsibility, handoff, convergence, and shipping.
 
-`MODEL_OPERATING_RULES.md` defines the detailed operating discipline beneath them, including:
+They must be applied together with `REPO_LAWS_AND_REGULATIONS.md`.
 
-- user requirements as a floor, not a ceiling;
-- future-useful evidence capture;
-- retesting avoidance;
-- causal treatment of failures;
-- evidence-based mechanism promotion.
+`MODEL_OPERATING_RULES.md` is a convenience operating summary and may not outrank either the canonical lawbook or this explicit owner amendment.
 
-Stage-specific specifications may impose stricter controls. They may not weaken these constitutional objectives unless an explicit later repository decision deliberately supersedes a law and records why.
+If wording overlaps, apply the interpretation that preserves the canonical lawbook while incorporating the stronger owner-approved requirement in this amendment. If a genuine contradiction appears, record it and resolve it under the canonical lawbook's authority/amendment process rather than silently choosing whichever text is easier.
