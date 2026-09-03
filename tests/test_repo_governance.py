@@ -6,6 +6,7 @@ CANONICAL = "REPO_LAWS_AND_REGULATIONS.md"
 DIRECT_MODEL_ENTRYPOINTS = (
     "AGENTS.md",
     "CLAUDE.md",
+    "GEMINI.md",
     ".github/copilot-instructions.md",
 )
 
