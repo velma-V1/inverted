@@ -1,0 +1,50 @@
+name: harvest-d-validation
+
+on:
+  push:
+    branches:
+      - implementation/harvest-d-identifiability-model-substitution
+    paths:
+      - 'src/inverted/harvest_d/**'
+      - 'tests/test_harvest_d_*.py'
+      - 'configs/harvest-d.json'
+      - 'docs/research/2026-09-02-harvest-d-research-synthesis.md'
+      - 'docs/superpowers/specs/2026-09-02-harvest-d-identifiability-model-substitution-design.md'
+      - 'docs/superpowers/plans/2026-09-02-harvest-d-identifiability-model-substitution.md'
+      - '.github/workflows/harvest-d-validation.yml'
+  pull_request:
+    paths:
+      - 'src/inverted/harvest_d/**'
+      - 'tests/test_harvest_d_*.py'
+      - 'configs/harvest-d.json'
+      - '.github/workflows/harvest-d-validation.yml'
+
+jobs:
+  model-free-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install package and pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest
+      - name: Harvest D focused tests
+        run: python -m pytest -q tests/test_harvest_d_core.py tests/test_harvest_d_analysis.py tests/test_harvest_d_execution.py tests/test_harvest_d_campaign.py
+      - name: Full repository regression
+        run: python -m pytest -q
+      - name: Offline/model-free Harvest D dry run
+        env:
+          OPENAI_API_KEY: ''
+          ANTHROPIC_API_KEY: ''
+          OPENROUTER_API_KEY: ''
+        run: |
+          rm -rf /tmp/harvest-d-dry-run
+          python -m inverted.harvest_d.cli --config configs/harvest-d.json --output /tmp/harvest-d-dry-run --dry-run
+          test -f /tmp/harvest-d-dry-run/00-HARVEST-D-MASTER-INDEX.json
+          test -f /tmp/harvest-d-dry-run/SHA256SUMS.csv
