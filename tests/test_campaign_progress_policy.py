@@ -1,22 +1,42 @@
 from pathlib import Path
 
 
-def test_testing_policy_freezes_universal_campaign_progress_rule():
+def test_testing_policy_freezes_universal_test_automation_rule():
+    text = Path("TESTING.md").read_text(encoding="utf-8").lower()
+
+    assert "universal test-automation rule" in text
+    assert "automated wherever technically and scientifically possible" in text
+    assert "automation is the default" in text
+    assert "preflight" in text
+    assert "test execution" in text
+    assert "evidence capture" in text
+    assert "crash-safe checkpoint/resume" in text
+    assert "final completeness/quality validation" in text
+    assert "human intervention" in text
+    assert "must never silently change the scientific design" in text
+
+
+def test_testing_policy_freezes_same_terminal_compact_progress_contract():
     text = Path("TESTING.md").read_text(encoding="utf-8").lower()
 
     assert "universal campaign progress rule" in text
-    assert "every future campaign section" in text
-    assert "enabled by default" in text
+    assert "same-terminal requirement" in text
+    assert "same terminal session" in text
+    assert "narrow split-window layout" in text
+    assert "visible progress bar" in text
+    assert "percent completed" in text
+    assert "work/tasks completed" in text
+    assert "work/tasks remaining" in text
     assert "completed/total work units" in text
-    assert "physical model calls used/total" in text
-    assert "current arm/phase" in text
-    assert "percent complete" in text
-    assert "elapsed time" in text
-    assert "estimated time remaining" in text
+    assert "physical model calls used/available" in text
+    assert "estimated time to completion / time remaining" in text
     assert "eta clock time" in text
-    assert "flush" in text
-    assert "display-only telemetry" in text
-    assert "must not alter" in text
+    assert "adaptive or sequential tests" in text
+    assert "split-window / repaint bug tolerance" in text
+    assert "throttle updates" in text
+    assert "fall back automatically" in text
+    assert "progress regression requirement" in text
+    assert "progress reporting must not alter" in text
     assert "scientific accounting" in text
 
 
