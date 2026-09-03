@@ -5,6 +5,7 @@ import pytest
 
 from inverted.harvest_d.d3_campaign import D3Campaign
 from inverted.harvest_d.d3_cases import generate_d3_cases
+from inverted.harvest_d.d3_config import D3Phase
 from inverted.harvest_d.d3_planner import D3ExperimentPlanner
 from inverted.harvest_d.d3_scheduler import D3Scheduler
 from inverted.harvest_d.models import ModelResponse
@@ -81,13 +82,18 @@ def test_production_campaign_writes_zero_call_assistance_replays_without_extra_m
         tmp_path,
         adapters={"SMALL_A": adapter},
         planner=planner,
-        max_calls=264,
+        max_calls=1,
         progress_stream=StringIO(),
         scheduler=D3Scheduler.default(random_stream_fraction=0.0),
     )
+    # Test-only phase positioning: exhaust the earlier reservoirs without
+    # spending fake physical calls. Production never mutates the budget this way.
+    for phase in (D3Phase.BASELINE, D3Phase.INFORMATION, D3Phase.REPRESENTATION):
+        campaign.budget.used_by_phase[phase] = campaign.budget.phase_ceiling(phase)
+
     result = campaign.run()
-    assert result.calls_used == 264
-    assert adapter.calls == 264
+    assert result.calls_used == 1
+    assert adapter.calls == 1
     replay_lines = (tmp_path / "d3_counterfactuals.jsonl").read_text(encoding="utf-8").splitlines()
     assert replay_lines
     rows = [json.loads(line) for line in replay_lines]
