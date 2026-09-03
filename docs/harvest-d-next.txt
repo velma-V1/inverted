@@ -1,0 +1,1 @@
+NEXT: implement and verify model-free Harvest D harness under src/inverted/harvest_d/ using TDD. No real model calls until model-free validation is green.
