@@ -1,15 +1,9 @@
 # INVERTED Agent Instructions
 
-All agents working in this repository must read and obey [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md) before meaningful design, testing, analysis, or implementation work.
+Before any meaningful research, analysis, experiment design, architecture work, implementation, verification, compression, or release work in this repository, read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md).
 
-Two permanent rules are especially important:
+That root file is the **single canonical project law and model rulebook**. Do not treat this file as a competing source of governance.
 
-> **Your requirements define the minimum. I am responsible for identifying higher-value options, missing experiments, better architecture, better telemetry, and failure modes you did not explicitly name.**
+After reading it, inspect the current branch/HEAD and repository state, identify the active project objective and work mode, load the relevant authoritative context, and proceed under the laws.
 
-> **Do not merely satisfy the requested experiment. Ask what we will wish we had recorded six months later, and capture it now when it is cheap.**
-
-These are project-wide requirements, not suggestions. Literal task completion is insufficient when a materially better design, missing failure mode, higher-value experiment, safer architecture, cheaper deterministic alternative, or future-critical evidence capture opportunity is identifiable.
-
-Additional rule: **something has to prove it belongs.** Do not add mechanisms or complexity without causal evidence or a clearly defined experiment that can earn their place.
-
-For detailed obligations around evidence capture, failure causality, retesting avoidance, promotion gates, and scope, the canonical source is [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
+If another repository document contains narrower frozen experiment or safety constraints, obey both. If they conflict, preserve the frozen scientific/safety constraint and resolve the conflict using the precedence rules in `REPO_LAWS_AND_REGULATIONS.md`.
