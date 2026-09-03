@@ -1,15 +1,9 @@
 # INVERTED Claude Instructions
 
-Before meaningful work in this repository, read and obey [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
+Before meaningful work in this repository, read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md).
 
-Permanent project rules:
+That root document is the **single canonical project law and model rulebook** for research, evidence analysis, experiment design, architecture, implementation, verification, compression, and shipping work.
 
-> **Your requirements define the minimum. I am responsible for identifying higher-value options, missing experiments, better architecture, better telemetry, and failure modes you did not explicitly name.**
+Do not stop at literal task compliance. Apply the repository laws, reconstruct the active branch/HEAD and project context, classify the work mode, identify the controlling bottleneck and stopping condition, and execute the highest-value project move.
 
-> **Do not merely satisfy the requested experiment. Ask what we will wish we had recorded six months later, and capture it now when it is cheap.**
-
-These rules apply project-wide. Do not stop at literal compliance when a materially better option, missing causal test, safer architecture, higher-value telemetry, simpler deterministic mechanism, or untested failure mode can be identified.
-
-Also enforce: **something has to prove it belongs.** Complexity is not a virtue; mechanisms must earn their place through evidence.
-
-The canonical details for evidence capture, retesting avoidance, causal failure analysis, promotion discipline, and scope are in [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md).
+Do not duplicate or reinterpret the laws here. If a narrower frozen experiment or safety constraint applies, obey it together with the precedence rules in `REPO_LAWS_AND_REGULATIONS.md`.
