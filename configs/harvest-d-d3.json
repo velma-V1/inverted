@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "max_calls": 1000,
+  "ollama_base_url": "http://127.0.0.1:11434",
+  "models": {
+    "SMALL_A": "qwen2.5:1.5b-instruct-q8_0",
+    "QWEN": "qwen3.5:9b-q8_0"
+  },
+  "generation_options": {
+    "temperature": 0.0,
+    "seed": 20260902,
+    "num_ctx": 4096
+  },
+  "seeds": {
+    "development": 20260903,
+    "fresh": 20260913,
+    "sealed": 20261003
+  },
+  "cases_per_family": {
+    "development": 4,
+    "fresh": 2,
+    "sealed": 2
+  },
+  "scheduler": {
+    "seed": 20260903,
+    "protected_random_stream_fraction": 0.1
+  },
+  "reproducibility_calibration": {
+    "enabled": true,
+    "structurally_distinct_cases": 4,
+    "repetitions": 3,
+    "physical_call_ceiling": 24
+  },
+  "sealed_reserve": 100,
+  "normal_ci_model_free": true,
+  "blind_retries_allowed": false
+}
