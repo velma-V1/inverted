@@ -79,6 +79,9 @@ class InformationPacket:
     ordering: str = "DEFAULT"
     amount: str = "UNSPECIFIED"
     placement: str = "TASK_CONTEXT"
+    control_kind: str = "TARGET"
+    base_semantic_field_hash: str | None = None
+    approx_token_count: int = 0
 
     @property
     def model_visible_field_ids(self) -> tuple[str, ...]:
