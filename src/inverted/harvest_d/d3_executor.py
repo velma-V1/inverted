@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 import uuid
 from typing import Any, Iterable, Mapping
 
+from .cases import HarvestCase, score_response
 from .d3_store import D3EvidenceStore
 from .models import ModelAdapter, ModelResponse
 from .types import stable_hash
@@ -19,6 +20,7 @@ class D3CallPlan:
     scheduler_event: Mapping[str, Any]
     arm_id: str = "RAW"
     phase: str = "D3"
+    case: HarvestCase | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,22 @@ def _classify_text(text: str) -> tuple[str, Any]:
     return "NONE", parsed
 
 
+def _classify_score(score: Mapping[str, Any]) -> str:
+    if not bool(score.get("parseable_json", False)):
+        return "FORMAT_OR_SCHEMA"
+    if not bool(score.get("schema_valid", False)):
+        return "FORMAT_OR_SCHEMA"
+    if bool(score.get("overall_semantic_correct", False)):
+        return "CORRECT"
+    answer = bool(score.get("answer_correct", False))
+    disposition = bool(score.get("disposition_correct", False))
+    if answer and not disposition:
+        return "ANSWER_RIGHT_DISPOSITION_WRONG"
+    if disposition and not answer:
+        return "ANSWER_WRONG_DISPOSITION_RIGHT"
+    return "BOTH_WRONG"
+
+
 class D3CallExecutor:
     """Executes exactly one physical model call per plan and never retries."""
 
@@ -86,11 +104,15 @@ class D3CallExecutor:
             "generation_options": dict(getattr(adapter, "generation_options", {}) or {}),
         }
 
+        score_fields: dict[str, Any] | None = None
         try:
             response = adapter.complete(plan.prompt, system=plan.system)
             if not isinstance(response, ModelResponse):
                 raise TypeError("model adapter returned non-ModelResponse")
             failure_class, parsed = _classify_text(response.text)
+            if plan.case is not None:
+                score_fields = asdict(score_response(plan.case, response.text))
+                failure_class = _classify_score(score_fields)
             raw_payload = dict(response.raw)
             runtime_extras = {
                 key: value for key, value in raw_payload.items() if key not in _KNOWN_RUNTIME_FIELDS
@@ -104,6 +126,7 @@ class D3CallExecutor:
                 "text": response.text,
                 "parsed_response": parsed,
                 "failure_class": failure_class,
+                "score": score_fields,
                 "input_tokens": response.input_tokens,
                 "output_tokens": response.output_tokens,
                 "latency_ms": response.latency_ms,
@@ -139,6 +162,7 @@ class D3CallExecutor:
                 "text": "",
                 "parsed_response": None,
                 "failure_class": failure_class,
+                "score": None,
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "latency_ms": 0.0,
@@ -154,11 +178,19 @@ class D3CallExecutor:
             "case_id": plan.case_id,
             "failure_class": failure_class,
             "oracle_revealed": False,
+            "measurement": score_fields,
         }
         score_normalized = {
             "case_id": plan.case_id,
             "failure_class": failure_class,
-            "semantic_result": "UNSCORED",
+            "semantic_result": (
+                "PASS"
+                if score_fields is not None and bool(score_fields.get("overall_semantic_correct"))
+                else "FAIL"
+                if score_fields is not None
+                else "UNSCORED"
+            ),
+            "measurement": score_fields,
         }
         bundle = {
             "physical_model_call_id": physical_call_id,
