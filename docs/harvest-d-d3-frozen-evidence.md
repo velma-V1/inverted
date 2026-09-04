@@ -1,4 +1,4 @@
-﻿# Harvest D — D3 Frozen Evidence
+# Harvest D — D3 Frozen Evidence
 
 The complete preserved D3 evidence is intentionally isolated from the
 implementation branch.
@@ -9,7 +9,7 @@ Evidence branch:
 
 Frozen evidence commit:
 
-    34645bf4e587c971ecfe915b02a16f72cfdde52a
+    4463d1f596c7126be17257e6008432b49d2bacde
 
 Canonical evidence index:
 

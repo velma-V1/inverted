@@ -15,7 +15,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $FrozenD3EvidenceBranch = "evidence/harvest-d-d3-20260903"
-$FrozenD3EvidenceCommit = "34645bf4e587c971ecfe915b02a16f72cfdde52a"
+$FrozenD3EvidenceCommit = "4463d1f596c7126be17257e6008432b49d2bacde"
 $FrozenD3EvidenceArchive = "live-evidence/harvest-d-d3-real-20260903-185137/D3-COMPLETE-CAMPAIGN.zip"
 $FrozenD3EvidenceSha256 = "371588D6C5616D371E7EF891E939271F0AF09AC6462A0DF00F8B1486CFC4AC2B"
 $FrozenD3CacheRoot = "runs/frozen-harvest-d-d3-20260903"
