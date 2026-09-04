@@ -230,9 +230,9 @@ def sanitize_zip(
     if source == output:
         raise ValueError("in-place ZIP overwrite is forbidden")
     if not source.is_file():
-        raise ValueError(f"source ZIP does not exist: {source}")
+        raise ValueError(f"source ZIP does not exist: {source.name}")
     if output.exists():
-        raise ValueError(f"sanitized output already exists: {output}")
+        raise ValueError(f"sanitized output already exists: {output.name}")
     if not replacements:
         raise ValueError("at least one exact privacy identifier is required")
 
@@ -253,8 +253,8 @@ def sanitize_zip(
 
     return {
         "state": "PRIVACY_SANITIZED",
-        "source_zip": str(source),
-        "output_zip": str(output),
+        "source_file": source.name,
+        "output_file": output.name,
         "source_sha256": _sha256_file(source),
         "output_sha256": _sha256_file(output),
         **stats,
