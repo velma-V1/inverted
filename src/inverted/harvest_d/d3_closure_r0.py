@@ -9,7 +9,12 @@ from typing import Any, Iterable, Mapping
 from .d3_closure_adequacy import ClaimAdequacyInputs, evaluate_claim_adequacy
 from .d3_closure_cases import generate_closure_cases, one_per_family
 from .d3_closure_covering import CoveringRequirement, generate_covering_design, measure_pairwise_coverage
-from .d3_closure_prior_evidence import PriorEvidenceRecord, inventory_prior_evidence, write_prior_evidence_ledger
+from .d3_closure_prior_evidence import (
+    EvidenceTier,
+    PriorEvidenceRecord,
+    inventory_prior_evidence,
+    write_prior_evidence_ledger,
+)
 from .d3_closure_r0_state import derive_action_frontier, derive_pre_state
 from .d3_closure_search_space import build_primary_search_space, treatment_equivalence_key
 from .d3_closure_treatment import ClosureTreatmentPlan, derive_treatment_exposure, render_treatment
@@ -186,6 +191,12 @@ def _required_artifacts() -> set[str]:
         "closure_uncovered_space.json",
         "closure_claim_adequacy_report.json",
     }
+
+
+def _required_evidence_artifacts() -> set[str]:
+    # Final adequacy/readiness reports are conclusions about the evidence package,
+    # not evidence inputs to themselves. Excluding them avoids a circular gate.
+    return _required_artifacts() - {"closure_claim_adequacy_report.json"}
 
 
 def build_r0_package(
@@ -445,10 +456,38 @@ def build_r0_package(
         },
     )
 
+    evidence_required = _required_evidence_artifacts()
+    missing_evidence_artifacts = sorted(name for name in evidence_required if not (root / name).exists())
+    empty_evidence_artifacts = sorted(
+        name for name in evidence_required if (root / name).exists() and (root / name).stat().st_size == 0
+    )
+    r0_required_artifacts_complete = not missing_evidence_artifacts and not empty_evidence_artifacts
+    evidence_tier_integrity = (
+        all(
+            record.evidence_tier is EvidenceTier.HISTORICAL_PRIOR and not record.freshness_compatible
+            for record in prior_records
+        )
+        and all(
+            row.get("evidence_tier") == EvidenceTier.DETERMINISTIC.value
+            and int(row.get("physical_model_calls", -1)) == 0
+            and int(row.get("scheduler_metadata", {}).get("fresh_observation_count", -1)) == 0
+            for row in treatments
+        )
+    )
+    uncovered_mandatory_obligations = (
+        len(missing_evidence_artifacts)
+        + len(empty_evidence_artifacts)
+        + int(pairwise.ratio != 1.0)
+        + sum(1 for row in interaction_rows if not row["planned_in_covering_design"])
+        + int(not exposures)
+        + int(not pre_states)
+        + int(not frontiers)
+    )
+
     adequacy = evaluate_claim_adequacy(
         ClaimAdequacyInputs(
-            claim_space_manifest_present=True,
-            search_space_manifest_present=True,
+            claim_space_manifest_present=(root / "closure_claim_space_manifest.json").exists(),
+            search_space_manifest_present=(root / "closure_search_space_manifest.json").exists(),
             pairwise_coverage_ratio=pairwise.ratio,
             required_three_way_coverage_ratio=1.0,
             cost_calibration_complete=False,
@@ -462,6 +501,9 @@ def build_r0_package(
             launcher_path_green=False,
             unresolved_hard_blockers=0,
             unresolved_scientific_risks=0,
+            r0_required_artifacts_complete=r0_required_artifacts_complete,
+            evidence_tier_integrity=evidence_tier_integrity,
+            uncovered_mandatory_obligations=uncovered_mandatory_obligations,
         )
     )
     adequacy_payload = adequacy.to_dict()
@@ -469,8 +511,12 @@ def build_r0_package(
         {
             "protocol": "D3-CLOSURE-v2-R0",
             "physical_model_calls": 0,
-            "evidence_tier_integrity": True,
-            "r0_package_complete": True,
+            "r0_required_artifacts_complete": r0_required_artifacts_complete,
+            "evidence_tier_integrity": evidence_tier_integrity,
+            "uncovered_mandatory_obligations": uncovered_mandatory_obligations,
+            "missing_required_evidence_artifacts": missing_evidence_artifacts,
+            "empty_required_evidence_artifacts": empty_evidence_artifacts,
+            "r0_package_complete": r0_required_artifacts_complete and evidence_tier_integrity and uncovered_mandatory_obligations == 0,
         }
     )
     _write_json(root / "closure_claim_adequacy_report.json", adequacy_payload)
@@ -478,7 +524,15 @@ def build_r0_package(
     required = _required_artifacts()
     missing = sorted(name for name in required if not (root / name).exists())
     empty = sorted(name for name in required if (root / name).exists() and (root / name).stat().st_size == 0)
-    r0_ready = not missing and not empty and pairwise.ratio == 1.0 and not adequacy.physical_execution_authorized
+    r0_ready = (
+        not missing
+        and not empty
+        and r0_required_artifacts_complete
+        and evidence_tier_integrity
+        and uncovered_mandatory_obligations == 0
+        and pairwise.ratio == 1.0
+        and not adequacy.physical_execution_authorized
+    )
     readiness = {
         "protocol": "D3-CLOSURE-v2-R0",
         "final_state": "R0_MODEL_FREE_COMPLETE" if r0_ready else "R0_INCOMPLETE",
@@ -493,12 +547,19 @@ def build_r0_package(
         "prior_record_count": len(prior_records),
         "historical_prior_fresh_observation_count": 0,
         "pairwise_plan_complete": pairwise.ratio == 1.0,
-        "required_three_way_plan_complete": True,
+        "required_three_way_plan_complete": all(row["planned_in_covering_design"] for row in interaction_rows),
+        "r0_required_artifacts_complete": r0_required_artifacts_complete,
+        "evidence_tier_integrity": evidence_tier_integrity,
+        "uncovered_mandatory_obligations": uncovered_mandatory_obligations,
         "note": "R0 readiness is not physical Closure authorization; R1 and later gates remain mandatory.",
     }
     _write_json(root / "closure_r0_readiness_report.json", readiness)
     if not r0_ready:
-        raise ValueError(f"R0 package incomplete: missing={missing}, empty={empty}")
+        raise ValueError(
+            "R0 package incomplete: "
+            f"missing={missing}, empty={empty}, evidence_tier_integrity={evidence_tier_integrity}, "
+            f"uncovered_mandatory_obligations={uncovered_mandatory_obligations}"
+        )
 
     return R0PackageSummary(
         final_state="R0_MODEL_FREE_COMPLETE",
