@@ -7,6 +7,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from .d3_closure_r0 import build_r0_package
+
 
 _DERIVED_JSON_OUTPUTS = (
     "closure_information_value_map.json",
@@ -35,6 +37,13 @@ _EVENT_OUTPUTS = (
 
 def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    value = json.loads(path.read_text(encoding="utf-8"))
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -203,6 +212,21 @@ def _derive_outputs(root: Path) -> dict[str, Any]:
     }
 
 
+def _r0_status(root: Path) -> dict[str, Any]:
+    readiness = _read_json(root / "closure_r0_readiness_report.json")
+    adequacy = _read_json(root / "closure_claim_adequacy_report.json")
+    required = readiness.get("required_artifacts", [])
+    artifact_count = sum(1 for name in required if (root / str(name)).is_file())
+    if (root / "closure_r0_readiness_report.json").is_file():
+        artifact_count += 1
+    return {
+        "r0_state": str(readiness.get("final_state", "NOT_RUN")),
+        "r0_readiness": bool(readiness.get("r0_ready", False)),
+        "r0_artifact_count": artifact_count,
+        "physical_execution_authorized": bool(adequacy.get("physical_execution_authorized", False)),
+    }
+
+
 def finalize_closure_package(
     root: Path,
     *,
@@ -214,6 +238,14 @@ def finalize_closure_package(
 ) -> dict[str, Any]:
     root = Path(root)
     ensure_closure_output_skeleton(root)
+
+    if model_free:
+        repo_root = Path(__file__).resolve().parents[3]
+        r0_summary = build_r0_package(repo_root, root, config)
+        if r0_summary.physical_model_calls != 0:
+            raise ValueError("R0 model-free finalization attempted physical model calls")
+        if r0_summary.physical_execution_authorized:
+            raise ValueError("R0 may not authorize physical Closure inference")
 
     plan_rows = [experiment.to_dict() for experiment in plan.experiments]
     _write_json(root / "closure_plan.json", {
@@ -235,6 +267,7 @@ def finalize_closure_package(
         and derived["infrastructure_failures"] == 0
         and recovery_complete
     )
+    r0 = _r0_status(root)
 
     report = {
         "protocol": "D3-CLOSURE-v2",
@@ -250,6 +283,7 @@ def finalize_closure_package(
         "scientific_complete": scientific_complete,
         "final_state": final_state,
         "claims_promoted": False,
+        **r0,
         "note": "Completion authorizes analysis/handoff, not automatic mechanism promotion.",
     }
     _write_json(root / "closure_final_report.json", report)
@@ -258,6 +292,8 @@ def finalize_closure_package(
         "protocol": "D3-CLOSURE-v2",
         "reason": "fixed-core closure evidence complete" if scientific_complete else "closure evidence incomplete or contaminated",
         "required_inputs": list(_DERIVED_JSON_OUTPUTS),
+        "r0_state": r0["r0_state"],
+        "physical_execution_authorized": r0["physical_execution_authorized"],
     })
 
     master = {
@@ -265,6 +301,7 @@ def finalize_closure_package(
         "planned_physical_calls": int(plan.planned_physical_calls), "max_calls": int(plan.max_calls),
         "sealed_reserve": int(plan.sealed_reserve), "final_state": final_state,
         "scientific_complete": scientific_complete, "blind_retries_allowed": False,
+        **r0,
     }
     _write_json(root / "00-HARVEST-D-D3-CLOSURE-V2-MASTER-INDEX.json", master)
 
