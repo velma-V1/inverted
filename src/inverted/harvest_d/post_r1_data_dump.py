@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import csv
 from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
 import shutil
+import sys
 from typing import Any, Iterable, Mapping
 import zipfile
 
@@ -261,3 +263,54 @@ def build_post_r1_data_dump(
         "source_mutation_observed": False,
         "ready_for_r2": False,
     }
+
+
+def _parse_source_archives(values: list[str]) -> dict[str, Path]:
+    result: dict[str, Path] = {}
+    for value in values:
+        if "=" not in value:
+            raise ValueError("--source-archive must use LABEL=PATH")
+        label, raw_path = value.split("=", 1)
+        label = label.strip()
+        if not label or label in result:
+            raise ValueError("source archive labels must be unique and non-empty")
+        result[label] = Path(raw_path).resolve()
+    return result
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Collect complete zero-inference Harvest D post-R1 forensic data dump")
+    parser.add_argument("--repo-root", required=True)
+    parser.add_argument("--d4-root", required=True)
+    parser.add_argument("--output-root", required=True)
+    parser.add_argument("--r1-execution-commit", required=True)
+    parser.add_argument("--publisher-commit", required=True)
+    parser.add_argument("--git-metadata-file", required=True)
+    parser.add_argument("--source-archive", action="append", default=[])
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    try:
+        metadata = json.loads(Path(args.git_metadata_file).read_text(encoding="utf-8"))
+        if not isinstance(metadata, dict):
+            raise ValueError("git metadata file must contain a JSON object")
+        result = build_post_r1_data_dump(
+            repo_root=args.repo_root,
+            d4_root=args.d4_root,
+            output_root=args.output_root,
+            r1_execution_commit=args.r1_execution_commit,
+            publisher_commit=args.publisher_commit,
+            git_metadata=metadata,
+            source_archives=_parse_source_archives(args.source_archive),
+        )
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    except Exception as exc:
+        print(f"POST-R1 DATA DUMP ERROR: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
