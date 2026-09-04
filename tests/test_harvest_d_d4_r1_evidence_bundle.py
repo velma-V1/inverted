@@ -14,6 +14,7 @@ QWEN_MODEL = "qwen3.5:9b-q8_0"
 QWEN_DIGEST = "441ec31e4d2aedceb97dd834b036db104d943fbe3dbc1e5c8ac95eeaa9141c77"
 SMALL_MODEL = "qwen2.5:1.5b-instruct-q8_0"
 SMALL_DIGEST = "sha256:small-test-digest"
+EXECUTION_COMMIT = "cb5ca86a63eb18d46f601df773889852d0e636f6"
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -154,17 +155,21 @@ def test_bundle_preserves_valid_d4_and_complete_r1_without_mutating_sources(tmp_
         d4_root=d4,
         r1_root=r1,
         output_root=tmp_path / "bundle",
-        implementation_commit="cb5ca86a63eb18d46f601df773889852d0e636f6",
+        implementation_commit=EXECUTION_COMMIT,
         expected_qwen_model=QWEN_MODEL,
     )
 
     assert result["state"] == "EVIDENCE_BUNDLE_COMPLETE"
+    assert result["r1_execution_commit"] == EXECUTION_COMMIT
+    assert result["implementation_commit"] == EXECUTION_COMMIT  # compatibility alias
     assert result["d4"]["physical_model_calls"] == 48
     assert result["r1"]["physical_model_calls"] == 24
     assert result["r1"]["final_state"] == "R1_CALIBRATION_COMPLETE"
+    index = (tmp_path / "bundle" / "00-HARVEST-D-D4-R1-EVIDENCE-INDEX.md").read_text(encoding="utf-8")
+    assert "R1 execution commit" in index
+    assert EXECUTION_COMMIT in index
     assert (tmp_path / "bundle" / "D4-COMPLETE-CAMPAIGN.zip").is_file()
     assert (tmp_path / "bundle" / "R1-CALIBRATION-CAMPAIGN.zip").is_file()
-    assert (tmp_path / "bundle" / "00-HARVEST-D-D4-R1-EVIDENCE-INDEX.md").is_file()
     assert (tmp_path / "bundle" / "SHA256SUMS-D4-R1-ARCHIVES.csv").is_file()
     assert (tmp_path / "bundle" / "evidence_provenance.json").is_file()
     assert _tree_fingerprint(d4) == before_d4
