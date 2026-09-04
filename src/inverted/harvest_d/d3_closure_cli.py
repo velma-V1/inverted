@@ -95,6 +95,29 @@ def load_closure_config(path: str | Path) -> dict[str, Any]:
     return raw
 
 
+def load_frozen_d4_policy(path: str | Path, *, expected_model: str) -> dict[str, Any]:
+    policy_path = Path(path)
+    try:
+        raw = json.loads(policy_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"unable to load frozen D4 policy: {policy_path}") from exc
+    if not isinstance(raw, dict) or str(raw.get("state")) != "FROZEN":
+        raise ValueError("D4 policy is not frozen; closure inference is not authorized")
+    if str(raw.get("model_id")) != str(expected_model):
+        raise ValueError("D4 policy model identity does not match closure Qwen model")
+    policy_id = str(raw.get("policy_id") or "")
+    if policy_id not in {"DEFAULT", "THINK_OFF"}:
+        raise ValueError("D4 frozen policy has an unsupported policy_id")
+    chat_options = raw.get("chat_options", {})
+    if not isinstance(chat_options, dict):
+        raise ValueError("D4 frozen policy chat_options must be an object")
+    if policy_id == "DEFAULT" and chat_options:
+        raise ValueError("DEFAULT D4 policy may not silently add chat options")
+    if policy_id == "THINK_OFF" and dict(chat_options) != {"think": False}:
+        raise ValueError("THINK_OFF D4 policy must be exactly think=false")
+    return raw
+
+
 def _ollama_preflight(config: Mapping[str, Any]) -> None:
     base_url = str(config["ollama_base_url"]).rstrip("/")
     request = Request(base_url + "/api/tags", method="GET")
@@ -138,6 +161,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True)
     parser.add_argument("--model-free", action="store_true")
     parser.add_argument("--max-calls", type=int, default=None)
+    parser.add_argument("--d4-policy-file", default=None)
     return parser
 
 
@@ -150,8 +174,19 @@ def main(argv: list[str] | None = None) -> int:
             campaign = D3ClosureCampaign(output, config=config)
             result = campaign.run_model_free()
         else:
+            config = dict(config)
             policy_id = str(config["d4_policy"]["policy_id"])
-            if policy_id == "PENDING_D4":
+            if args.d4_policy_file:
+                frozen = load_frozen_d4_policy(
+                    args.d4_policy_file,
+                    expected_model=str(config["models"]["QWEN"]),
+                )
+                config["d4_policy"] = {
+                    "policy_id": frozen["policy_id"],
+                    "chat_options": dict(frozen.get("chat_options", {})),
+                    "source": str(Path(args.d4_policy_file)),
+                }
+            elif policy_id == "PENDING_D4":
                 raise ClosurePreflightError(
                     "D4 Qwen call policy is not frozen; no D3-Closure model calls were started"
                 )
