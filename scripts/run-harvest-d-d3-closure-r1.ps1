@@ -162,13 +162,42 @@ if ($Legacy.physical_execution_authorized -ne $false) {
     throw "Legacy C1-C7 Closure must remain physically blocked during R1."
 }
 
-$D4PolicyFile = Join-Path $D4Output "d4_frozen_policy.json"
-if (-not (Test-Path $D4PolicyFile)) {
-    throw "Frozen D4 policy is missing; no R1 model calls were started. Do not rerun D4 blindly."
+# D4 was already completed physically. Never rerun it merely because its
+# default runs/ directory is missing. Recover only an original completed
+# 48-call package from the repository-local evidence surface, validate all
+# checksums/identity/call-ledger invariants, and fail closed on absence or
+# conflicting copies.
+$ClosureConfig = Get-Content $Config -Raw | ConvertFrom-Json
+$ExpectedQwen = [string]$ClosureConfig.models.QWEN
+if ([string]::IsNullOrWhiteSpace($ExpectedQwen)) {
+    throw "Closure config does not identify the expected Qwen model; no R1 model calls were started."
 }
-$D4 = Get-Content $D4PolicyFile -Raw | ConvertFrom-Json
-if ($D4.state -ne "FROZEN" -or [string]::IsNullOrWhiteSpace([string]$D4.model_digest)) {
-    throw "Frozen D4 policy/model_digest is invalid; no R1 model calls were started."
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$D4RecoveryRoot = Join-Path $RepoRoot "runs/recovered-harvest-d-d4"
+$D4ResolutionFile = Join-Path $GateOutput "d4_evidence_resolution.json"
+Write-Host "R1 prerequisite: resolve original completed D4 evidence without rerun"
+python -m inverted.harvest_d.d4_evidence `
+    --preferred-root $D4Output `
+    --search-root $RepoRoot `
+    --recovery-root $D4RecoveryRoot `
+    --expected-model $ExpectedQwen `
+    --output $D4ResolutionFile
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $D4ResolutionFile)) {
+    throw "Original completed D4 evidence could not be recovered; no R1 model calls were started. D4 was not rerun."
+}
+$D4Resolution = Get-Content $D4ResolutionFile -Raw | ConvertFrom-Json
+if ($D4Resolution.state -ne "D4_EVIDENCE_RESOLVED" -or $D4Resolution.d4_rerun_performed -ne $false) {
+    throw "D4 recovery state is invalid or reports a rerun; no R1 model calls were started."
+}
+$D4PolicyFile = [string]$D4Resolution.policy_file
+if ([string]::IsNullOrWhiteSpace($D4PolicyFile) -or -not (Test-Path $D4PolicyFile)) {
+    throw "Recovered d4_frozen_policy.json is unavailable; no R1 model calls were started."
+}
+if ((Split-Path $D4PolicyFile -Leaf) -ne "d4_frozen_policy.json") {
+    throw "Recovered D4 policy filename is invalid; no R1 model calls were started."
+}
+if ([string]::IsNullOrWhiteSpace([string]$D4Resolution.model_digest)) {
+    throw "Recovered D4 model_digest is missing; no R1 model calls were started."
 }
 
 Write-Host "R1 calibration real local campaign"
