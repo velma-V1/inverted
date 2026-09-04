@@ -235,6 +235,7 @@ def build_d4_r1_evidence_bundle(
     output_root = Path(output_root).resolve()
     if not str(implementation_commit).strip():
         raise ValueError("implementation_commit is required")
+    r1_execution_commit = str(implementation_commit).strip()
     if output_root.exists() and any(output_root.iterdir()):
         raise ValueError("evidence bundle output directory must be empty")
     output_root.mkdir(parents=True, exist_ok=True)
@@ -261,7 +262,8 @@ def build_d4_r1_evidence_bundle(
 
     result: dict[str, Any] = {
         "state": "EVIDENCE_BUNDLE_COMPLETE",
-        "implementation_commit": str(implementation_commit),
+        "r1_execution_commit": r1_execution_commit,
+        "implementation_commit": r1_execution_commit,
         "d4": {
             "evidence_class": "RAW_PERSISTED_REAL_LOCAL_CAMPAIGN",
             "physical_model_calls": d4.physical_model_calls,
@@ -289,9 +291,9 @@ def build_d4_r1_evidence_bundle(
     )
     index = f"""# HARVEST D — D4 + R1 EVIDENCE INDEX
 
-Implementation commit:
+R1 execution commit:
 
-    {implementation_commit}
+    {r1_execution_commit}
 
 ## D4 Qwen policy campaign
 
