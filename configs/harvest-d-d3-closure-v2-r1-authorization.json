@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "protocol": "D3-CLOSURE-v2",
+  "stage": "R1_CALIBRATION",
+  "stage_physical_execution_authorized": true,
+  "max_physical_calls": 24,
+  "legacy_closure_physical_execution_authorized": false,
+  "reason": "R1 is limited to reproducibility and runtime-cost calibration after a fresh zero-call R0 gate. This authorization does not permit legacy C1-C7 Closure inference or any R2+ architecture search.",
+  "requirements": [
+    "fresh R0 final_state is R0_MODEL_FREE_COMPLETE",
+    "fresh R0 physical_model_calls is zero",
+    "fresh R0 evidence-tier integrity is green",
+    "fresh R0 has zero uncovered mandatory model-free obligations",
+    "exact installed model digests are captured before inference",
+    "Qwen digest matches the frozen D4 policy",
+    "R1 physical call ceiling is 24",
+    "blind retries remain forbidden",
+    "Test 5 readiness remains false"
+  ]
+}
