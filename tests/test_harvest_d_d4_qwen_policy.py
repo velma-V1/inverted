@@ -1,0 +1,75 @@
+import json
+
+from inverted.harvest_d.d4_qwen_policy import (
+    QwenCompletionClass,
+    classify_qwen_completion,
+)
+from inverted.harvest_d.models import OllamaChatAdapter
+
+
+class _Response:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def read(self):
+        return json.dumps(self._payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def test_ollama_chat_adapter_sends_thinking_control_at_top_level():
+    captured = {}
+
+    def opener(request, timeout):
+        captured.update(json.loads(request.data.decode("utf-8")))
+        return _Response(
+            {
+                "model": "qwen",
+                "message": {"content": '{"answer":"x"}'},
+                "done": True,
+                "done_reason": "stop",
+                "prompt_eval_count": 10,
+                "eval_count": 5,
+            }
+        )
+
+    adapter = OllamaChatAdapter("qwen", opener=opener, chat_options={"think": False})
+    adapter.complete("test")
+    assert captured["think"] is False
+    assert "think" not in captured["options"]
+
+
+def test_default_adapter_request_does_not_change_when_chat_options_absent():
+    captured = {}
+
+    def opener(request, timeout):
+        captured.update(json.loads(request.data.decode("utf-8")))
+        return _Response(
+            {
+                "model": "qwen",
+                "message": {"content": "ok"},
+                "done": True,
+                "done_reason": "stop",
+                "prompt_eval_count": 10,
+                "eval_count": 5,
+            }
+        )
+
+    OllamaChatAdapter("qwen", opener=opener).complete("test")
+    assert "think" not in captured
+
+
+def test_qwen_completion_classifies_context_exhaustion_and_empty_final():
+    assert classify_qwen_completion(
+        done_reason="length", input_tokens=100, output_tokens=3996, num_ctx=4096, final_text=""
+    ) is QwenCompletionClass.CONTEXT_EXHAUSTED
+    assert classify_qwen_completion(
+        done_reason="stop", input_tokens=100, output_tokens=20, num_ctx=4096, final_text=""
+    ) is QwenCompletionClass.EMPTY_FINAL
+    assert classify_qwen_completion(
+        done_reason="stop", input_tokens=100, output_tokens=20, num_ctx=4096, final_text='{"answer":"x"}'
+    ) is QwenCompletionClass.SEMANTIC_RESULT
