@@ -46,14 +46,12 @@ def _replacement_pairs(replacements: Mapping[str, str]) -> tuple[tuple[bytes, by
     for source, replacement in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
         if not source:
             raise ValueError("empty privacy identifier is forbidden")
-        source_variants = _string_variants(source)
-        replacement_variants = _string_variants(replacement)
         replacement_by_shape = {
             "raw": replacement,
             "escaped": replacement.replace("\\", "\\\\"),
             "slash": replacement.replace("\\", "/"),
         }
-        for source_variant in source_variants:
+        for source_variant in _string_variants(source):
             if "\\\\" in source_variant:
                 target = replacement_by_shape["escaped"]
             elif "/" in source_variant:
@@ -130,27 +128,41 @@ def _sanitize_zip_bytes(
         "renamed_members": 0,
         "nested_zips": 0,
         "remaining_matches": 0,
+        "binary_members_scanned": 0,
     }
 
     with zipfile.ZipFile(source_stream, "r") as source, zipfile.ZipFile(output_stream, "w") as output:
+        archive_comment, archive_comment_changes = _replace_bytes(source.comment, pairs)
+        output.comment = archive_comment
+        stats["redaction_occurrences"] += archive_comment_changes
+
         for info in source.infolist():
             original_name = info.filename
             new_name, name_changes = _sanitize_member_name(original_name, replacements)
+            new_info = copy.copy(info)
+            new_info.filename = new_name
+
+            new_comment, comment_changes = _replace_bytes(info.comment, pairs)
+            new_info.comment = new_comment
+            if _remaining_matches(info.extra, pairs):
+                raise ValueError(f"ZIP extra metadata contains a privacy identifier: {original_name}")
+
+            metadata_changes = name_changes + comment_changes
+            stats["redaction_occurrences"] += metadata_changes
+            if name_changes:
+                stats["renamed_members"] += 1
+
             if info.is_dir():
-                new_info = copy.copy(info)
-                new_info.filename = new_name
                 output.writestr(new_info, b"")
-                if name_changes:
+                if metadata_changes:
                     stats["changed_members"] += 1
-                    stats["renamed_members"] += 1
-                    stats["redaction_occurrences"] += name_changes
                 else:
                     stats["unchanged_members"] += 1
                 continue
 
             original_data = source.read(info)
             new_data = original_data
-            member_changes = name_changes
+            content_changes = 0
 
             if Path(original_name).suffix.lower() == ".zip":
                 nested_data, nested_stats = _sanitize_zip_bytes(
@@ -161,24 +173,26 @@ def _sanitize_zip_bytes(
                 )
                 stats["nested_zips"] += 1 + nested_stats["nested_zips"]
                 stats["redaction_occurrences"] += nested_stats["redaction_occurrences"]
+                stats["binary_members_scanned"] += nested_stats["binary_members_scanned"]
                 stats["remaining_matches"] += nested_stats["remaining_matches"]
                 if nested_data != original_data:
                     new_data = nested_data
-                    member_changes += 1
+                    content_changes = 1
             elif _is_text_member(original_name):
                 new_data, content_changes = _replace_bytes(original_data, pairs)
-                member_changes += content_changes
                 stats["redaction_occurrences"] += content_changes
+            else:
+                stats["binary_members_scanned"] += 1
+                binary_matches = _remaining_matches(original_data, pairs)
+                if binary_matches:
+                    raise ValueError(
+                        f"binary member contains a privacy identifier and was not modified: {original_name}"
+                    )
 
-            new_info = copy.copy(info)
-            new_info.filename = new_name
             output.writestr(new_info, new_data, compress_type=info.compress_type)
 
-            if member_changes:
+            if metadata_changes or content_changes:
                 stats["changed_members"] += 1
-                if name_changes:
-                    stats["renamed_members"] += 1
-                    stats["redaction_occurrences"] += name_changes
             else:
                 stats["unchanged_members"] += 1
                 if _sha256_bytes(new_data) != _sha256_bytes(original_data):
@@ -186,18 +200,20 @@ def _sanitize_zip_bytes(
 
     sanitized = output_stream.getvalue()
 
-    # Verification is performed over member names and recognized text members only.
     with zipfile.ZipFile(io.BytesIO(sanitized), "r") as archive:
+        stats["remaining_matches"] += _remaining_matches(archive.comment, pairs)
         for info in archive.infolist():
-            encoded_name = info.filename.encode("utf-8", errors="surrogatepass")
-            stats["remaining_matches"] += _remaining_matches(encoded_name, pairs)
+            stats["remaining_matches"] += _remaining_matches(
+                info.filename.encode("utf-8", errors="surrogatepass"), pairs
+            )
+            stats["remaining_matches"] += _remaining_matches(info.comment, pairs)
+            stats["remaining_matches"] += _remaining_matches(info.extra, pairs)
             if info.is_dir():
                 continue
             data = archive.read(info)
             if Path(info.filename).suffix.lower() == ".zip":
                 continue
-            if _is_text_member(info.filename):
-                stats["remaining_matches"] += _remaining_matches(data, pairs)
+            stats["remaining_matches"] += _remaining_matches(data, pairs)
 
     return sanitized, stats
 
@@ -257,10 +273,25 @@ def _parse_replacements(values: list[str]) -> dict[str, str]:
     return result
 
 
+def _load_replacements(path: str | None, inline: list[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    if path:
+        parsed = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        if not isinstance(parsed, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
+            raise ValueError("replacements JSON must be an object of exact-string to placeholder-string values")
+        result.update(parsed)
+    for source, replacement in _parse_replacements(inline).items():
+        if source in result:
+            raise ValueError("duplicate replacement source")
+        result[source] = replacement
+    return result
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Surgically remove exact personal/PC identifiers from a test ZIP")
     parser.add_argument("--source", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--replacements-json")
     parser.add_argument("--replace", action="append", default=[])
     parser.add_argument("--max-nested-depth", type=int, default=8)
     return parser
@@ -272,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         result = sanitize_zip(
             source_zip=args.source,
             output_zip=args.output,
-            replacements=_parse_replacements(args.replace),
+            replacements=_load_replacements(args.replacements_json, args.replace),
             max_nested_depth=args.max_nested_depth,
         )
         print(json.dumps(result, sort_keys=True))
