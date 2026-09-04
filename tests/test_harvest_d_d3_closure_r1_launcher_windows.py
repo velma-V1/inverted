@@ -55,6 +55,23 @@ def test_r1_model_free_windows_gate_exercises_frozen_d3_resolution_and_revalidat
     assert resolve < post_d3 < model_free_exit
 
 
+def test_r1_launcher_recovers_original_completed_d4_without_rerunning_d4():
+    text = SCRIPT.read_text(encoding="utf-8")
+    model_free_exit = text.index("if ($ModelFreeOnly)")
+    d4_resolve = text.index("inverted.harvest_d.d4_evidence")
+    real = text.index("R1 calibration real local campaign")
+    assert model_free_exit < d4_resolve < real
+    assert "--preferred-root" in text
+    assert "--search-root" in text
+    assert "--recovery-root" in text
+    assert "--expected-model" in text
+    assert "d4_evidence_resolution.json" in text
+    assert "d4_rerun_performed" in text
+    assert "policy_file" in text
+    assert "run-harvest-d-d4-qwen-policy.ps1" not in text
+    assert "d4_qwen_cli" not in text
+
+
 def test_r1_launcher_requires_fresh_r0_historical_d3_and_exact_d4_policy_before_real_calls():
     text = SCRIPT.read_text(encoding="utf-8")
     assert "closure_r0_readiness_report.json" in text
