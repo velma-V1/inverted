@@ -11,7 +11,7 @@
     "D6B": 30,
     "D7": 0
   },
-  "base_commit": "96306482153b1ced76fc7a811afe2beb7a1b5b38",
+  "base_commit": "0d67ba4e5578b4c14225eb83b726fd137dfffecd",
   "scope_frozen": true,
   "normal_ci_model_free": true,
   "cloud_required": false,

@@ -18,7 +18,7 @@ _DEFAULT_CEILINGS = {"D0": 0, "D1": 0, "D2": 70, "D3": 1000, "D4": 60, "D5": 50,
 class HarvestDConfig:
     stages: tuple[str, ...] = _ALLOWED_STAGES
     call_ceilings: Mapping[str, int] = field(default_factory=lambda: dict(_DEFAULT_CEILINGS))
-    base_commit: str = "96306482153b1ced76fc7a811afe2beb7a1b5b38"
+    base_commit: str = "0d67ba4e5578b4c14225eb83b726fd137dfffecd"
     scope_frozen: bool = True
     normal_ci_model_free: bool = True
     cloud_required: bool = False
