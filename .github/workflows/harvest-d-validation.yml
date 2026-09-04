@@ -14,10 +14,12 @@ on:
       - 'configs/harvest-d-d3.json'
       - 'configs/harvest-d-d4-qwen-policy.json'
       - 'configs/harvest-d-d3-closure-v2.json'
+      - 'configs/harvest-d-d3-closure-v2-r1-authorization.json'
       - 'scripts/run-harvest-d-d3.ps1'
       - 'scripts/run-harvest-d-d4-qwen-policy.ps1'
       - 'scripts/run-harvest-d-d4-through-closure.ps1'
       - 'scripts/run-harvest-d-d3-closure-v2.ps1'
+      - 'scripts/run-harvest-d-d3-closure-r1.ps1'
       - 'TESTING.md'
       - 'docs/research/2026-09-02-harvest-d-research-synthesis.md'
       - 'docs/superpowers/specs/*harvest-d-d3*.md'
@@ -38,10 +40,12 @@ on:
       - 'configs/harvest-d-d3.json'
       - 'configs/harvest-d-d4-qwen-policy.json'
       - 'configs/harvest-d-d3-closure-v2.json'
+      - 'configs/harvest-d-d3-closure-v2-r1-authorization.json'
       - 'scripts/run-harvest-d-d3.ps1'
       - 'scripts/run-harvest-d-d4-qwen-policy.ps1'
       - 'scripts/run-harvest-d-d4-through-closure.ps1'
       - 'scripts/run-harvest-d-d3-closure-v2.ps1'
+      - 'scripts/run-harvest-d-d3-closure-r1.ps1'
       - 'TESTING.md'
       - 'docs/research/2026-09-02-harvest-d-research-synthesis.md'
       - 'docs/superpowers/specs/*harvest-d-d3*.md'
@@ -148,6 +152,7 @@ jobs:
           test -f /tmp/harvest-d-d3-closure-v2/closure_system_events.jsonl
           test -f /tmp/harvest-d-d3-closure-v2/closure_final_report.json
           test -f /tmp/harvest-d-d3-closure-v2/test5_handoff.json
+          test -f /tmp/harvest-d-d3-closure-v2/closure_r0_readiness_report.json
           test -f /tmp/harvest-d-d3-closure-v2/SHA256SUMS.csv
           python - <<'PY'
           import json
@@ -155,12 +160,42 @@ jobs:
           root = Path('/tmp/harvest-d-d3-closure-v2')
           master = json.loads((root / '00-HARVEST-D-D3-CLOSURE-V2-MASTER-INDEX.json').read_text())
           report = json.loads((root / 'closure_final_report.json').read_text())
+          r0 = json.loads((root / 'closure_r0_readiness_report.json').read_text())
           assert master['protocol'] == 'D3-CLOSURE-v2'
           assert master['physical_model_calls'] == 0
           assert master['max_calls'] == 200
           assert master['sealed_reserve'] == 48
           assert master['blind_retries_allowed'] is False
           assert report['claims_promoted'] is False
+          assert r0['final_state'] == 'R0_MODEL_FREE_COMPLETE'
+          assert r0['evidence_tier_integrity'] is True
+          assert r0['uncovered_mandatory_obligations'] == 0
+          PY
+      - name: R1 calibration zero-call end-to-end package
+        env:
+          OPENAI_API_KEY: ''
+          ANTHROPIC_API_KEY: ''
+          OPENROUTER_API_KEY: ''
+        run: |
+          rm -rf /tmp/harvest-d-d3-closure-r1
+          python -m inverted.harvest_d.d3_closure_r1_cli --config configs/harvest-d-d3-closure-v2.json --output /tmp/harvest-d-d3-closure-r1 --model-free
+          test -f /tmp/harvest-d-d3-closure-r1/00-HARVEST-D-D3-CLOSURE-R1-MASTER-INDEX.json
+          test -f /tmp/harvest-d-d3-closure-r1/closure_r1_plan.json
+          test -f /tmp/harvest-d-d3-closure-r1/closure_r1_readiness.json
+          test -f /tmp/harvest-d-d3-closure-r1/closure_reproducibility_calibration.json
+          test -f /tmp/harvest-d-d3-closure-r1/closure_cost_calibration.json
+          test -f /tmp/harvest-d-d3-closure-r1/SHA256SUMS.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('/tmp/harvest-d-d3-closure-r1')
+          master = json.loads((root / '00-HARVEST-D-D3-CLOSURE-R1-MASTER-INDEX.json').read_text())
+          ready = json.loads((root / 'closure_r1_readiness.json').read_text())
+          assert master['stage'] == 'R1_CALIBRATION'
+          assert master['physical_model_calls'] == 0
+          assert master['max_physical_calls'] == 24
+          assert master['ready_for_test5'] is False
+          assert ready['ready_for_physical_r1'] is False
           PY
       - name: Legacy Harvest D model-free regression
         env:
@@ -193,6 +228,9 @@ jobs:
       - name: D3 Closure PowerShell launcher model-free gate
         shell: powershell
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-harvest-d-d3-closure-v2.ps1 -Output "runs/ci-harvest-d-d3-closure-v2" -ModelFreeOnly
+      - name: R1 PowerShell launcher model-free gate
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-harvest-d-d3-closure-r1.ps1 -Output "runs/ci-harvest-d-d3-closure-r1" -R0Output "runs/ci-harvest-d-d3-closure-r0-gate" -ModelFreeOnly
       - name: D4 through Closure PowerShell launcher model-free gate
         shell: powershell
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-harvest-d-d4-through-closure.ps1 -D4Output "runs/ci-harvest-d-d4-qwen-policy-chain" -ClosureOutput "runs/ci-harvest-d-d3-closure-v2-chain" -StateOutput "runs/ci-harvest-d-d4-through-closure" -ModelFreeOnly
