@@ -46,17 +46,15 @@ if ($ModelFreeOnly) {
 }
 
 $GapRegistry = Join-Path $PostD3Output "post_d3_gap_registry.json"
-if (-not (Test-Path $GapRegistry)) {
-    if (-not (Test-Path $D3V1Input)) {
-        throw "Frozen D3-v1 evidence is unavailable and post-D3 analysis is missing; no model calls were started."
-    }
-    Write-Host "D4 prerequisite: zero-call post-D3 analysis"
-    python -m inverted.harvest_d.post_d3_cli --input $D3V1Input --output $PostD3Output
-    if ($LASTEXITCODE -ne 0) {
-        throw "Post-D3 zero-call analysis failed; no model calls were started."
-    }
+if (!(Test-Path -LiteralPath $D3V1Input)) {
+    throw "Frozen D3-v1 evidence is unavailable; no model calls were started."
 }
-if (-not (Test-Path $GapRegistry)) {
+Write-Host "D4 prerequisite: revalidate frozen D3-v1 and rebuild zero-call post-D3 analysis"
+python -m inverted.harvest_d.post_d3_cli --input $D3V1Input --output $PostD3Output
+if ($LASTEXITCODE -ne 0) {
+    throw "Post-D3 zero-call analysis/revalidation failed; no model calls were started."
+}
+if (!(Test-Path -LiteralPath $GapRegistry)) {
     throw "Required post-D3 gap registry was not produced; no model calls were started."
 }
 

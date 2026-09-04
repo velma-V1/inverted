@@ -95,7 +95,12 @@ def load_closure_config(path: str | Path) -> dict[str, Any]:
     return raw
 
 
-def load_frozen_d4_policy(path: str | Path, *, expected_model: str) -> dict[str, Any]:
+def load_frozen_d4_policy(
+    path: str | Path,
+    *,
+    expected_model: str,
+    expected_digest: str | None = None,
+) -> dict[str, Any]:
     policy_path = Path(path)
     try:
         raw = json.loads(policy_path.read_text(encoding="utf-8"))
@@ -105,6 +110,8 @@ def load_frozen_d4_policy(path: str | Path, *, expected_model: str) -> dict[str,
         raise ValueError("D4 policy is not frozen; closure inference is not authorized")
     if str(raw.get("model_id")) != str(expected_model):
         raise ValueError("D4 policy model identity does not match closure Qwen model")
+    if expected_digest is not None and str(raw.get("model_digest") or "") != str(expected_digest):
+        raise ValueError("D4 policy model digest does not match the installed Qwen model digest")
     policy_id = str(raw.get("policy_id") or "")
     if policy_id not in {"DEFAULT", "THINK_OFF"}:
         raise ValueError("D4 frozen policy has an unsupported policy_id")
@@ -118,7 +125,7 @@ def load_frozen_d4_policy(path: str | Path, *, expected_model: str) -> dict[str,
     return raw
 
 
-def _ollama_preflight(config: Mapping[str, Any]) -> None:
+def _ollama_preflight(config: Mapping[str, Any]) -> dict[str, dict[str, str]]:
     base_url = str(config["ollama_base_url"]).rstrip("/")
     request = Request(base_url + "/api/tags", method="GET")
     try:
@@ -126,14 +133,22 @@ def _ollama_preflight(config: Mapping[str, Any]) -> None:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, URLError, json.JSONDecodeError) as exc:
         raise ClosurePreflightError("Ollama preflight failed before inference") from exc
-    available = {
-        str(row.get("name") or row.get("model") or "")
+    rows = {
+        str(row.get("name") or row.get("model") or ""): row
         for row in payload.get("models", [])
         if isinstance(row, dict)
     }
-    missing = sorted({str(v) for v in config["models"].values()} - available)
+    required = {str(value) for value in config["models"].values()}
+    missing = sorted(required - set(rows))
     if missing:
         raise ClosurePreflightError(f"required Ollama models are not installed: {missing}")
+    digests: dict[str, str] = {}
+    for model_id in sorted(required):
+        digest = str(rows[model_id].get("digest") or "")
+        if not digest:
+            raise ClosurePreflightError(f"required Ollama model digest is unavailable: {model_id}")
+        digests[model_id] = digest
+    return {"model_digests": digests}
 
 
 def _build_adapters(config: Mapping[str, Any]) -> dict[str, OllamaChatAdapter]:
@@ -176,28 +191,34 @@ def main(argv: list[str] | None = None) -> int:
         else:
             config = dict(config)
             policy_id = str(config["d4_policy"]["policy_id"])
+            if not args.d4_policy_file and policy_id == "PENDING_D4":
+                raise ClosurePreflightError(
+                    "D4 Qwen call policy is not frozen; no D3-Closure model calls were started"
+                )
+            preflight = _ollama_preflight(config)
+            model_digests = dict(preflight["model_digests"])
+            config["runtime_model_digests"] = model_digests
             if args.d4_policy_file:
+                qwen_model = str(config["models"]["QWEN"])
                 frozen = load_frozen_d4_policy(
                     args.d4_policy_file,
-                    expected_model=str(config["models"]["QWEN"]),
+                    expected_model=qwen_model,
+                    expected_digest=model_digests[qwen_model],
                 )
                 config["d4_policy"] = {
                     "policy_id": frozen["policy_id"],
                     "chat_options": dict(frozen.get("chat_options", {})),
+                    "model_digest": str(frozen["model_digest"]),
                     "source": str(Path(args.d4_policy_file)),
                 }
-            elif policy_id == "PENDING_D4":
-                raise ClosurePreflightError(
-                    "D4 Qwen call policy is not frozen; no D3-Closure model calls were started"
-                )
-            _ollama_preflight(config)
             campaign = D3ClosureCampaign(output, config=config, adapters=_build_adapters(config))
             result = campaign.run(max_calls=args.max_calls)
         master = json.loads(
             (output / "00-HARVEST-D-D3-CLOSURE-V2-MASTER-INDEX.json").read_text(encoding="utf-8")
         )
         print(json.dumps(master, sort_keys=True))
-        return 0 if result.final_state not in {"HARD_STOP"} else 2
+        success_states = {"MODEL_FREE_COMPLETE"} if args.model_free else {"COMPLETE"}
+        return 0 if result.final_state in success_states else 2
     except (ClosureConfigError, ClosurePreflightError, ValueError) as exc:
         print(f"D3-CLOSURE HARNESS ERROR: {exc}", file=sys.stderr)
         return 2

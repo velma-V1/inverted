@@ -41,6 +41,7 @@ on:
       - 'scripts/run-harvest-d-d4-qwen-policy.ps1'
       - 'scripts/run-harvest-d-d3-closure-v2.ps1'
       - 'TESTING.md'
+      - 'docs/research/2026-09-02-harvest-d-research-synthesis.md'
       - 'docs/superpowers/specs/*harvest-d-d3*.md'
       - 'docs/superpowers/specs/2026-09-02-harvest-d-cpu-sentinel-addendum.md'
       - 'docs/superpowers/plans/2026-09-03-harvest-d-d3-automated-tomography.md'
@@ -169,3 +170,24 @@ jobs:
           python -m inverted.harvest_d.cli --config configs/harvest-d.json --output /tmp/harvest-d-dry-run --dry-run
           test -f /tmp/harvest-d-dry-run/00-HARVEST-D-MASTER-INDEX.json
           test -f /tmp/harvest-d-dry-run/SHA256SUMS.csv
+
+  windows-launcher-model-free:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install package and pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+      - name: D4 PowerShell launcher model-free gate
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-harvest-d-d4-qwen-policy.ps1 -Output "runs/ci-harvest-d-d4-qwen-policy" -ModelFreeOnly
+      - name: D3 Closure PowerShell launcher model-free gate
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-harvest-d-d3-closure-v2.ps1 -Output "runs/ci-harvest-d-d3-closure-v2" -ModelFreeOnly

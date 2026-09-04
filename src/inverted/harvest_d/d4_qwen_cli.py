@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -70,7 +72,7 @@ def load_d4_config(path: str | Path) -> dict[str, Any]:
     return raw
 
 
-def _ollama_preflight(config: Mapping[str, Any]) -> None:
+def _ollama_preflight(config: Mapping[str, Any]) -> dict[str, str]:
     base_url = str(config["ollama_base_url"]).rstrip("/")
     request = Request(base_url + "/api/tags", method="GET")
     try:
@@ -78,13 +80,69 @@ def _ollama_preflight(config: Mapping[str, Any]) -> None:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, URLError, json.JSONDecodeError) as exc:
         raise D4PreflightError("Ollama preflight failed before D4 inference") from exc
-    available = {
-        str(row.get("name") or row.get("model") or "")
-        for row in payload.get("models", [])
-        if isinstance(row, dict)
+    target = str(config["model"])
+    match = next(
+        (
+            row
+            for row in payload.get("models", [])
+            if isinstance(row, dict)
+            and str(row.get("name") or row.get("model") or "") == target
+        ),
+        None,
+    )
+    if match is None:
+        raise D4PreflightError(f"required Qwen model is not installed: {target}")
+    digest = str(match.get("digest") or "")
+    if not digest:
+        raise D4PreflightError(f"required Qwen model digest is unavailable: {target}")
+    return {"model_id": target, "model_digest": digest}
+
+
+def _write_json(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _bind_runtime_identity(output: Path, identity: Mapping[str, str]) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    path = output / "d4_runtime_identity.json"
+    current = {
+        "protocol": "D4-QWEN-POLICY-v1",
+        "model_id": str(identity["model_id"]),
+        "model_digest": str(identity["model_digest"]),
     }
-    if str(config["model"]) not in available:
-        raise D4PreflightError(f"required Qwen model is not installed: {config['model']}")
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise D4PreflightError("D4 runtime identity artifact is invalid; refuse unsafe resume") from exc
+        if existing != current:
+            raise D4PreflightError("D4 model digest/runtime identity changed; refuse unsafe resume")
+    else:
+        _write_json(path, current)
+
+
+def _rewrite_checksums(output: Path) -> None:
+    checksum = output / "SHA256SUMS.csv"
+    files = sorted(path for path in output.iterdir() if path.is_file() and path.name != checksum.name)
+    with checksum.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["sha256", "file"])
+        for path in files:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            writer.writerow([digest, path.name])
+
+
+def _attach_model_digest(output: Path, identity: Mapping[str, str]) -> None:
+    policy_path = output / "d4_frozen_policy.json"
+    try:
+        policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise D4PreflightError("D4 frozen policy artifact is missing or invalid") from exc
+    if str(policy.get("model_id")) != str(identity["model_id"]):
+        raise D4PreflightError("D4 frozen policy model identity differs from preflight identity")
+    policy["model_digest"] = str(identity["model_digest"])
+    _write_json(policy_path, policy)
+    _rewrite_checksums(output)
 
 
 def _build_adapters(config: Mapping[str, Any]) -> dict[str, OllamaChatAdapter]:
@@ -117,9 +175,11 @@ def main(argv: list[str] | None = None) -> int:
             campaign = D4QwenCampaign(output, config=config)
             result = campaign.run_model_free()
         else:
-            _ollama_preflight(config)
+            identity = _ollama_preflight(config)
+            _bind_runtime_identity(output, identity)
             campaign = D4QwenCampaign(output, config=config, adapters=_build_adapters(config))
             result = campaign.run(max_calls=args.max_calls)
+            _attach_model_digest(output, identity)
         master = json.loads(
             (output / "00-HARVEST-D-D4-QWEN-POLICY-MASTER-INDEX.json").read_text(encoding="utf-8")
         )

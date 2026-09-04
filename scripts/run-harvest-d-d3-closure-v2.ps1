@@ -100,7 +100,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Post-D3 zero-call analysis/revalidation failed; no model calls were started."
 }
 $GapRegistry = Join-Path $PostD3Output "post_d3_gap_registry.json"
-if (-not (Test-Path $GapRegistry)) {
+if (!(Test-Path -LiteralPath $GapRegistry)) {
     throw "Required post-D3 gap registry was not produced; no model calls were started."
 }
 
