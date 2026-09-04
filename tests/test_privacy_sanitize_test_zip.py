@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import zipfile
 
+import pytest
+
 from inverted.harvest_d.privacy_sanitize_test_zip import sanitize_zip
 
 
@@ -27,7 +29,7 @@ def test_sanitizer_changes_only_exact_identifier_occurrences(tmp_path: Path) -> 
     with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("evidence/untouched.json", untouched)
         archive.writestr("evidence/provenance.json", sensitive)
-        archive.writestr("payload.bin", b"\x00\x01C:\\Users\\TestUser\\binary\xff")
+        archive.writestr("payload.bin", b"\x00\x01SAFE-BINARY-EVIDENCE\xff")
 
     result = sanitize_zip(
         source_zip=source,
@@ -83,13 +85,24 @@ def test_sanitizer_recurses_into_nested_zip_without_changing_other_members(tmp_p
             assert inner.read("raw.jsonl") == b'{"answer":"keep exactly"}\n'
 
 
+def test_sanitizer_refuses_binary_member_with_exact_identifier(tmp_path: Path) -> None:
+    source = tmp_path / "binary.zip"
+    output = tmp_path / "binary.sanitized.zip"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("payload.bin", b"\x00C:\\Users\\TestUser\\binary\xff")
+
+    with pytest.raises(ValueError, match="binary member contains a privacy identifier"):
+        sanitize_zip(
+            source_zip=source,
+            output_zip=output,
+            replacements={r"C:\Users\TestUser": r"C:\Users\[REDACTED_USER]"},
+        )
+    assert not output.exists()
+
+
 def test_sanitizer_refuses_in_place_overwrite(tmp_path: Path) -> None:
     source = tmp_path / "test.zip"
     with zipfile.ZipFile(source, "w") as archive:
         archive.writestr("a.txt", "safe")
-    try:
+    with pytest.raises(ValueError, match="in-place"):
         sanitize_zip(source_zip=source, output_zip=source, replacements={"x": "y"})
-    except ValueError as exc:
-        assert "in-place" in str(exc)
-    else:
-        raise AssertionError("expected in-place overwrite refusal")
