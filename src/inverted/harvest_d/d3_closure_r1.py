@@ -93,6 +93,29 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _assert_unambiguous_resume(root: Path) -> None:
+    started: set[str] = set()
+    for row in _read_jsonl(root / "closure_r1_campaign_journal.jsonl"):
+        experiment_id = str(row.get("experiment_id") or "")
+        if not experiment_id:
+            continue
+        if str(row.get("state")) == "STARTED":
+            started.add(experiment_id)
+        elif str(row.get("state")) == "COMMITTED":
+            started.discard(experiment_id)
+    committed = {
+        str(row.get("experiment_id"))
+        for row in _read_jsonl(root / "closure_r1_call_ledger.jsonl")
+        if row.get("committed") and row.get("experiment_id")
+    }
+    ambiguous = sorted(started - committed)
+    if ambiguous:
+        raise ValueError(
+            "ambiguous in-flight R1 physical call on resume; automatic replay forbidden: "
+            + ", ".join(ambiguous)
+        )
+
+
 def _selected_cases(config: Mapping[str, Any]) -> tuple[Any, ...]:
     seed = int(config["seeds"]["development"])
     per_family = max(1, int(config["cases_per_family"]["development"]))
@@ -288,6 +311,7 @@ class R1CalibrationCampaign:
         if not 0 <= limit <= R1_MAX_CALLS:
             raise ValueError("R1 max_calls must be between 0 and 24")
         self.root.mkdir(parents=True, exist_ok=True)
+        _assert_unambiguous_resume(self.root)
         _write_json(self.root / "closure_r1_plan.json", self.plan.to_dict())
         _write_json(self.root / "closure_r1_runtime_identity.json", self.runtime_identity)
         existing = _read_jsonl(self.root / "closure_r1_call_ledger.jsonl")
