@@ -2,7 +2,7 @@
 
 ## Governance authority
 
-Before applying this convenience operating summary, read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md), the sole canonical repository lawbook, then the owner-approved six-law amendment in [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md).
+Before applying this convenience operating summary, read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md), the sole canonical repository lawbook, then the owner-approved amendments in [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md) and [`CLAIM_SPACE_ADEQUACY_AMENDMENT.md`](CLAIM_SPACE_ADEQUACY_AMENDMENT.md).
 
 This file provides a compact operating layer beneath those authorities. It may not weaken, replace, or outrank them.
 
@@ -66,7 +66,48 @@ If the answer is "no" because an observable, safe, cheap-to-store field is missi
 
 This does **not** mean indiscriminate collection. Do not capture credentials, secrets, arbitrary environment variables, unrelated filesystem/process data, private chain-of-thought, or information that would contaminate a sealed experiment. Maximize **usable, safe, causally interpretable** evidence.
 
-## 4. Failure is data only when causality is preserved
+## 4. Claim-space adequacy is required before calling a test sufficient
+
+> **Never confuse “we tested enough cases to get a result” with “we tested enough of the right space to justify the claim.”**
+
+Before approving a consequential experiment, map:
+
+`CLAIM -> FACTORS/LEVELS -> PLAUSIBLE INTERACTIONS -> RAW SPACE -> ZERO-CALL REDUCTION -> COVERAGE METHOD -> EVIDENCE DEPTH -> STOP/PROMOTION RULE`.
+
+Use `SCREEN`, `BEST OF TESTED`, `OPTIMAL/BEST PRACTICAL`, `MINIMUM SUFFICIENT`, `GENERALIZED`, and `MODEL-SPECIFIC/CONDITIONAL` precisely. A small sampled screen may not silently become an optimization or minimality claim.
+
+For combinatorial spaces, prefer zero-call enumeration/reduction, structured factor screening, covering/interaction designs, adaptive challenger search, local optimization, minimality ablation, negative-transfer boundaries, and fresh/sealed confirmation instead of arbitrary combinations.
+
+Every major combinatorial experiment should leave machine-readable coverage and uncovered-space evidence.
+
+## 5. Testing depth scales with observation cost
+
+> **Fast calls may justify high sample counts. Long/thinking calls require smaller ceilings. System-only evidence consumes zero physical model calls.**
+
+Do not treat all model calls as equal-cost observations.
+
+Track a budget vector that includes at minimum:
+
+- physical model calls;
+- actual inference wall time / local GPU-occupancy proxy;
+- token/context burden;
+- system-only operations;
+- protected confirmation reserve.
+
+Calibrate model/policy cost on the actual runtime before the main campaign. Use the calibrated cost to allocate evidence dynamically:
+
+```text
+SYSTEM / deterministic -> zero model-call cost; use while decision-relevant
+FAST model call         -> broad sampling / larger N
+MEDIUM call             -> moderate N
+LONG / thinking call    -> selective sampling / smaller N
+```
+
+A physical-call ceiling is a runaway-safety limit, not the definition of experiment size.
+
+If scientific adequacy cannot fit the affordable cost envelope, improve the design, narrow the claim, mark it UNRESOLVED, or explicitly authorize more cost. Never retain a broad claim and quietly under-sample it.
+
+## 6. Failure is data only when causality is preserved
 
 A failure must produce more than a failure count. Preserve, where observable:
 
@@ -74,7 +115,7 @@ A failure must produce more than a failure count. Preserve, where observable:
 
 Do not use blind retries. Do not silently rewrite oracles, success criteria, prior evidence, or holdouts after seeing results. Negative evidence should narrow the architecture or create a targeted causal hypothesis.
 
-## 5. Evidence outranks cleverness
+## 7. Evidence outranks cleverness
 
 No mechanism survives because it is elegant, novel, or theoretically appealing. Components should be classified from evidence as appropriate:
 
@@ -84,9 +125,9 @@ No mechanism survives because it is elegant, novel, or theoretically appealing. 
 - HARMFUL
 - UNRESOLVED
 
-Promote only after the applicable causal, generalization, regression, safety, and evidence-depth gates are satisfied.
+Promote only after the applicable causal, generalization, regression, safety, search-adequacy, and evidence-depth gates are satisfied.
 
-## 6. Scope
+## 8. Scope
 
 These rules apply to:
 
@@ -99,4 +140,4 @@ These rules apply to:
 - handoffs between models/agents;
 - future optimization and compression work.
 
-When another repository document gives more specific instructions, follow both unless they conflict. If a conflict exists, use the precedence defined by `REPO_LAWS_AND_REGULATIONS.md`, preserve frozen experiment/safety constraints, and incorporate the owner-approved constitutional amendment wherever applicable.
+When another repository document gives more specific instructions, follow both unless they conflict. If a conflict exists, use the precedence defined by `REPO_LAWS_AND_REGULATIONS.md`, preserve frozen experiment/safety constraints, and incorporate the owner-approved constitutional amendments wherever applicable.
