@@ -1,0 +1,37 @@
+{
+  "archives": {
+    "d4": {
+      "file": "D4-COMPLETE-CAMPAIGN.zip",
+      "sha256": "c60fceb876ff44803ffb5fd584bf3545eafae45fc1b2365a13db1a0cd7ea044e",
+      "size_bytes": 441542
+    },
+    "r1": {
+      "file": "R1-CALIBRATION-CAMPAIGN.zip",
+      "sha256": "995e7619ee4dcabfe748f50ebb11b3e389c3b8d69f15ec5ef4ca47f32a21d4d2",
+      "size_bytes": 238583
+    }
+  },
+  "d4": {
+    "evidence_class": "RAW_PERSISTED_REAL_LOCAL_CAMPAIGN",
+    "model_digest": "441ec31e4d2aedceb97dd834b036db104d943fbe3dbc1e5c8ac95eeaa9141c77",
+    "model_id": "qwen3.5:9b-q8_0",
+    "physical_model_calls": 48,
+    "policy_id": "DEFAULT",
+    "source_fingerprint": "a9d79c482b79022244d5f898312e80c7ab2a8d267f099119998fedf4cfad467f"
+  },
+  "implementation_commit": "cb5ca86a63eb18d46f601df773889852d0e636f6",
+  "model_inference_performed": false,
+  "r1": {
+    "evidence_class": "RAW_PERSISTED_REAL_LOCAL_CALIBRATION",
+    "final_state": "R1_CALIBRATION_COMPLETE",
+    "physical_model_calls": 24,
+    "qwen_model_digest": "441ec31e4d2aedceb97dd834b036db104d943fbe3dbc1e5c8ac95eeaa9141c77",
+    "qwen_model_id": "qwen3.5:9b-q8_0",
+    "small_model_digest": "b19683a34698365318287452c1711a7dd94253eba73c1f834e09a09c2b8d9415",
+    "small_model_id": "qwen2.5:1.5b-instruct-q8_0",
+    "source_fingerprint": "c776b5d3d5b507b681a465e06c6f1a361ba19a091a25ef0a9ec18f164167fc44"
+  },
+  "r1_execution_commit": "cb5ca86a63eb18d46f601df773889852d0e636f6",
+  "source_mutation_observed": false,
+  "state": "EVIDENCE_BUNDLE_COMPLETE"
+}
