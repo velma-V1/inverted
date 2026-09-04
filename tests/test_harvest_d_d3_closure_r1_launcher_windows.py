@@ -26,7 +26,7 @@ def test_r1_launcher_runs_fresh_r0_then_r1_model_free_before_any_physical_path()
     auth = text.index("$Stage = Get-Content")
     real = text.index("R1 calibration real local campaign")
     assert r0 < r1 < auth < real
-    assert "-ModelFreeOnly" in text
+    assert "[switch]$ModelFreeOnly" in text
     assert "--model-free" in text
     assert "MaxCalls -gt 24" in text
     assert "run-harvest-d-d3-closure-v2.ps1" not in text
