@@ -84,9 +84,27 @@ def _remaining_matches(data: bytes, pairs: tuple[tuple[bytes, bytes], ...]) -> i
 
 def _is_text_member(name: str) -> bool:
     path = Path(name)
-    return path.suffix.lower() in _TEXT_EXTENSIONS or path.name.lower() in {
+    if path.suffix.lower() in _TEXT_EXTENSIONS or path.name.lower() in {
         "dockerfile", "makefile", "requirements.txt",
-    }
+    }:
+        return True
+
+    normalized = "/" + name.replace("\\", "/").lstrip("./").lower()
+    if "/.git/objects/" in normalized or normalized.endswith("/.git/index"):
+        return False
+    if "/.git/logs/" in normalized or "/.git/refs/" in normalized:
+        return True
+    return normalized.endswith((
+        "/.git/head",
+        "/.git/config",
+        "/.git/packed-refs",
+        "/.git/fetch_head",
+        "/.git/orig_head",
+        "/.git/merge_head",
+        "/.git/commit_editmsg",
+        "/.git/description",
+        "/.git/info/exclude",
+    ))
 
 
 def _sanitize_member_name(name: str, replacements: Mapping[str, str]) -> tuple[str, int]:
@@ -198,9 +216,6 @@ def _sanitize_zip_bytes(
                 if _sha256_bytes(new_data) != _sha256_bytes(original_data):
                     raise AssertionError(f"unchanged member content hash changed: {original_name}")
 
-    # If this archive contained no privacy identifier at all, return its original bytes.
-    # This prevents a clean nested ZIP from being reserialized merely because its parent
-    # archive needed a redaction elsewhere.
     if stats["redaction_occurrences"] == 0:
         return source_bytes, stats
 
