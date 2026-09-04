@@ -2,6 +2,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$D4Output,
 
+    [Parameter(Mandatory = $true)]
+    [string]$R1ExecutionCommit,
+
     [string]$R1Output = "runs/harvest-d-d3-closure-r1",
     [string]$Config = "configs/harvest-d-d3-closure-v2.json",
     [string]$EvidenceBranch = "evidence/harvest-d-d4-r1-20260904",
@@ -42,6 +45,21 @@ if (Test-Path -LiteralPath $BundleRoot) {
         throw "BundleRoot already contains files. Evidence packaging is append-only; choose a new empty BundleRoot: $BundleRoot"
     }
 }
+if ([string]::IsNullOrWhiteSpace($R1ExecutionCommit)) {
+    throw "R1 execution commit is required."
+}
+
+# The run being preserved may have executed before this publisher existed.
+# Prove the supplied historical execution commit is a real commit, then keep it
+# distinct from the publisher implementation commit used to create the evidence branch.
+git cat-file -e "$R1ExecutionCommit`^{commit}"
+if ($LASTEXITCODE -ne 0) {
+    throw "R1 execution commit does not resolve to a Git commit: $R1ExecutionCommit"
+}
+$R1ExecutionCommit = (git rev-parse "$R1ExecutionCommit`^{commit}").Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($R1ExecutionCommit)) {
+    throw "Unable to canonicalize R1 execution commit."
+}
 
 $ClosureConfig = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
 $ExpectedQwen = [string]$ClosureConfig.models.QWEN
@@ -49,17 +67,19 @@ if ([string]::IsNullOrWhiteSpace($ExpectedQwen)) {
     throw "Closure config does not identify the expected Qwen model."
 }
 
-$ImplementationCommit = (git rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ImplementationCommit)) {
-    throw "Unable to resolve the current implementation commit."
+$PublisherCommit = (git rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($PublisherCommit)) {
+    throw "Unable to resolve the current publisher commit."
 }
 
+Write-Host "R1 execution commit: $R1ExecutionCommit"
+Write-Host "Evidence publisher commit: $PublisherCommit"
 Write-Host "D4/R1 evidence: validate and build immutable local archives"
 python -m inverted.harvest_d.d4_r1_evidence_bundle `
     --d4-root $D4Output `
     --r1-root $R1Output `
     --output-root $BundleRoot `
-    --implementation-commit $ImplementationCommit `
+    --implementation-commit $R1ExecutionCommit `
     --expected-qwen-model $ExpectedQwen
 if ($LASTEXITCODE -ne 0) {
     throw "D4/R1 evidence validation or packaging failed. No GitHub evidence branch was created."
@@ -106,7 +126,7 @@ $WorktreeRegistered = $false
 
 try {
     Write-Host "D4/R1 evidence: create isolated detached worktree"
-    git worktree add --detach $Worktree $ImplementationCommit
+    git worktree add --detach $Worktree $PublisherCommit
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to create isolated evidence worktree."
     }
