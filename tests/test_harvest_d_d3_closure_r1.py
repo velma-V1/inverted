@@ -47,6 +47,24 @@ class _StableAdapter:
         )
 
 
+class _FailOnceAdapter(_StableAdapter):
+    def complete(self, prompt: str, system: str | None = None) -> ModelResponse:
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("synthetic adapter failure")
+        return ModelResponse(
+            '{"answer":"CALIBRATION"}', self.model_id, 120, 12, self.latency_ms,
+            {"done_reason": "stop", "prompt_eval_count": 120, "eval_count": 12},
+        )
+
+
+def _identity() -> dict:
+    return {
+        "SMALL_A": {"model_id": "small:test", "model_digest": "digest-small", "installed_size_gib": 1.0},
+        "QWEN": {"model_id": "qwen:test", "model_digest": "digest-qwen", "installed_size_gib": 9.4},
+    }
+
+
 def test_r1_plan_is_exactly_bounded_and_repeated():
     plan = build_r1_plan(_config())
     assert R1_MAX_CALLS == 24
@@ -118,15 +136,7 @@ def test_r1_stage_authorization_is_narrow_and_fails_closed():
 def test_r1_real_campaign_never_retries_and_cannot_exceed_24(tmp_path: Path):
     small = _StableAdapter("small:test", 10.0)
     qwen = _StableAdapter("qwen:test", 25.0)
-    campaign = R1CalibrationCampaign(
-        tmp_path,
-        config=_config(),
-        adapters={"SMALL_A": small, "QWEN": qwen},
-        runtime_identity={
-            "SMALL_A": {"model_id": "small:test", "model_digest": "digest-small", "installed_size_gib": 1.0},
-            "QWEN": {"model_id": "qwen:test", "model_digest": "digest-qwen", "installed_size_gib": 9.4},
-        },
-    )
+    campaign = R1CalibrationCampaign(tmp_path, config=_config(), adapters={"SMALL_A": small, "QWEN": qwen}, runtime_identity=_identity())
     result = campaign.run(max_calls=4)
     assert result["physical_model_calls"] == 4
     assert small.calls + qwen.calls == 4
@@ -137,18 +147,25 @@ def test_r1_real_campaign_never_retries_and_cannot_exceed_24(tmp_path: Path):
         campaign.run(max_calls=25)
 
 
+def test_r1_failed_physical_call_is_counted_preserved_and_never_retried(tmp_path: Path):
+    small = _FailOnceAdapter("small:test", 10.0)
+    qwen = _StableAdapter("qwen:test", 25.0)
+    campaign = R1CalibrationCampaign(tmp_path, config=_config(), adapters={"SMALL_A": small, "QWEN": qwen}, runtime_identity=_identity())
+    result = campaign.run(max_calls=1)
+    assert result["physical_model_calls"] == 1
+    assert small.calls + qwen.calls == 1
+    ledger = [json.loads(line) for line in (tmp_path / "closure_r1_call_ledger.jsonl").read_text().splitlines() if line]
+    calls = [json.loads(line) for line in (tmp_path / "closure_r1_normalized_calls.jsonl").read_text().splitlines() if line]
+    assert len(ledger) == 1 and ledger[0]["attempt"] == 1 and ledger[0]["committed"] is True
+    assert len(calls) == 1
+    assert calls[0]["completion_class"] == "INFRASTRUCTURE_OR_ADAPTER"
+    assert calls[0]["error_type"] == "RuntimeError"
+
+
 def test_r1_complete_calibration_emits_reproducibility_and_cost_results(tmp_path: Path):
     small = _StableAdapter("small:test", 10.0)
     qwen = _StableAdapter("qwen:test", 25.0)
-    campaign = R1CalibrationCampaign(
-        tmp_path,
-        config=_config(),
-        adapters={"SMALL_A": small, "QWEN": qwen},
-        runtime_identity={
-            "SMALL_A": {"model_id": "small:test", "model_digest": "digest-small", "installed_size_gib": 1.0},
-            "QWEN": {"model_id": "qwen:test", "model_digest": "digest-qwen", "installed_size_gib": 9.4},
-        },
-    )
+    campaign = R1CalibrationCampaign(tmp_path, config=_config(), adapters={"SMALL_A": small, "QWEN": qwen}, runtime_identity=_identity())
     result = campaign.run()
     assert result["physical_model_calls"] == 24
     assert result["final_state"] == "R1_CALIBRATION_COMPLETE"
@@ -157,6 +174,8 @@ def test_r1_complete_calibration_emits_reproducibility_and_cost_results(tmp_path
     assert repro["state"] == "MEASURED"
     assert repro["exact_repeat_cells"] == 6
     assert repro["empirical_noise_floor"]["output_hash_instability_rate"] == 0.0
+    assert repro["empirical_noise_floor"]["semantic_instability_rate"] == 0.0
+    assert repro["empirical_noise_floor"]["verified_outcome_instability_rate"] == 0.0
     assert cost["state"] == "MEASURED"
     assert set(cost["by_model"]) == {"SMALL_A", "QWEN"}
     assert all(row["model_digest"] for row in cost["by_model"].values())
