@@ -100,7 +100,6 @@ if ($RemoteBranchStatus -ne 2) {
     throw "Unable to prove that the remote evidence branch is absent."
 }
 
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $BundleAbsolute = (Resolve-Path -LiteralPath $BundleRoot).Path
 $Worktree = Join-Path ([IO.Path]::GetTempPath()) ("inverted-d4-r1-evidence-" + [guid]::NewGuid().ToString("N"))
 $WorktreeRegistered = $false
@@ -135,14 +134,8 @@ try {
     $EvidenceRoot = Join-Path $Worktree "live-evidence"
     $Destination = Join-Path $EvidenceRoot $EvidenceFolder
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-    Copy-Item -LiteralPath (Join-Path $BundleAbsolute "*") -Destination $Destination -Recurse -Force
-
-    # Copy-Item -LiteralPath does not expand wildcards on Windows PowerShell;
-    # explicitly copy the validated bundle contents if the wildcard form yielded none.
-    if (@(Get-ChildItem -LiteralPath $Destination -Force).Count -eq 0) {
-        Get-ChildItem -LiteralPath $BundleAbsolute -Force | ForEach-Object {
-            Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
-        }
+    Get-ChildItem -LiteralPath $BundleAbsolute -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
     }
 
     foreach ($RequiredName in @(
