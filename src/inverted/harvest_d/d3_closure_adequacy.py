@@ -20,6 +20,9 @@ class ClaimAdequacyInputs:
     launcher_path_green: bool
     unresolved_hard_blockers: int
     unresolved_scientific_risks: int
+    r0_required_artifacts_complete: bool = True
+    evidence_tier_integrity: bool = True
+    uncovered_mandatory_obligations: int = 0
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,12 @@ def evaluate_claim_adequacy(inputs: ClaimAdequacyInputs) -> ClaimAdequacyReport:
         blockers.append("claim-space manifest missing")
     if not inputs.search_space_manifest_present:
         blockers.append("search-space manifest missing")
+    if not inputs.r0_required_artifacts_complete:
+        blockers.append("R0 required evidence artifacts incomplete")
+    if not inputs.evidence_tier_integrity:
+        blockers.append("evidence tier integrity failed: historical/deterministic evidence cannot be promoted as fresh")
+    if inputs.uncovered_mandatory_obligations:
+        blockers.append(f"uncovered mandatory model-free obligations: {inputs.uncovered_mandatory_obligations}")
     if inputs.pairwise_coverage_ratio < 1.0:
         blockers.append(f"pairwise coverage incomplete: {inputs.pairwise_coverage_ratio:.6f}")
     if inputs.required_three_way_coverage_ratio < 1.0:
