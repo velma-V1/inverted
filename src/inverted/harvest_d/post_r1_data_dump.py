@@ -49,6 +49,8 @@ def _sha256(path: Path) -> str:
 
 
 def _files(root: Path) -> tuple[Path, ...]:
+    if root.is_symlink():
+        raise ValueError(f"symlink is forbidden in data dump source: {root}")
     if root.is_file():
         return (root,)
     rows: list[Path] = []
@@ -60,29 +62,51 @@ def _files(root: Path) -> tuple[Path, ...]:
     return tuple(sorted(rows, key=lambda p: p.as_posix().lower()))
 
 
-def _copy_source(source: _Source, staging: Path) -> tuple[int, int]:
+def _copy_source(source: _Source, staging: Path) -> list[dict[str, object]]:
     if not source.root.exists():
         if source.required:
             raise ValueError(f"required evidence root is missing: {source.root}")
-        return 0, 0
+        return [{
+            "label": source.label,
+            "source_root": str(source.root),
+            "source_path": str(source.root),
+            "destination": source.destination.as_posix(),
+            "required": False,
+            "state": "MISSING_OPTIONAL",
+            "size_bytes": 0,
+            "sha256": "",
+        }]
+
     files = _files(source.root)
     if source.required and not files:
         raise ValueError(f"required evidence root is empty: {source.root}")
-    count = 0
-    total = 0
+
+    rows: list[dict[str, object]] = []
     for original in files:
-        relative = original.name if source.root.is_file() else original.relative_to(source.root)
-        destination = staging / source.destination / relative
+        if source.root.is_file():
+            destination = staging / source.destination
+        else:
+            destination = staging / source.destination / original.relative_to(source.root)
         destination.parent.mkdir(parents=True, exist_ok=True)
+
         before = _sha256(original)
         shutil.copy2(original, destination)
         copied = _sha256(destination)
         after = _sha256(original)
         if before != copied or before != after:
             raise ValueError(f"source mutation or copy corruption observed: {original}")
-        count += 1
-        total += original.stat().st_size
-    return count, total
+
+        rows.append({
+            "label": source.label,
+            "source_root": str(source.root),
+            "source_path": str(original),
+            "destination": destination.relative_to(staging).as_posix(),
+            "required": source.required,
+            "state": "COLLECTED",
+            "size_bytes": original.stat().st_size,
+            "sha256": before,
+        })
+    return rows
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -97,11 +121,12 @@ def _write_csv(path: Path, fieldnames: list[str], rows: Iterable[Mapping[str, ob
             writer.writerow({key: row.get(key, "") for key in fieldnames})
 
 
-def _inventory(staging: Path) -> list[dict[str, object]]:
+def _inventory(staging: Path, *, exclude: set[str] | None = None) -> list[dict[str, object]]:
+    excluded = exclude or set()
     rows: list[dict[str, object]] = []
     for path in _files(staging):
         rel = path.relative_to(staging).as_posix()
-        if rel in {"FILE_INVENTORY.csv", "SHA256_MANIFEST.csv"}:
+        if rel in excluded:
             continue
         rows.append({"file": rel, "size_bytes": path.stat().st_size, "sha256": _sha256(path)})
     return rows
@@ -117,6 +142,24 @@ def _deterministic_zip(source_root: Path, destination: Path) -> None:
             info.compress_type = zipfile.ZIP_STORED
             info.external_attr = 0o100644 << 16
             archive.writestr(info, path.read_bytes())
+
+
+def _summaries(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    by_label: dict[str, dict[str, object]] = {}
+    for row in rows:
+        label = str(row["label"])
+        summary = by_label.setdefault(label, {
+            "label": label,
+            "state": "COLLECTED",
+            "file_count": 0,
+            "size_bytes": 0,
+        })
+        if row["state"] == "MISSING_OPTIONAL":
+            summary["state"] = "MISSING_OPTIONAL"
+            continue
+        summary["file_count"] = int(summary["file_count"]) + 1
+        summary["size_bytes"] = int(summary["size_bytes"]) + int(row["size_bytes"])
+    return [by_label[label] for label in sorted(by_label)]
 
 
 def build_post_r1_data_dump(
@@ -146,33 +189,15 @@ def build_post_r1_data_dump(
     for label, rel in _REPO_CONTEXT_ROOTS:
         sources.append(_Source(label, repo / rel, Path("repo-context") / label, False))
     for label, path in sorted((source_archives or {}).items()):
-        sources.append(_Source(f"source-archive:{label}", Path(path).resolve(), Path("repo-snapshots") / Path(path).name, True))
+        archive = Path(path).resolve()
+        sources.append(_Source(f"source-archive:{label}", archive, Path("repo-snapshots") / archive.name, True))
 
-    discovered: list[dict[str, object]] = []
-    missing_optional: list[str] = []
+    artifact_rows: list[dict[str, object]] = []
     for source in sources:
-        if not source.root.exists() and not source.required:
-            missing_optional.append(source.label)
-            discovered.append({
-                "label": source.label,
-                "source_path": str(source.root),
-                "destination": source.destination.as_posix(),
-                "required": False,
-                "state": "MISSING_OPTIONAL",
-                "file_count": 0,
-                "size_bytes": 0,
-            })
-            continue
-        count, size = _copy_source(source, staging)
-        discovered.append({
-            "label": source.label,
-            "source_path": str(source.root),
-            "destination": source.destination.as_posix(),
-            "required": source.required,
-            "state": "COLLECTED",
-            "file_count": count,
-            "size_bytes": size,
-        })
+        artifact_rows.extend(_copy_source(source, staging))
+    missing_optional = sorted({
+        str(row["label"]) for row in artifact_rows if row["state"] == "MISSING_OPTIONAL"
+    })
 
     provenance = {
         "state": "POST_R1_DATA_DUMP_COMPLETE",
@@ -199,8 +224,8 @@ def build_post_r1_data_dump(
     )
     _write_csv(
         staging / "DISCOVERED_SOURCE_ARTIFACTS.csv",
-        ["label", "source_path", "destination", "required", "state", "file_count", "size_bytes"],
-        discovered,
+        ["label", "source_root", "source_path", "destination", "required", "state", "size_bytes", "sha256"],
+        artifact_rows,
     )
 
     index_lines = [
@@ -221,7 +246,7 @@ def build_post_r1_data_dump(
         "## Source roots",
         "",
     ]
-    for row in discovered:
+    for row in _summaries(artifact_rows):
         index_lines.append(
             f"- `{row['label']}` — {row['state']} — {row['file_count']} files — {row['size_bytes']} bytes"
         )
@@ -229,7 +254,8 @@ def build_post_r1_data_dump(
         "",
         "## Integrity",
         "",
-        "- Every payload file is inventoried and SHA-256 hashed.",
+        "- Every collected artifact is listed individually with its source/destination and SHA-256.",
+        "- Every staged artifact except the self-referential SHA manifest is SHA-256 covered.",
         "- Source files are hashed before copy, copied, verified, and rehashed after copy.",
         "- Collection performs zero model inference.",
         "- R2 remains unauthorized until this dump is independently inspected.",
@@ -237,9 +263,10 @@ def build_post_r1_data_dump(
     ])
     (staging / "DATA_DUMP_INDEX.md").write_text("\n".join(index_lines), encoding="utf-8")
 
-    first_inventory = _inventory(staging)
-    _write_csv(staging / "FILE_INVENTORY.csv", ["file", "size_bytes", "sha256"], first_inventory)
-    manifest_rows = _inventory(staging)
+    inventory_rows = _inventory(staging, exclude={"FILE_INVENTORY.csv", "SHA256_MANIFEST.csv"})
+    _write_csv(staging / "FILE_INVENTORY.csv", ["file", "size_bytes", "sha256"], inventory_rows)
+
+    manifest_rows = _inventory(staging, exclude={"SHA256_MANIFEST.csv"})
     _write_csv(staging / "SHA256_MANIFEST.csv", ["sha256", "size_bytes", "file"], (
         {"sha256": row["sha256"], "size_bytes": row["size_bytes"], "file": row["file"]}
         for row in manifest_rows
@@ -257,7 +284,8 @@ def build_post_r1_data_dump(
         "zip_path": str(zip_path),
         "zip_sha256": zip_sha,
         "sha256_file": str(sha_file),
-        "source_count": len(discovered),
+        "source_count": len(sources),
+        "artifact_count": sum(1 for row in artifact_rows if row["state"] == "COLLECTED"),
         "missing_optional_sources": missing_optional,
         "model_inference_performed": False,
         "source_mutation_observed": False,
@@ -293,7 +321,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        metadata = json.loads(Path(args.git_metadata_file).read_text(encoding="utf-8"))
+        metadata = json.loads(Path(args.git_metadata_file).read_text(encoding="utf-8-sig"))
         if not isinstance(metadata, dict):
             raise ValueError("git metadata file must contain a JSON object")
         result = build_post_r1_data_dump(
