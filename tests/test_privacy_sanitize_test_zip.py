@@ -85,6 +85,28 @@ def test_sanitizer_recurses_into_nested_zip_without_changing_other_members(tmp_p
             assert inner.read("raw.jsonl") == b'{"answer":"keep exactly"}\n'
 
 
+def test_clean_nested_zip_remains_byte_identical_when_other_member_is_redacted(tmp_path: Path) -> None:
+    inner_buffer = io.BytesIO()
+    with zipfile.ZipFile(inner_buffer, "w", compression=zipfile.ZIP_DEFLATED) as inner:
+        inner.writestr("raw.jsonl", '{"answer":"keep exactly"}\n')
+    clean_nested = inner_buffer.getvalue()
+
+    source = tmp_path / "outer-clean-nested.zip"
+    output = tmp_path / "outer-clean-nested.sanitized.zip"
+    with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_DEFLATED) as outer:
+        outer.writestr("nested/source.zip", clean_nested)
+        outer.writestr("meta.json", json.dumps({"path": r"C:\Users\TestUser\run"}) + "\n")
+
+    sanitize_zip(
+        source_zip=source,
+        output_zip=output,
+        replacements={r"C:\Users\TestUser": r"C:\Users\[REDACTED_USER]"},
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        assert archive.read("nested/source.zip") == clean_nested
+
+
 def test_sanitizer_refuses_binary_member_with_exact_identifier(tmp_path: Path) -> None:
     source = tmp_path / "binary.zip"
     output = tmp_path / "binary.sanitized.zip"
