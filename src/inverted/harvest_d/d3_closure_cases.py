@@ -9,6 +9,7 @@ from .d3_cases import generate_d3_cases
 
 _PARTITIONS = {
     "closure-development": ("development", "d3-dev-", "closure-dev-"),
+    "closure-r1-calibration": ("development", "d3-dev-", "closure-r1-cal-"),
     "closure-fresh": ("fresh", "d3-fresh-", "closure-fresh-"),
     "closure-sealed": ("sealed", "d3-sealed-", "closure-sealed-"),
 }
@@ -21,7 +22,9 @@ def generate_closure_cases(
     per_family: int = 1,
 ) -> tuple[HarvestCase, ...]:
     if partition not in _PARTITIONS:
-        raise ValueError("closure partition must be closure-development, closure-fresh, or closure-sealed")
+        raise ValueError(
+            "closure partition must be closure-development, closure-r1-calibration, closure-fresh, or closure-sealed"
+        )
     base_partition, old_prefix, new_prefix = _PARTITIONS[partition]
     base = generate_d3_cases(partition=base_partition, seed=int(seed), per_family=int(per_family))
     rows: list[HarvestCase] = []
