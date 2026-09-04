@@ -54,7 +54,7 @@ def _runtime_identity(config: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
             "installed_size_bytes": size_bytes,
             "installed_size_gib": size_bytes / (1024 ** 3) if size_bytes else None,
             "thinking": False,
-            "offload_observed": False,
+            "offload_observed": None,
         }
     return result
 
@@ -74,6 +74,13 @@ def _validate_fresh_r0(path: str | Path) -> dict[str, Any]:
     return raw
 
 
+def _validate_historical_gap_registry(path: str | Path) -> dict[str, Any]:
+    raw = _load_json(path, "revalidated post-D3 historical gap registry")
+    # The registry is E1 historical evidence only. Presence/provenance can
+    # prioritize later work, but it may never become a fresh R1 observation.
+    return raw
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Harvest D D3-Closure R1 calibration")
     parser.add_argument("--config", default="configs/harvest-d-d3-closure-v2.json")
@@ -81,6 +88,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-free", action="store_true")
     parser.add_argument("--stage-authorization", default="configs/harvest-d-d3-closure-v2-r1-authorization.json")
     parser.add_argument("--r0-readiness-file", default=None)
+    parser.add_argument("--historical-gap-registry", default=None)
     parser.add_argument("--d4-policy-file", default=None)
     parser.add_argument("--max-calls", type=int, default=None)
     return parser
@@ -103,6 +111,9 @@ def main(argv: list[str] | None = None) -> int:
         if not args.r0_readiness_file:
             raise ValueError("real R1 requires a fresh R0 readiness report")
         _validate_fresh_r0(args.r0_readiness_file)
+        if not args.historical_gap_registry:
+            raise ValueError("real R1 requires the revalidated post-D3 historical gap registry")
+        _validate_historical_gap_registry(args.historical_gap_registry)
         if not args.d4_policy_file:
             raise ValueError("real R1 requires the frozen D4 policy")
 
@@ -123,8 +134,11 @@ def main(argv: list[str] | None = None) -> int:
             "protocol": "D3-CLOSURE-v2", "stage": "R1_CALIBRATION", "state": "R1_READY_FOR_PHYSICAL",
             "physical_model_calls": 0, "max_physical_calls": R1_MAX_CALLS,
             "legacy_closure_path_allowed": False, "runtime_identity_verified": True,
-            "d4_policy_verified": True, "fresh_r0_verified": True,
+            "d4_policy_verified": True, "fresh_r0_verified": True, "historical_d3_verified": True,
             "fresh_r0_sha256": _sha256(args.r0_readiness_file),
+            "historical_prior_sha256": _sha256(args.historical_gap_registry),
+            "historical_prior_evidence_tier": "E1_HISTORICAL_PRIOR",
+            "historical_prior_fresh_observation_count": 0,
             "stage_authorization_sha256": _sha256(args.stage_authorization),
             "ready_for_physical_r1": True, "ready_for_test5": False,
         }
