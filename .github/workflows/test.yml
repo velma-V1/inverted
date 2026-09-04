@@ -65,7 +65,8 @@ jobs:
             'scripts/test-checkpoint-publisher.ps1',
             'scripts/preserve-harvest-d-d4-r1-evidence.ps1',
             'scripts/test-harvest-d-d4-r1-evidence-publisher.ps1',
-            'scripts/collect-harvest-d-post-r1-data-dump.ps1'
+            'scripts/collect-harvest-d-post-r1-data-dump.ps1',
+            'scripts/sanitize-test-zips-privacy.ps1'
           )
           foreach ($script in $scripts) {
             $tokens = $null
