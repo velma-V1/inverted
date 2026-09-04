@@ -18,11 +18,11 @@ def test_sanitizer_changes_only_exact_identifier_occurrences(tmp_path: Path) -> 
     output = tmp_path / "test.sanitized.zip"
 
     untouched = b'{"test_id":"R1","model":"qwen3.5:9b-q8_0","prompt":"LiteralName is a literal test token"}\n'
-    sensitive = (
-        '{"source":"C:\\\\Users\\\\TestUser\\\\inverted\\\\runs",'
-        '"host":"DESKTOP-ABC123",'
-        '"machine_guid":"11111111-2222-3333-4444-555555555555"}\n'
-    ).encode("utf-8")
+    sensitive = (json.dumps({
+        "source": r"C:\Users\TestUser\inverted\runs",
+        "host": "DESKTOP-ABC123",
+        "machine_guid": "11111111-2222-3333-4444-555555555555",
+    }, separators=(",", ":")) + "\n").encode("utf-8")
 
     with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("evidence/untouched.json", untouched)
@@ -59,7 +59,7 @@ def test_sanitizer_changes_only_exact_identifier_occurrences(tmp_path: Path) -> 
 def test_sanitizer_recurses_into_nested_zip_without_changing_other_members(tmp_path: Path) -> None:
     inner_buffer = io.BytesIO()
     with zipfile.ZipFile(inner_buffer, "w", compression=zipfile.ZIP_STORED) as inner:
-        inner.writestr("meta.json", '{"path":"C:\\\\Users\\\\TestUser\\\\run"}\n')
+        inner.writestr("meta.json", json.dumps({"path": r"C:\Users\TestUser\run"}) + "\n")
         inner.writestr("raw.jsonl", '{"answer":"keep exactly"}\n')
 
     source = tmp_path / "outer.zip"
