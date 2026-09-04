@@ -79,6 +79,7 @@ def test_post_r1_dump_collects_required_evidence_provenance_inventory_and_hashes
     with (stage / "SHA256_MANIFEST.csv").open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     assert rows
+    assert any(row["file"] == "FILE_INVENTORY.csv" for row in rows)
     for row in rows:
         path = stage / row["file"]
         assert path.is_file()
