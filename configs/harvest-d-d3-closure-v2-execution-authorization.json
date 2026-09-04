@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "protocol": "D3-CLOSURE-v2",
+  "physical_execution_authorized": false,
+  "blocking_law": "CLAIM_SPACE_ADEQUACY_AMENDMENT.md",
+  "blocking_spec": "docs/superpowers/specs/2026-09-03-harvest-d-d3-closure-search-space-adequacy-addendum.md",
+  "reason": "The previous fixed 200-call Closure design is scientifically insufficient for broad optimization/minimum-information claims. Physical execution remains blocked until the adaptive search-space adequacy engine, cost calibration, combinatorial coverage accounting, local minimality search, real recovery, and fail-closed claim-adequacy gate are implemented and verified green.",
+  "authorization_requirements": [
+    "claim/search-space manifests implemented",
+    "zero-call equivalence/no-op/pruning ledger implemented",
+    "mixed-level factor/interaction coverage implemented",
+    "reproducibility and runtime-cost calibration implemented",
+    "cost-scaled scheduler implemented",
+    "protected challenger/random discovery stream implemented",
+    "local optimization and minimum-sufficient ablation implemented",
+    "real multi-step recovery evidence implemented",
+    "fresh/sealed confirmation protected",
+    "claim strength mechanically bounded by achieved coverage",
+    "Law 28 blocker audit green",
+    "full CI and real Windows model-free launcher path green"
+  ]
+}
