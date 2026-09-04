@@ -177,3 +177,73 @@ API-key values are read from the environment and are never written to benchmark 
 `REFUTED` requires adequately powered evidence for a preregistered failure condition. Anything between those standards is `INCONCLUSIVE` rather than being forced into a yes/no claim.
 
 See `docs/superpowers/specs/2026-08-30-inverted-architecture-benchmark-design.md` and `docs/superpowers/specs/2026-08-31-hybrid-validation-and-local-handoff-design.md` for the preregistration and hybrid-validation design.
+
+## Post-benchmark Qwen experiment candidates — planning notes only
+
+These are **README-only planning candidates** for follow-on experiments after the real preregistered Inverted benchmark completes. They are not implemented, do not modify the current benchmark, and should not gain separate files or architecture references until we explicitly decide to build/test one.
+
+Build order is intentional: **001 is first; 006 is last.** Each stage moves from cheap, reversible external structure toward expensive, invasive intervention.
+
+### 001 — Minimal Relational Brain
+
+**Hypothesis:** Qwen can improve from an extremely small adaptive substrate built from only `NODE + EDGE + STATE + TRANSITION + OUTCOME`.
+
+**Architecture:** keep nodes, evidence-backed relationships, active state, transitions, and verified outcomes in a small SQLite store. Seed only a few relevant nodes for each task, spread activation over a hard-bounded number of edges, rank paths by relevance and evidence-backed utility, feed the smallest useful connected packet to Qwen, then update only relationships actually implicated in the verified result.
+
+**Important rule:** do not use arbitrary permanent edge weights. Track successes/failures with conservative priors so one lucky event cannot dominate future behavior. Every durable relationship must retain provenance; weak paths become dormant rather than being destroyed.
+
+**First comparison:** Qwen alone vs Qwen + Minimal Relational Brain. Measure task success, repeated failures, unseen transfer, wrong-path activation, token/latency cost, and edge-ablation impact.
+
+### 002 — Portable Cognitive Workspace
+
+**Hypothesis:** Qwen will handle long, interrupted, and evolving tasks more reliably if it carries a compact external working state through the entire task and promotes only verified improvements into reusable procedures.
+
+**Architecture:** use a bounded `TASK_STATE` projection plus an append-only journal. The state contains goal, phase, plan, completed work, next action, constraints, known facts, unresolved questions, failed approaches, artifacts, and confidence. It explicitly does **not** store full chain-of-thought. Reusable candidate skills/patterns/edge cases/tools are promoted only after verification and replay.
+
+**Important rule:** immutable journal + reconstructable mutable state. If the working state becomes corrupted, it can be rebuilt. Retrieval is strictly token-budgeted and failed approaches are preserved so Qwen does not loop.
+
+**First comparison:** Qwen alone vs traveling state only vs traveling state + verified reusable procedures. Measure plan drift, repeated work, interruption recovery, cross-task reuse, retrieval precision, and token cost.
+
+### 003 — Graph Memory Brain
+
+**Hypothesis:** explicit relational retrieval can recover multi-hop dependencies, causes, fixes, conflicts, and superseded knowledge that flat retrieval misses.
+
+**Architecture:** start with SQLite rather than a graph server. Candidate node types include task, failure, solution, skill, fact, tool, constraint, pattern, and outcome. Candidate relations include `CAUSES`, `FIXED_BY`, `FAILED_WITH`, `REQUIRES`, `CONFLICTS_WITH`, `APPLIES_TO`, `SUPERSEDES`, `SIMILAR_TO`, and `VALIDATED_BY`. Seed nodes through lexical/semantic retrieval, expand at most one or two hops, filter stale/weak edges, deduplicate, and return only a small ranked relational packet.
+
+**Important rule:** the graph is never an unauditable truth store. Every durable node/edge has provenance and temporal validity. Conflicting claims can coexist until evidence resolves them. Traversal depth/fan-out are hard-capped.
+
+**First comparison:** Qwen baseline vs flat memory with the same information budget vs graph retrieval. The graph only wins if structure itself improves held-out relational tasks.
+
+### 004 — Hybrid Portable Brain
+
+**Hypothesis:** if 001–003 each prove useful, their best components can be combined into a portable cognitive layer without sacrificing auditability or simplicity.
+
+**Architecture:** canonical immutable evidence + working state/journal + reusable skills/patterns/tools + evidence-weighted relational memory + a derived/rebuildable graph/index. Working memory answers "what am I doing now?"; procedural memory answers "how has this been solved before?"; episodic memory answers "what happened?"; relational memory answers "what connects/causes/fixes/conflicts?"; evidence answers "why trust it?".
+
+**Important rule:** the filesystem/evidence layer remains canonical. The graph and indexes are disposable derivatives. Retrieval compiles the smallest sufficient packet under a hard context budget, and every component is logged so it can be ablated.
+
+**First comparison:** best single earlier component vs best two-component combination vs full hybrid, under matched stored-information and token budgets. Keep the simpler design if the hybrid does not add measurable marginal value.
+
+### 005 — Live Codex Intervention
+
+**Hypothesis:** a stronger model observing Qwen's streamed reasoning may rescue failures before completion often enough to outperform simpler post-hoc critique.
+
+**Architecture:** stream Qwen/Ollama reasoning/output/telemetry into a ring buffer and recorder. Feed bounded chunks to a persistent Codex observer. Codex may either do nothing or trigger **one** intervention: preserve the exact partial trajectory, stop generation, inject a short bounded correction hint, and resume Qwen.
+
+**Important rule:** Codex cannot answer the task or see a hidden answer key. Its intervention may only identify the suspected defect and provide a bounded hint. Emitted reasoning is observation data, not guaranteed ground-truth internal computation.
+
+**First comparison:** Qwen alone vs Qwen + one post-hoc Codex critique/retry vs Qwen + one live intervention. Primary metrics are rescue rate, damage rate, false interventions, latency, and Codex cost. Reject live intervention if timing adds little over post-hoc critique.
+
+### 006 — Qwen Model Surgery
+
+**Hypothesis:** when a reproducible failure survives cheaper external cognitive fixes and can be localized to a repeatable internal mechanism, a minimal causal intervention may repair the failure class without unacceptable collateral regression.
+
+**Architecture:** use an instrumentable Hugging Face checkpoint as the laboratory patient while preserving Q4/Q8 deployment controls. Compare clean and failing runs, capture synchronized telemetry, identify candidate divergence points, perform causal patch sweeps, and only escalate when an intervention repeatedly converts failures to successes on held-out related cases.
+
+**Intervention ladder:** activation/state patch → inference-time steering/gating → learned small gate/adapter → LoRA → targeted parameter edit → structural/topology modification.
+
+**Important rule:** surgery is last. Every intervention must survive target tests, unseen related cases, broad reasoning/instruction/coding/tool/long-context/structured-output/safety regression, exact model/runtime provenance, and deployment re-quantization checks. Stop if no reproducible causal locus emerges.
+
+### Shared follow-on rule
+
+When these candidates are eventually tested, use the same Qwen model, prompts, seeds, task distributions, verifier, telemetry, scoring, token budgets, and evaluation methodology wherever possible. Change only the cognitive backend/intervention being evaluated. The active preregistered Inverted benchmark remains untouched until it is complete.
