@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Base lineage is `96306482153b1ced76fc7a811afe2beb7a1b5b38`; frozen evidence is never rewritten.
+- Base lineage is `0d67ba4e5578b4c14225eb83b726fd137dfffecd`; frozen evidence is never rewritten.
 - Normal CI is model-free and requires no network or cloud credentials.
 - No production code is written before a failing test demonstrates the desired behavior.
 - Physical model-call identity is globally unique; duplicate identities invalidate evidence.

@@ -44,8 +44,8 @@ def test_post_r1_dump_collects_required_evidence_provenance_inventory_and_hashes
         repo_root=repo,
         d4_root=d4,
         output_root=output,
-        r1_execution_commit="cb5ca86a63eb18d46f601df773889852d0e636f6",
-        publisher_commit="b9ad64d697e9f2a563fe1554cd644b8ba9a1a715",
+        r1_execution_commit="7504c277b23ad1c956fe309fbc48876f72537215",
+        publisher_commit="2edcc735961bc485bac588a248315f6ee50d0e22",
         git_metadata={"branch": "fix/d3-closure-v2", "status": "clean", "log": "abc test"},
         source_archives=None,
     )
@@ -107,8 +107,8 @@ def test_post_r1_dump_fails_closed_when_required_evidence_is_missing(tmp_path: P
             repo_root=repo,
             d4_root=d4,
             output_root=tmp_path / "out",
-            r1_execution_commit="cb5ca86a63eb18d46f601df773889852d0e636f6",
-            publisher_commit="b9ad64d697e9f2a563fe1554cd644b8ba9a1a715",
+            r1_execution_commit="7504c277b23ad1c956fe309fbc48876f72537215",
+            publisher_commit="2edcc735961bc485bac588a248315f6ee50d0e22",
             git_metadata={},
             source_archives=None,
         )
@@ -125,8 +125,8 @@ def test_post_r1_dump_rejects_nonempty_output_root(tmp_path: Path):
             repo_root=repo,
             d4_root=d4,
             output_root=output,
-            r1_execution_commit="cb5ca86a63eb18d46f601df773889852d0e636f6",
-            publisher_commit="b9ad64d697e9f2a563fe1554cd644b8ba9a1a715",
+            r1_execution_commit="7504c277b23ad1c956fe309fbc48876f72537215",
+            publisher_commit="2edcc735961bc485bac588a248315f6ee50d0e22",
             git_metadata={},
             source_archives=None,
         )

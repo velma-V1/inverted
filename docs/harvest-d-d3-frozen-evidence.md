@@ -9,7 +9,7 @@ Evidence branch:
 
 Frozen evidence commit:
 
-    3d220cc5445942e22f2ac70228f8ff846a6c7230
+    34645bf4e587c971ecfe915b02a16f72cfdde52a
 
 Canonical evidence index:
 

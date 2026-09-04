@@ -36,7 +36,7 @@ def test_r1_launcher_runs_fresh_r0_then_r1_model_free_before_any_physical_path()
 
 def test_r1_launcher_materializes_pinned_frozen_d3_when_local_run_is_absent():
     text = SCRIPT.read_text(encoding="utf-8")
-    assert "3d220cc5445942e22f2ac70228f8ff846a6c7230" in text
+    assert "34645bf4e587c971ecfe915b02a16f72cfdde52a" in text
     assert "evidence/harvest-d-d3-20260903" in text
     assert "live-evidence/harvest-d-d3-real-20260903-185137/D3-COMPLETE-CAMPAIGN.zip" in text
     assert "371588D6C5616D371E7EF891E939271F0AF09AC6462A0DF00F8B1486CFC4AC2B" in text

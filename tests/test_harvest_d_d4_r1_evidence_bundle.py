@@ -14,7 +14,7 @@ QWEN_MODEL = "qwen3.5:9b-q8_0"
 QWEN_DIGEST = "441ec31e4d2aedceb97dd834b036db104d943fbe3dbc1e5c8ac95eeaa9141c77"
 SMALL_MODEL = "qwen2.5:1.5b-instruct-q8_0"
 SMALL_DIGEST = "sha256:small-test-digest"
-EXECUTION_COMMIT = "cb5ca86a63eb18d46f601df773889852d0e636f6"
+EXECUTION_COMMIT = "7504c277b23ad1c956fe309fbc48876f72537215"
 
 
 def _write_json(path: Path, payload: object) -> None:

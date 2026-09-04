@@ -16,7 +16,7 @@ The design must also separate model incapability from context exhaustion, specif
 
 ## 2. Frozen D3-v1 boundary
 
-The D3-v1 campaign produced 632 physical calls under commit `c4cff1145ba5ddb388e0eb4296e113c48949c9b7`. Those artifacts remain immutable.
+The D3-v1 campaign produced 632 physical calls under commit `171d492f6371292aebabaeb1b9487c28d4193995`. Those artifacts remain immutable.
 
 No corrected scorer may be presented as original D3-v1 scoring. Any offline reinterpretation is labeled `D3-V1-POSTHOC-SALVAGE` with separate provenance.
 
