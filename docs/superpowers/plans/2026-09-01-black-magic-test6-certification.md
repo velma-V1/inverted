@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Base SHA `19b45314860f2feb7bb561353220eef8d83ba657` remains immutable.
+- Base SHA `035c2190403c506330b6b54fa244ce35a62f26bf` remains immutable.
 - Test 6 hard ceiling: 2,700 total external actions.
 - Real Test 6 is disabled until a real Test-5 PASS and frozen `final_architecture.json` hash exist.
 - Vault B cannot be opened, scored, or used for diagnosis before Vault-A-derived repair architecture is frozen.

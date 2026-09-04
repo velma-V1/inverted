@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-BASELINE_SHA = "19b45314860f2feb7bb561353220eef8d83ba657"
+BASELINE_SHA = "035c2190403c506330b6b54fa244ce35a62f26bf"
 ARMS = ("DIRECT", "CHECKED", "INVERTED")
 HARVEST_CAPS = {
     "decision_harvest": 1200,

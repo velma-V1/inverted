@@ -1,6 +1,6 @@
 # Black-Magic Master Completion Checklist
 
-Base SHA: `19b45314860f2feb7bb561353220eef8d83ba657`
+Base SHA: `035c2190403c506330b6b54fa244ce35a62f26bf`
 Branch: `build/black-magic-evidence-tests`
 Spec: `docs/superpowers/specs/2026-09-01-black-magic-evidence-and-certification-design.md`
 

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Base SHA `19b45314860f2feb7bb561353220eef8d83ba657` remains immutable.
+- Base SHA `035c2190403c506330b6b54fa244ce35a62f26bf` remains immutable.
 - Forge default execution performs zero external actions.
 - Existing evidence packets are read-only and referenced by hashes.
 - Mock packets may validate parser/logic paths but cannot support architecture claims.

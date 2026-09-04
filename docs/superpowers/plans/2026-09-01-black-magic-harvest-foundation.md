@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Base SHA `19b45314860f2feb7bb561353220eef8d83ba657` is immutable.
+- Base SHA `035c2190403c506330b6b54fa244ce35a62f26bf` is immutable.
 - Every path existing at the base SHA is read-only; implementation is additive only.
 - Hidden oracle data may score only after a public decision artifact exists.
 - No adapter-internal retries.

@@ -14,7 +14,7 @@
 
 ## Global constraints
 
-- Base SHA `19b45314860f2feb7bb561353220eef8d83ba657` remains immutable.
+- Base SHA `035c2190403c506330b6b54fa244ce35a62f26bf` remains immutable.
 - Test-5 hard ceiling remains **2,700 total external actions** unless explicitly changed by the user in a later spec.
 - The Evidence Forge must ingest the immutable S2+A+B+C full dump plus frozen prior evidence without rewriting source packets.
 - Full-dump SHA-256 must match `17868417409a59d734826e4c115ee07929e22fd89570b47f59b506b4ccb56b7f` when that ZIP is used as the source.

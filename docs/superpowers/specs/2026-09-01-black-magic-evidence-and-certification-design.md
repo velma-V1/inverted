@@ -2,7 +2,7 @@
 
 Date: 2026-09-01
 Status: APPROVED IN CHAT; WRITTEN SPEC PENDING FINAL REVIEW
-Base SHA: `19b45314860f2feb7bb561353220eef8d83ba657`
+Base SHA: `035c2190403c506330b6b54fa244ce35a62f26bf`
 Isolation branch: `build/black-magic-evidence-tests`
 
 ## Purpose
@@ -19,7 +19,7 @@ The governing question is no longer merely whether INVERTED beats a normal agent
 
 The following SHA and every path that exists at that SHA are read-only for this project:
 
-`19b45314860f2feb7bb561353220eef8d83ba657`
+`035c2190403c506330b6b54fa244ce35a62f26bf`
 
 This includes all completed Tests 0–3, configs, existing assistant-value source files, existing tests, prior design/plan documents, workflows, README content, and all previously generated evidence/results.
 

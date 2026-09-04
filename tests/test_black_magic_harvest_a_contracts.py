@@ -117,4 +117,4 @@ def test_high_severity_unresolved_blocks_harvest_completion():
 def test_no_existing_assistant_value_module_is_required_to_be_modified():
     from inverted.black_magic import BASELINE_SHA
 
-    assert BASELINE_SHA == "19b45314860f2feb7bb561353220eef8d83ba657"
+    assert BASELINE_SHA == "035c2190403c506330b6b54fa244ce35a62f26bf"
