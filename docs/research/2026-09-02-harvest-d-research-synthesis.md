@@ -4,7 +4,7 @@
 
 This document freezes the research conclusions that are allowed to shape Harvest D. It does not authorize architecture claims by itself. Raw immutable evidence outranks summaries, design documents, and model opinions.
 
-Canonical evidence base for this branch: `96306482153b1ced76fc7a811afe2beb7a1b5b38`.
+Canonical evidence base for this branch: `0d67ba4e5578b4c14225eb83b726fd137dfffecd`.
 
 ## Project objective
 
