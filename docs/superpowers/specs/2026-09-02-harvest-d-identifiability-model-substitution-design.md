@@ -4,7 +4,7 @@
 
 APPROVED DESIGN. CONCEPTUAL SCOPE FROZEN.
 
-Base evidence commit: `96306482153b1ced76fc7a811afe2beb7a1b5b38`.
+Base evidence commit: `0d67ba4e5578b4c14225eb83b726fd137dfffecd`.
 
 This design supersedes broad Test 5 architecture-discovery framing but does not delete or rewrite that historical design.
 

@@ -18,7 +18,7 @@
 
 ## Global Constraints
 
-- Frozen Harvest D base lineage remains `96306482153b1ced76fc7a811afe2beb7a1b5b38`; prior evidence is never rewritten.
+- Frozen Harvest D base lineage remains `0d67ba4e5578b4c14225eb83b726fd137dfffecd`; prior evidence is never rewritten.
 - D3 hard ceiling is **1,000 admissible physical model calls**; deterministic replay, scoring, analysis, and system-only events cost zero calls.
 - D3 phase reservoirs are: D3.1=80, D3.2=150, D3.3=120, D3.4=150, D3.5=150, D3.6=160, D3.7=90, D3.8=100; D3.8 is protected from development reallocation.
 - Phase numbers are adaptive reservoirs, not quotas. Unused unsealed calls may be reallocated only through a recorded scheduler decision.
