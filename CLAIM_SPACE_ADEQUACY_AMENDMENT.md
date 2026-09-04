@@ -211,6 +211,10 @@ Examples:
 
 These consume **zero physical model calls**. Use them aggressively while they remain decision-relevant. They are bounded by compute/runtime usefulness, not an inference-call quota.
 
+#### NEAR-FREE / TINY MODEL
+
+Very small local models with negligible runtime cost relative to the rest of the experiment may receive the broadest live-inference sample ceilings when calibration confirms that they are cheap.
+
 #### FAST MODEL CALL — cheap
 
 A short non-thinking or low-latency inference call may receive a **larger sample ceiling** because its marginal cost is low.
@@ -219,57 +223,85 @@ A short non-thinking or low-latency inference call may receive a **larger sample
 
 Receives a moderate sample ceiling.
 
-#### LONG / THINKING / NEAR-CONTEXT MODEL CALL — expensive
+#### VERY EXPENSIVE / LONG / THINKING / OFFLOADED CALL
 
-Receives a **smaller sample ceiling**. A call that occupies the model/GPU for tens of seconds or minutes cannot be budgeted as if it costs the same as a sub-second or few-second call.
+Receives a **smaller sample ceiling**. A call that occupies the model/GPU for tens of seconds or minutes, approaches the context limit, or crosses a hardware-residency/offload cliff cannot be budgeted as if it costs the same as a tiny or cleanly resident model.
 
-### 8.2 Calibrate cost from the actual runtime
+### 8.2 Hardware-residency and model-footprint law
+
+**Model-call cost is not a smooth function of parameter count or artifact size. Hardware residency can create cliffs.**
+
+The scheduler must therefore consider both:
+
+1. installed model artifact / expected resident footprint; and
+2. measured runtime cost.
+
+A model that barely fits cleanly in accelerator memory may be dramatically cheaper than a model only slightly larger that forces partial offload, RAM/PCIe movement, reduced KV headroom, or another residency penalty.
+
+Therefore:
+
+- do not budget by parameter count alone;
+- do not assume two neighboring model sizes have neighboring costs;
+- capture installed model size/digest and relevant residency/offload telemetry where exposed;
+- define environment-specific residency thresholds before testing when the hardware has a known cliff;
+- treat crossing a known residency cliff as a strong **pre-call expensive-class prior**;
+- verify that prior with measured latency/throughput before finalizing sample economics;
+- immediately raise a model/policy cost class if runtime evidence shows spill/offload or severe slowdown.
+
+Hardware-specific thresholds belong in a versioned experiment cost profile rather than this permanent law. The current Harvest D local profile is `configs/harvest-d-local-model-cost-profile.json`.
+
+### 8.3 Calibrate cost from the actual runtime
 
 Do not permanently guess which bucket a model/policy belongs to.
 
 Before the main experiment, collect a small reproducibility/cost calibration block and record at minimum:
 
+- installed model artifact size and digest;
 - wall-clock/model latency;
 - prompt/input tokens;
 - generated/output tokens;
 - thinking/reasoning tokens where exposed;
 - context exhaustion;
+- residency/offload evidence where exposed;
 - model/runtime identity;
 - hardware/runtime load metadata where exposed.
 
 Freeze expected cost classes from this calibration for scheduling. If observed cost drifts materially, trigger a budget recalibration/stage audit rather than silently changing sample economics.
 
-### 8.3 Budget vector, not one number
+### 8.4 Budget vector, not one number
 
 Every expensive experiment should track at least:
 
 ```text
 PHYSICAL MODEL CALLS
 MODEL INFERENCE WALL-TIME / GPU-OCCUPANCY PROXY
+MODEL ARTIFACT / RESIDENCY CLASS
 TOKEN / CONTEXT BURDEN
 SYSTEM-ONLY WORK
 PROTECTED CONFIRMATION RESERVE
 ```
 
-Use **inference time on the actual test hardware as the primary local cost proxy** when all calls run on the same local system, with tokens/context retained as explanatory/guard metrics.
+Use **inference time on the actual test hardware as the primary local cost proxy** when all calls run on the same local system, with artifact/residency class and tokens/context retained as predictive/explanatory/guard metrics.
 
 The physical-call ceiling remains a hard runaway-safety limit, not the principal definition of experiment size.
 
-### 8.4 Dynamic sample principle
+### 8.5 Dynamic sample principle
 
 For a fixed evidence objective:
 
 ```text
-FAST CALLS  -> HIGHER permissible N
-SLOW CALLS  -> LOWER permissible N
-SYSTEM WORK -> N does not consume model-call budget
+SYSTEM WORK        -> FREE model-call cost
+TINY / NEAR-FREE   -> HIGHEST permissible N
+FAST CALLS         -> HIGH permissible N
+MEDIUM CALLS       -> MODERATE permissible N
+VERY EXPENSIVE     -> LOW permissible N
 ```
 
-A `massive` test may therefore contain thousands of cheap/system-only evaluations and hundreds of fast model calls while using only a small number of long-thinking calls.
+A `massive` test may therefore contain thousands of cheap/system-only evaluations and hundreds or thousands of tiny/fast model calls while using only a small number of long-thinking/offloaded calls.
 
 A `small` expensive-model test may contain few calls yet consume more inference time than a much larger fast-call experiment.
 
-### 8.5 Cost cannot weaken scientific adequacy silently
+### 8.6 Cost cannot weaken scientific adequacy silently
 
 If the required evidence cannot be obtained within the affordable cost budget, the legal outcomes are:
 
@@ -318,4 +350,4 @@ Equivalent names are acceptable when the schema is preserved and discoverable.
 
 And:
 
-> **Spend trials in proportion to information value per unit cost: system-only evidence first, fast inference broadly, expensive inference selectively, and fresh confirmation only after the candidate space has been reduced enough that confirmation can actually mean something.**
+> **Spend trials in proportion to information value per unit cost: system-only evidence first, tiny/fast inference broadly, expensive inference selectively, and fresh confirmation only after the candidate space has been reduced enough that confirmation can actually mean something.**
