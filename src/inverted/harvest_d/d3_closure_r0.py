@@ -51,11 +51,9 @@ def _write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
 
 
 def _live_factor_levels() -> dict[str, tuple[str, ...]]:
-    space = build_primary_search_space()
-    factors = space.factor_levels()
-    # PROGRESSIVE is a real multi-step treatment and is intentionally excluded
-    # from the one-call R0 covering design. It remains explicit in uncovered
-    # space instead of being silently collapsed into a cosmetic label.
+    factors = build_primary_search_space().factor_levels()
+    # PROGRESSIVE requires a true multi-step delivery protocol. It remains a
+    # live uncovered region rather than being faked as a one-call label.
     factors["timing"] = tuple(level for level in factors["timing"] if level != "PROGRESSIVE")
     return factors
 
@@ -65,16 +63,19 @@ def _row_is_legal(row: Mapping[str, str]) -> bool:
 
 
 def _required_three_way_obligations() -> tuple[CoveringRequirement, ...]:
+    # Every obligation includes at least one ON content field so the required
+    # row is physically legal. Model/family three-way obligations are tracked
+    # separately as effect-modifier obligations below.
     return (
         CoveringRequirement(("I4", "representation", "A3"), ("ON", "TYPED_FIELDS", "TARGET")),
         CoveringRequirement(("I7", "representation", "A2"), ("ON", "ADMISSIBLE_ACTION_MATRIX", "TARGET")),
         CoveringRequirement(("I2", "ordering", "A1"), ("ON", "STATE_FIRST", "TARGET")),
         CoveringRequirement(("I3", "ordering", "placement"), ("ON", "SAFETY_STATE_EVIDENCE_FIRST", "SYSTEM_CONTEXT")),
-        CoveringRequirement(("amount", "timing", "A4"), ("OVERLOADED", "JUST_IN_TIME", "TARGET")),
+        CoveringRequirement(("I1", "amount", "timing"), ("ON", "OVERLOADED", "JUST_IN_TIME")),
     )
 
 
-def _claims() -> list[dict[str, object]]:
+def _claim_contract() -> list[dict[str, object]]:
     return [
         {
             "claim_id": "INFORMATION_FIELD_VALUE",
@@ -143,33 +144,48 @@ def _claims() -> list[dict[str, object]]:
 
 
 def _prior_value(records: tuple[PriorEvidenceRecord, ...], family: str) -> tuple[float, tuple[str, ...]]:
-    relevant: list[PriorEvidenceRecord] = []
-    for record in records:
-        if not record.present or record.scheduler_prior_weight <= 0:
-            continue
-        if not record.families or family in record.families:
-            relevant.append(record)
+    relevant = [
+        record
+        for record in records
+        if record.present
+        and record.scheduler_prior_weight > 0
+        and (not record.families or family in record.families)
+    ]
     relevant.sort(key=lambda record: (-record.scheduler_prior_weight, record.evidence_source_id))
     if not relevant:
         return 0.0, ()
-    # Historical evidence changes priority only. Never translate the score into
-    # an effective fresh observation count.
-    score = min(1.0, sum(record.scheduler_prior_weight for record in relevant) / max(1, len(relevant)))
+    score = min(1.0, sum(record.scheduler_prior_weight for record in relevant) / len(relevant))
     return score, tuple(record.evidence_source_id for record in relevant)
 
 
 def _treatment_plan(row: Mapping[str, str]) -> ClosureTreatmentPlan:
-    field_ids = tuple(f"I{i}" for i in range(1, 11) if row[f"I{i}"] == "ON")
-    assistance = tuple(f"A{i}" for i in range(1, 5) if row[f"A{i}"] == "TARGET")
     return ClosureTreatmentPlan(
-        field_ids=field_ids,
+        field_ids=tuple(f"I{i}" for i in range(1, 11) if row[f"I{i}"] == "ON"),
         representation=row["representation"],
         ordering=row["ordering"],
         amount=row["amount"],
         timing=row["timing"],
         placement=row["placement"],
-        assistance=assistance,
+        assistance=tuple(f"A{i}" for i in range(1, 5) if row[f"A{i}"] == "TARGET"),
     )
+
+
+def _required_artifacts() -> set[str]:
+    return {
+        "closure_claim_space_manifest.json",
+        "closure_search_space_manifest.json",
+        "closure_candidate_equivalence_classes.jsonl",
+        "closure_candidate_pruning_ledger.jsonl",
+        "closure_prior_evidence_ledger.jsonl",
+        "closure_treatment_catalog.jsonl",
+        "closure_treatment_exposure.jsonl",
+        "closure_pre_state_catalog.jsonl",
+        "closure_action_frontier_catalog.jsonl",
+        "closure_combinatorial_coverage.json",
+        "closure_interaction_coverage.json",
+        "closure_uncovered_space.json",
+        "closure_claim_adequacy_report.json",
+    }
 
 
 def build_r0_package(
@@ -197,13 +213,11 @@ def build_r0_package(
     prior_records = inventory_prior_evidence(repo)
     write_prior_evidence_ledger(root, prior_records)
 
-    development_seed = int(config["seeds"]["development"])
-    development_count = max(1, int(config["cases_per_family"]["development"]))
     cases = one_per_family(
         generate_closure_cases(
             "closure-development",
-            seed=development_seed,
-            per_family=development_count,
+            seed=int(config["seeds"]["development"]),
+            per_family=max(1, int(config["cases_per_family"]["development"])),
         )
     )
     if not cases:
@@ -212,27 +226,25 @@ def build_r0_package(
     if not models:
         raise ValueError("R0 requires at least one declared model role")
 
-    pre_state_rows: dict[str, dict[str, Any]] = {}
-    frontier_rows: dict[str, dict[str, Any]] = {}
-    exposure_rows: dict[str, dict[str, Any]] = {}
-    treatment_rows: list[dict[str, Any]] = []
+    pre_states: dict[str, dict[str, Any]] = {}
+    frontiers: dict[str, dict[str, Any]] = {}
+    exposures: dict[str, dict[str, Any]] = {}
+    treatments: list[dict[str, Any]] = []
     equivalence_members: dict[str, list[str]] = {}
-    pruning_rows: list[dict[str, Any]] = [
+    pruning: list[dict[str, Any]] = [
         {
             "candidate_scope": "timing=PROGRESSIVE",
             "reason_code": "REQUIRES_REAL_MULTI_STEP_PROTOCOL",
             "action": "DEFER_FROM_ONE_CALL_SCREEN",
             "evidence_tier": "E0_DETERMINISTIC",
-            "note": "PROGRESSIVE remains a live later-round treatment; it is not a no-op one-call label.",
+            "note": "Progressive delivery remains live for a later real multi-step protocol.",
         }
     ]
 
-    row_index = 0
-    for design_row in design.rows:
-        case = cases[row_index % len(cases)]
-        model_key = models[(row_index // len(cases)) % len(models)]
-        row_index += 1
-        plan = _treatment_plan(design_row)
+    for index, factor_row in enumerate(design.rows):
+        case = cases[index % len(cases)]
+        model_key = models[(index // len(cases)) % len(models)]
+        plan = _treatment_plan(factor_row)
         rendered = render_treatment(case, plan)
         exposure = derive_treatment_exposure(rendered, case)
         pre_state = derive_pre_state(case)
@@ -246,59 +258,54 @@ def build_r0_package(
             assistance_hash=rendered.assistance_hash,
         )
         treatment_id = _stable_hash(
-            {
-                "case_id": case.case_id,
-                "model_key": model_key,
-                "equivalence_id": equivalence_id,
-            }
+            {"case_id": case.case_id, "model_key": model_key, "equivalence_class_id": equivalence_id}
         )
         prior_value, prior_sources = _prior_value(prior_records, str(case.family))
-        row = {
-            "treatment_id": treatment_id,
-            "equivalence_class_id": equivalence_id,
-            "case_id": case.case_id,
-            "family": case.family,
-            "model_key": model_key,
-            "factor_vector": dict(design_row),
-            "field_ids": list(plan.field_ids),
-            "representation": plan.representation,
-            "ordering": plan.ordering,
-            "amount": plan.amount,
-            "timing": plan.timing,
-            "placement": plan.placement,
-            "assistance": list(plan.assistance),
-            "semantic_field_hash": rendered.semantic_field_hash,
-            "rendered_payload_hash": rendered.rendered_hash,
-            "system_message_hash": rendered.system_message_hash,
-            "user_message_hash": rendered.user_message_hash,
-            "field_order": list(rendered.field_order),
-            "assistance_hash": rendered.assistance_hash,
-            "approx_token_count": rendered.approx_token_count,
-            "exposure_id": exposure.exposure_id,
-            "pre_state_id": pre_state.pre_state_id,
-            "action_frontier_id": frontier.frontier_id,
-            "prior_evidence_value": prior_value,
-            "prior_evidence_sources": list(prior_sources),
-            "evidence_tier": "E0_DETERMINISTIC",
-            "physical_model_calls": 0,
-            "scheduler_metadata": {
-                "coverage_novelty": "PLANNED_PAIRWISE_OR_TARGETED_INTERACTION",
-                "historical_prior_only": bool(prior_sources),
-                "discovery_challenger_eligible": True,
-                "fresh_observation_count": 0,
-            },
-        }
-        treatment_rows.append(row)
-        pre_state_rows.setdefault(pre_state.pre_state_id, pre_state.to_dict())
-        frontier_rows.setdefault(frontier.frontier_id, frontier.to_dict())
-        exposure_rows.setdefault(exposure.exposure_id, exposure.to_dict())
+        treatments.append(
+            {
+                "treatment_id": treatment_id,
+                "equivalence_class_id": equivalence_id,
+                "case_id": case.case_id,
+                "family": case.family,
+                "model_key": model_key,
+                "factor_vector": dict(factor_row),
+                "field_ids": list(plan.field_ids),
+                "representation": plan.representation,
+                "ordering": plan.ordering,
+                "amount": plan.amount,
+                "timing": plan.timing,
+                "placement": plan.placement,
+                "assistance": list(plan.assistance),
+                "semantic_field_hash": rendered.semantic_field_hash,
+                "rendered_payload_hash": rendered.rendered_hash,
+                "system_message_hash": rendered.system_message_hash,
+                "user_message_hash": rendered.user_message_hash,
+                "field_order": list(rendered.field_order),
+                "assistance_hash": rendered.assistance_hash,
+                "approx_token_count": rendered.approx_token_count,
+                "exposure_id": exposure.exposure_id,
+                "pre_state_id": pre_state.pre_state_id,
+                "action_frontier_id": frontier.frontier_id,
+                "prior_evidence_value": prior_value,
+                "prior_evidence_sources": list(prior_sources),
+                "evidence_tier": "E0_DETERMINISTIC",
+                "physical_model_calls": 0,
+                "scheduler_metadata": {
+                    "coverage_novelty": "PLANNED_PAIRWISE_OR_TARGETED_INTERACTION",
+                    "historical_prior_only": bool(prior_sources),
+                    "discovery_challenger_eligible": True,
+                    "fresh_observation_count": 0,
+                },
+            }
+        )
+        pre_states.setdefault(pre_state.pre_state_id, pre_state.to_dict())
+        frontiers.setdefault(frontier.frontier_id, frontier.to_dict())
+        exposures.setdefault(exposure.exposure_id, exposure.to_dict())
         equivalence_members.setdefault(equivalence_id, []).append(treatment_id)
 
-    if not treatment_rows:
+    if not treatments:
         raise ValueError("R0 treatment catalog is empty")
 
-    # If actual rendering collapses multiple nominal rows, preserve the members
-    # and record the no-op/equivalence reduction instead of silently double-counting.
     equivalence_rows: list[dict[str, Any]] = []
     for equivalence_id, members in sorted(equivalence_members.items()):
         unique_members = tuple(sorted(set(members)))
@@ -311,7 +318,7 @@ def build_r0_package(
             }
         )
         if len(unique_members) > 1:
-            pruning_rows.append(
+            pruning.append(
                 {
                     "candidate_scope": equivalence_id,
                     "reason_code": "ACTUAL_EXPOSURE_EQUIVALENCE",
@@ -325,7 +332,7 @@ def build_r0_package(
         root / "closure_claim_space_manifest.json",
         {
             "protocol": "D3-CLOSURE-v2-R0",
-            "claims": _claims(),
+            "claims": _claim_contract(),
             "physical_model_calls": 0,
             "fresh_evidence_collected": False,
             "test5_design_in_scope": False,
@@ -338,18 +345,27 @@ def build_r0_package(
             **search_space.to_manifest(),
             "admitted_one_call_factor_levels": {key: list(value) for key, value in factors.items()},
             "admitted_covering_rows": len(design.rows),
-            "actual_catalog_treatments": len(treatment_rows),
+            "actual_catalog_treatments": len(treatments),
             "actual_equivalence_classes": len(equivalence_rows),
             "physical_model_calls": 0,
-            "note": "raw theoretical count is algebraic; R0 does not materialize the full Cartesian space",
+            "note": "Raw theoretical count is algebraic; R0 never materializes the full Cartesian product.",
         },
     )
     _write_jsonl(root / "closure_candidate_equivalence_classes.jsonl", equivalence_rows)
-    _write_jsonl(root / "closure_candidate_pruning_ledger.jsonl", pruning_rows)
-    _write_jsonl(root / "closure_treatment_catalog.jsonl", treatment_rows)
-    _write_jsonl(root / "closure_treatment_exposure.jsonl", exposure_rows[key] for key in sorted(exposure_rows))
-    _write_jsonl(root / "closure_pre_state_catalog.jsonl", pre_state_rows[key] for key in sorted(pre_state_rows))
-    _write_jsonl(root / "closure_action_frontier_catalog.jsonl", frontier_rows[key] for key in sorted(frontier_rows))
+    _write_jsonl(root / "closure_candidate_pruning_ledger.jsonl", pruning)
+    _write_jsonl(root / "closure_treatment_catalog.jsonl", treatments)
+    _write_jsonl(
+        root / "closure_treatment_exposure.jsonl",
+        (exposures[key] for key in sorted(exposures)),
+    )
+    _write_jsonl(
+        root / "closure_pre_state_catalog.jsonl",
+        (pre_states[key] for key in sorted(pre_states)),
+    )
+    _write_jsonl(
+        root / "closure_action_frontier_catalog.jsonl",
+        (frontiers[key] for key in sorted(frontiers)),
+    )
 
     _write_json(
         root / "closure_combinatorial_coverage.json",
@@ -364,6 +380,7 @@ def build_r0_package(
             "coverage_kind": "MODEL_FREE_PLANNED_COVERAGE",
         },
     )
+
     interaction_rows = [
         {
             "factors": list(requirement.factors),
@@ -411,17 +428,17 @@ def build_r0_package(
                 },
                 {
                     "region": "ROBUSTNESS_INFORMATION_QUALITY",
-                    "reason": "stale/contradictory/noisy/misleading quality factors are second-stage boundary tests after a candidate policy exists",
+                    "reason": "stale/contradictory/noisy/misleading factors are second-stage boundary tests after a candidate exists",
                     "later_round": "R7",
                 },
                 {
                     "region": "FRESH_AND_SEALED_OUTCOMES",
-                    "reason": "R0 is zero-call and may not collect development or sealed physical evidence",
+                    "reason": "R0 is zero-call and cannot collect development or sealed physical evidence",
                     "later_round": "R1_TO_R8",
                 },
                 {
                     "region": "REAL_RECOVERY_TRANSITIONS",
-                    "reason": "cognitive recovery requires a real second action/call and is not synthesized in R0",
+                    "reason": "cognitive recovery requires a real second decision/action and is never synthesized in R0",
                     "later_round": "R5",
                 },
             ],
@@ -458,23 +475,9 @@ def build_r0_package(
     )
     _write_json(root / "closure_claim_adequacy_report.json", adequacy_payload)
 
-    required_artifacts = {
-        "closure_claim_space_manifest.json",
-        "closure_search_space_manifest.json",
-        "closure_candidate_equivalence_classes.jsonl",
-        "closure_candidate_pruning_ledger.jsonl",
-        "closure_prior_evidence_ledger.jsonl",
-        "closure_treatment_catalog.jsonl",
-        "closure_treatment_exposure.jsonl",
-        "closure_pre_state_catalog.jsonl",
-        "closure_action_frontier_catalog.jsonl",
-        "closure_combinatorial_coverage.json",
-        "closure_interaction_coverage.json",
-        "closure_uncovered_space.json",
-        "closure_claim_adequacy_report.json",
-    }
-    missing = sorted(name for name in required_artifacts if not (root / name).exists())
-    empty = sorted(name for name in required_artifacts if (root / name).exists() and (root / name).stat().st_size == 0)
+    required = _required_artifacts()
+    missing = sorted(name for name in required if not (root / name).exists())
+    empty = sorted(name for name in required if (root / name).exists() and (root / name).stat().st_size == 0)
     r0_ready = not missing and not empty and pairwise.ratio == 1.0 and not adequacy.physical_execution_authorized
     readiness = {
         "protocol": "D3-CLOSURE-v2-R0",
@@ -482,16 +485,16 @@ def build_r0_package(
         "r0_ready": r0_ready,
         "physical_model_calls": 0,
         "physical_execution_authorized": False,
-        "required_artifacts": sorted(required_artifacts),
+        "required_artifacts": sorted(required),
         "missing_artifacts": missing,
         "empty_artifacts": empty,
-        "treatment_count": len(treatment_rows),
+        "treatment_count": len(treatments),
         "equivalence_class_count": len(equivalence_rows),
         "prior_record_count": len(prior_records),
         "historical_prior_fresh_observation_count": 0,
         "pairwise_plan_complete": pairwise.ratio == 1.0,
         "required_three_way_plan_complete": True,
-        "note": "R0 readiness is not physical Closure authorization; R1 and later adequacy gates remain mandatory.",
+        "note": "R0 readiness is not physical Closure authorization; R1 and later gates remain mandatory.",
     }
     _write_json(root / "closure_r0_readiness_report.json", readiness)
     if not r0_ready:
@@ -501,7 +504,7 @@ def build_r0_package(
         final_state="R0_MODEL_FREE_COMPLETE",
         physical_model_calls=0,
         physical_execution_authorized=False,
-        treatment_count=len(treatment_rows),
+        treatment_count=len(treatments),
         equivalence_class_count=len(equivalence_rows),
         prior_record_count=len(prior_records),
     )
