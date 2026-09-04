@@ -1196,7 +1196,204 @@ Historical evidence remains historical evidence even when governance evolves.
 
 ---
 
-# 28. FINAL STANDARD
+# 28. PRE-TEST BLOCKER AND RUN-FAILURE AUDIT LAW
+
+**No expensive, long-running, sealed, inference-consuming, API-consuming, or otherwise costly test may start, and no major test stage may advance, until an adversarial execution audit has actively searched for anything that could stop the run, fail a stage, corrupt evidence, invalidate the experiment, create false completion, or force avoidable retesting.**
+
+Passing unit tests or CI alone is not sufficient when the real execution path, operating system, runtime, model server, launcher, filesystem, resume state, or stage-transition behavior differs from CI.
+
+The purpose of this law is not to prove that no failure is possible. The purpose is to eliminate **reasonably discoverable, preventable test failures before expensive evidence is spent**.
+
+## 28.1 Mandatory pre-test blocker audit
+
+Before the first costly call/action, inspect and where technically possible execute or simulate the complete path from the user's launch command through final artifact production.
+
+The audit must explicitly check, as applicable:
+
+### Repository and provenance
+
+- correct repository, branch, HEAD, frozen parent evidence, preregistration, and config;
+- clean separation between historical/frozen evidence and the new run;
+- exact model identity, quantization, model artifact/digest, runtime version, provider, tool schema, prompt/template, and generation settings;
+- checksums/manifests for frozen input evidence;
+- stale artifacts, stale configs, stale policy files, stale caches, or previous-run state that could be mistaken for current evidence.
+
+### Runtime and environment
+
+- required models, binaries, packages, services, ports, runtimes, permissions, credentials where legitimately required, filesystem paths, writable output locations, disk capacity, RAM/VRAM expectations, network/provider availability, and target-OS behavior;
+- actual launcher parsing and execution on the supported operating system, not merely source inspection;
+- CI-versus-local differences capable of changing execution or evidence;
+- timeout, context-window, rate-limit, process-exit, subprocess, serialization, encoding, newline, shell, quoting, and path-handling failure modes.
+
+### Protocol and stage flow
+
+- every stage has a reachable entry condition and a reachable valid exit condition;
+- no gate can deadlock the campaign merely because a result is tied, provisional, harmful, unresolved, or different from the preferred hypothesis;
+- stage transitions consume the artifact actually produced by the previous stage;
+- prerequisites are revalidated when they can become stale or be externally changed;
+- sealed evidence cannot be opened early;
+- no stage can be silently skipped when its evidence is required for the final claim;
+- no stage can report success merely because its candidate queue or budget was exhausted.
+
+### Budget and scheduler
+
+- physical-call/action arithmetic is internally consistent;
+- planned workload cannot exceed the frozen ceiling;
+- reserved confirmation budget cannot be consumed by development work;
+- adaptive stopping, reallocation, or candidate exhaustion cannot silently produce incomplete scientific coverage;
+- scheduler state is reconstructable on resume;
+- progress denominators do not alter scientific scheduling.
+
+### Crash, resume, retry, and duplication
+
+- every costly action has unambiguous attempt/commit state;
+- an interrupted `STARTED` action cannot be blindly replayed if its external result is unknown;
+- committed actions cannot be duplicated after restart;
+- resume reconstructs all decision-relevant scheduler/evidence state, not merely a call counter;
+- blind retries are impossible unless retry is an explicitly tested variable;
+- partial runs preserve evidence and fail closed rather than being mislabeled complete.
+
+### Evidence and scoring
+
+- required raw, normalized, telemetry, recovery, scheduler, provenance, and derived artifacts are actually written;
+- required artifacts cannot remain empty while the run is declared scientifically complete;
+- model-visible information is separated from oracle/system-only information;
+- semantic correctness is not destroyed or inflated by formatting, parser, hidden-label, or disposition-contract mistakes;
+- authority, invariants, recovery, and postconditions flow into the scorer/compiler actually used by the campaign;
+- deterministic assistance or replay is evaluated on real downstream semantics, not merely on whether a dictionary/state object changed;
+- model/infrastructure/oracle/specification/instrumentation failures remain separately classified.
+
+### Completion and handoff
+
+- process exit code, master index, final report, handoff artifact, and scientific-completeness flag agree;
+- `COMPLETE`, `PASS`, `GREEN`, `AUTHORIZED`, or equivalent states are impossible when required work/evidence is missing;
+- incomplete, unresolved, contaminated, infrastructure-invalid, or evidence-ceiling states fail closed where downstream work requires valid completion;
+- every downstream consumer validates the exact upstream artifact, model identity, digest, config, and evidence state it depends on.
+
+## 28.2 Negative-path and forced-failure requirement
+
+A test is not ready merely because the happy path works.
+
+Before expensive execution, deliberately exercise the highest-value failure paths where technically possible, including:
+
+- missing prerequisite;
+- corrupt or tampered checksum;
+- wrong model/digest;
+- unavailable model/runtime/service;
+- incomplete prior stage;
+- tied or unresolved decision;
+- exhausted budget/candidate pool;
+- infrastructure exception;
+- parser/serialization failure;
+- missing/empty required artifact;
+- ambiguous crash state;
+- resume after committed work;
+- resume after uncommitted work;
+- stage-transition rejection;
+- false-success/exit-code mismatch.
+
+The expected behavior is not necessarily recovery. The expected behavior is **correct, explicit, evidence-preserving behavior without silent corruption or duplicate expensive work**.
+
+## 28.3 Stage-transition audit
+
+The blocker audit is not one-and-done.
+
+Repeat the relevant audit before every major transition that changes:
+
+- model or model operating policy;
+- dataset/partition/holdout status;
+- assistance/intervention regime;
+- recovery regime;
+- scheduler mode;
+- authority or execution capability;
+- sealed/confirmatory evidence access;
+- provider/runtime/environment;
+- or downstream promotion/handoff state.
+
+A stage may rely on a previous audit only for conditions that are demonstrably unchanged.
+
+## 28.4 Blocker disposition
+
+Every discovered issue must be classified as one of:
+
+- **HARD BLOCKER** — can stop the run, duplicate costly work, corrupt evidence, invalidate a claim, breach a frozen boundary, or create false completion. Must be fixed before costly execution.
+- **SCIENTIFIC RISK** — may bias, confound, weaken, or misclassify evidence. Must be fixed, explicitly bounded, or removed from the affected claim before execution.
+- **OPERATIONAL RISK** — may degrade usability, throughput, observability, or recoverability without invalidating evidence. Fix before execution when the expected retest/interrupt cost exceeds the fix cost; otherwise document and monitor.
+- **COSMETIC / NON-BLOCKING** — cannot materially affect completion, evidence, or interpretation. May be deferred.
+
+Do not downgrade a blocker merely to preserve schedule or sunk work.
+
+## 28.5 Fix-to-green requirement
+
+When the audit discovers a hard blocker or scientific risk that is being repaired:
+
+```text
+REPRODUCE / CHARACTERIZE
+↓
+WRITE A FAILING REGRESSION OR NEGATIVE-PATH CHECK
+↓
+FIX THE ROOT CAUSE
+↓
+VERIFY THE NEW CHECK PASSES
+↓
+RUN RELEVANT REGRESSIONS
+↓
+RUN FULL SUITE WHEN THE CHANGE CAN AFFECT SHARED TEST INFRASTRUCTURE
+↓
+EXECUTE / SIMULATE THE REAL LAUNCH PATH
+↓
+RE-AUDIT THE CHANGED FAILURE SURFACE
+↓
+ONLY THEN AUTHORIZE COSTLY TEST EXECUTION
+```
+
+A fix that merely makes the new assertion green while leaving an equivalent failure path open does not satisfy this law.
+
+## 28.6 No false-green rule
+
+`GREEN` means more than "the code suite passed."
+
+For a costly INVERTED experiment, authorization to run requires all applicable layers to be green:
+
+1. unit/component checks;
+2. experiment-specific model-free checks;
+3. integration/regression checks;
+4. negative-path/blocker checks;
+5. real launcher execution or scientifically valid simulation on the supported environment;
+6. provenance/input-integrity checks;
+7. stage-transition and completion-state checks.
+
+If any required layer is unverified, report **UNVERIFIED**, not green.
+
+## 28.7 Mid-run blocker law
+
+If a new issue appears during an expensive campaign:
+
+- stop spending additional costly calls when continuing could corrupt comparability or evidence;
+- preserve all raw/partial evidence and exact failure state;
+- classify whether already collected evidence remains admissible;
+- repair around frozen historical evidence rather than rewriting it;
+- regression-test the failure mechanism;
+- resume only when resume semantics are unambiguous and scientifically valid;
+- otherwise freeze the partial run and start a separately versioned continuation/replacement experiment.
+
+Never convert "we already spent a lot" into permission to continue a scientifically broken run.
+
+## 28.8 Required final pre-run question
+
+Immediately before authorizing costly execution, the responsible model/agent/reviewer must ask:
+
+> **What could still stop this test, fail a stage, corrupt its evidence, create a false success, or force us to pay to recreate data—and what evidence shows we have actually tested those paths?**
+
+If a concrete high-impact answer remains reasonably testable before execution, test it first.
+
+This law operationalizes the project principle:
+
+> **Data collection is cheap; retesting is not. Find preventable failure before the expensive evidence exists.**
+
+---
+
+# 29. FINAL STANDARD
 
 A future model has understood these laws when it behaves like this:
 
@@ -1215,6 +1412,7 @@ A future model has understood these laws when it behaves like this:
 - it replaces inferior architecture despite sunk work;
 - it keeps research, testing, governance, and telemetry subordinate to the actual product objective;
 - it automates repeatable testing instead of making the user perform mechanical test orchestration;
+- it audits the complete execution path for preventable blockers before spending expensive calls and again at major stage transitions;
 - it makes every measurable local test visibly trackable from the same compact terminal used to launch it;
 - it knows when the right next action is an experiment instead of another search;
 - it knows when the right next action is compression instead of another feature;

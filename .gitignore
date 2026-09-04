@@ -1,0 +1,14 @@
+﻿# Python
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+
+# Local experiment output
+/runs/
+/harvest-d-runs/
+/test3-s2-results/
+
+# Local packaged evidence
+*.zip

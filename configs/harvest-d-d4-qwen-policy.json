@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "protocol": "D4-QWEN-POLICY-v1",
+  "max_calls": 48,
+  "model": "qwen3.5:9b-q8_0",
+  "ollama_base_url": "http://127.0.0.1:11434",
+  "generation_options": {
+    "temperature": 0.0,
+    "seed": 20260902,
+    "num_ctx": 4096
+  },
+  "case_seed": 20261303,
+  "cases_per_family": 3,
+  "policies": {
+    "DEFAULT": {
+      "chat_options": {}
+    },
+    "THINK_OFF": {
+      "chat_options": {
+        "think": false
+      }
+    }
+  },
+  "blind_retries_allowed": false
+}

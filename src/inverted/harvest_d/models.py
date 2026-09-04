@@ -29,6 +29,7 @@ class OllamaChatAdapter:
         "seed": 20260902,
         "num_ctx": 4096,
     }
+    _RESERVED_CHAT_KEYS = {"model", "messages", "stream", "options"}
 
     def __init__(
         self,
@@ -38,26 +39,31 @@ class OllamaChatAdapter:
         timeout: float = 300.0,
         opener: Callable[..., Any] = urlopen,
         generation_options: dict[str, Any] | None = None,
+        chat_options: dict[str, Any] | None = None,
     ) -> None:
         self.model_id = model_id
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._opener = opener
         self.generation_options = dict(generation_options or self.DEFAULT_GENERATION_OPTIONS)
+        self.chat_options = dict(chat_options or {})
+        reserved = self._RESERVED_CHAT_KEYS.intersection(self.chat_options)
+        if reserved:
+            raise ValueError(f"chat_options may not override reserved request keys: {sorted(reserved)}")
 
     def complete(self, prompt: str, system: str | None = None) -> ModelResponse:
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        body = json.dumps(
-            {
-                "model": self.model_id,
-                "messages": messages,
-                "stream": False,
-                "options": self.generation_options,
-            }
-        ).encode("utf-8")
+        body_payload: dict[str, Any] = {
+            "model": self.model_id,
+            "messages": messages,
+            "stream": False,
+            "options": self.generation_options,
+        }
+        body_payload.update(self.chat_options)
+        body = json.dumps(body_payload).encode("utf-8")
         req = Request(
             self.base_url + "/api/chat",
             data=body,
