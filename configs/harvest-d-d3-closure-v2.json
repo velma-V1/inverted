@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "protocol": "D3-CLOSURE-v2",
+  "max_calls": 200,
+  "sealed_reserve": 48,
+  "ollama_base_url": "http://127.0.0.1:11434",
+  "models": {
+    "SMALL_A": "qwen2.5:1.5b-instruct-q8_0",
+    "QWEN": "qwen3.5:9b-q8_0"
+  },
+  "generation_options": {
+    "temperature": 0.0,
+    "seed": 20260902,
+    "num_ctx": 4096
+  },
+  "seeds": {
+    "development": 20261103,
+    "fresh": 20261113,
+    "sealed": 20261203
+  },
+  "cases_per_family": {
+    "development": 2,
+    "fresh": 1,
+    "sealed": 1
+  },
+  "d4_policy": {
+    "policy_id": "PENDING_D4",
+    "chat_options": {}
+  },
+  "normal_ci_model_free": true,
+  "blind_retries_allowed": false
+}

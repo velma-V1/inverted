@@ -8,11 +8,14 @@ on:
       - 'src/inverted/harvest_d/**'
       - 'src/inverted/progress.py'
       - 'tests/test_harvest_d_*.py'
+      - 'tests/test_harvest_d_d3_closure_*.py'
       - 'tests/test_progress_display.py'
       - 'tests/test_campaign_progress_policy.py'
       - 'configs/harvest-d.json'
       - 'configs/harvest-d-d3.json'
+      - 'configs/harvest-d-d3-closure-v2.json'
       - 'scripts/run-harvest-d-d3.ps1'
+      - 'scripts/run-harvest-d-d3-closure-v2.ps1'
       - 'TESTING.md'
       - 'docs/research/2026-09-02-harvest-d-research-synthesis.md'
       - 'docs/superpowers/specs/*harvest-d-d3*.md'
@@ -20,21 +23,26 @@ on:
       - 'docs/superpowers/specs/2026-09-02-harvest-d-identifiability-model-substitution-design.md'
       - 'docs/superpowers/plans/2026-09-02-harvest-d-identifiability-model-substitution.md'
       - 'docs/superpowers/plans/2026-09-03-harvest-d-d3-automated-tomography.md'
+      - 'docs/superpowers/plans/2026-09-03-harvest-d-d3-closure-v2.md'
       - '.github/workflows/harvest-d-validation.yml'
   pull_request:
     paths:
       - 'src/inverted/harvest_d/**'
       - 'src/inverted/progress.py'
       - 'tests/test_harvest_d_*.py'
+      - 'tests/test_harvest_d_d3_closure_*.py'
       - 'tests/test_progress_display.py'
       - 'tests/test_campaign_progress_policy.py'
       - 'configs/harvest-d.json'
       - 'configs/harvest-d-d3.json'
+      - 'configs/harvest-d-d3-closure-v2.json'
       - 'scripts/run-harvest-d-d3.ps1'
+      - 'scripts/run-harvest-d-d3-closure-v2.ps1'
       - 'TESTING.md'
       - 'docs/superpowers/specs/*harvest-d-d3*.md'
       - 'docs/superpowers/specs/2026-09-02-harvest-d-cpu-sentinel-addendum.md'
       - 'docs/superpowers/plans/2026-09-03-harvest-d-d3-automated-tomography.md'
+      - 'docs/superpowers/plans/2026-09-03-harvest-d-d3-closure-v2.md'
       - '.github/workflows/harvest-d-validation.yml'
 
 jobs:
@@ -54,6 +62,8 @@ jobs:
           python -m pip install -e ".[test]"
       - name: D3 focused harness and progress contract
         run: python -m pytest -q tests/test_harvest_d_d3_*.py tests/test_progress_display.py tests/test_campaign_progress_policy.py
+      - name: D3 Closure v2 focused contract
+        run: python -m pytest -q tests/test_harvest_d_d3_closure_*.py tests/test_harvest_d_d4_qwen_policy.py tests/test_harvest_d_post_d3_analysis.py
       - name: All Harvest D regressions
         run: python -m pytest -q tests/test_harvest_d_core.py tests/test_harvest_d_analysis.py tests/test_harvest_d_execution.py tests/test_harvest_d_campaign.py tests/test_harvest_d_d3_*.py
       - name: Full repository regression
@@ -89,6 +99,35 @@ jobs:
           assert audit['overall_passed'] is True
           assert len(audit['checks']) == 15
           assert capture['physical_model_calls'] == 0
+          PY
+      - name: D3 Closure v2 zero-call end-to-end package
+        env:
+          OPENAI_API_KEY: ''
+          ANTHROPIC_API_KEY: ''
+          OPENROUTER_API_KEY: ''
+        run: |
+          rm -rf /tmp/harvest-d-d3-closure-v2
+          python -m inverted.harvest_d.d3_closure_cli --config configs/harvest-d-d3-closure-v2.json --output /tmp/harvest-d-d3-closure-v2 --model-free
+          test -f /tmp/harvest-d-d3-closure-v2/00-HARVEST-D-D3-CLOSURE-V2-MASTER-INDEX.json
+          test -f /tmp/harvest-d-d3-closure-v2/closure_plan.json
+          test -f /tmp/harvest-d-d3-closure-v2/closure_provenance.json
+          test -f /tmp/harvest-d-d3-closure-v2/closure_call_ledger.jsonl
+          test -f /tmp/harvest-d-d3-closure-v2/closure_system_events.jsonl
+          test -f /tmp/harvest-d-d3-closure-v2/closure_final_report.json
+          test -f /tmp/harvest-d-d3-closure-v2/test5_handoff.json
+          test -f /tmp/harvest-d-d3-closure-v2/SHA256SUMS.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('/tmp/harvest-d-d3-closure-v2')
+          master = json.loads((root / '00-HARVEST-D-D3-CLOSURE-V2-MASTER-INDEX.json').read_text())
+          report = json.loads((root / 'closure_final_report.json').read_text())
+          assert master['protocol'] == 'D3-CLOSURE-v2'
+          assert master['physical_model_calls'] == 0
+          assert master['max_calls'] == 200
+          assert master['sealed_reserve'] == 48
+          assert master['blind_retries_allowed'] is False
+          assert report['claims_promoted'] is False
           PY
       - name: Legacy Harvest D model-free regression
         env:
