@@ -67,6 +67,34 @@ def _replacement_pairs(replacements: Mapping[str, str]) -> tuple[tuple[bytes, by
     return tuple(pairs)
 
 
+def _same_length_neutral_ascii(source: bytes) -> bytes:
+    """Redact ASCII identifier bytes without changing a binary structure's length."""
+    if any(byte >= 0x80 for byte in source):
+        raise ValueError("non-ASCII binary identifier cannot be safely length-preserved")
+    return bytes(
+        ord("X") if (48 <= byte <= 57 or 65 <= byte <= 90 or 97 <= byte <= 122) else byte
+        for byte in source
+    )
+
+
+def _pyc_replacement_pairs(replacements: Mapping[str, str]) -> tuple[tuple[bytes, bytes], ...]:
+    """Build same-length UTF-8 substitutions for identifiers embedded in .pyc marshal strings."""
+    pairs: list[tuple[bytes, bytes]] = []
+    seen: set[bytes] = set()
+    for source in sorted(replacements, key=len, reverse=True):
+        for variant in _string_variants(source):
+            try:
+                encoded = variant.encode("ascii")
+            except UnicodeEncodeError:
+                continue
+            if encoded in seen:
+                continue
+            seen.add(encoded)
+            pairs.append((encoded, _same_length_neutral_ascii(encoded)))
+    pairs.sort(key=lambda pair: len(pair[0]), reverse=True)
+    return tuple(pairs)
+
+
 def _replace_bytes(data: bytes, pairs: tuple[tuple[bytes, bytes], ...]) -> tuple[bytes, int]:
     changed = data
     count = 0
@@ -137,6 +165,7 @@ def _sanitize_zip_bytes(
         raise ValueError(f"nested ZIP depth exceeds safety limit {max_depth}")
 
     pairs = _replacement_pairs(replacements)
+    pyc_pairs = _pyc_replacement_pairs(replacements)
     source_stream = io.BytesIO(source_bytes)
     output_stream = io.BytesIO()
     stats = {
@@ -147,6 +176,7 @@ def _sanitize_zip_bytes(
         "nested_zips": 0,
         "remaining_matches": 0,
         "binary_members_scanned": 0,
+        "pyc_members_surgically_redacted": 0,
     }
 
     with zipfile.ZipFile(source_stream, "r") as source, zipfile.ZipFile(output_stream, "w") as output:
@@ -181,8 +211,9 @@ def _sanitize_zip_bytes(
             original_data = source.read(info)
             new_data = original_data
             content_changes = 0
+            suffix = Path(original_name).suffix.lower()
 
-            if Path(original_name).suffix.lower() == ".zip":
+            if suffix == ".zip":
                 nested_data, nested_stats = _sanitize_zip_bytes(
                     original_data,
                     replacements,
@@ -192,6 +223,7 @@ def _sanitize_zip_bytes(
                 stats["nested_zips"] += 1 + nested_stats["nested_zips"]
                 stats["redaction_occurrences"] += nested_stats["redaction_occurrences"]
                 stats["binary_members_scanned"] += nested_stats["binary_members_scanned"]
+                stats["pyc_members_surgically_redacted"] += nested_stats["pyc_members_surgically_redacted"]
                 stats["remaining_matches"] += nested_stats["remaining_matches"]
                 if nested_data != original_data:
                     new_data = nested_data
@@ -199,6 +231,20 @@ def _sanitize_zip_bytes(
             elif _is_text_member(original_name):
                 new_data, content_changes = _replace_bytes(original_data, pairs)
                 stats["redaction_occurrences"] += content_changes
+            elif suffix == ".pyc":
+                stats["binary_members_scanned"] += 1
+                binary_matches = _remaining_matches(original_data, pairs)
+                if binary_matches:
+                    new_data, content_changes = _replace_bytes(original_data, pyc_pairs)
+                    if len(new_data) != len(original_data):
+                        raise AssertionError(f"length-preserving .pyc redaction changed size: {original_name}")
+                    remaining = _remaining_matches(new_data, pairs)
+                    if remaining:
+                        raise ValueError(
+                            f".pyc member contains a privacy identifier that cannot be safely length-preserved: {original_name}"
+                        )
+                    stats["redaction_occurrences"] += content_changes
+                    stats["pyc_members_surgically_redacted"] += 1
             else:
                 stats["binary_members_scanned"] += 1
                 binary_matches = _remaining_matches(original_data, pairs)
