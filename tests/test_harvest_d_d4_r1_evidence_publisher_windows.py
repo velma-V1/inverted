@@ -5,6 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "preserve-harvest-d-d4-r1-evidence.ps1"
+INTEGRATION_SCRIPT = ROOT / "scripts" / "test-harvest-d-d4-r1-evidence-publisher.ps1"
+WINDOWS_WORKFLOW = ROOT / ".github" / "workflows" / "test.yml"
 
 
 def test_publisher_script_exists_and_uses_validated_bundle_module():
@@ -59,3 +61,11 @@ def test_publisher_records_r1_execution_commit_separately_from_publisher_commit(
     assert "evidence_provenance.json" in text
     assert "SHA256SUMS-D4-R1-ARCHIVES.csv" in text
     assert "Remove-Item -Recurse -Force $BundleRoot" not in text
+
+
+def test_windows_ci_parses_and_executes_d4_r1_evidence_publisher():
+    workflow = WINDOWS_WORKFLOW.read_text(encoding="utf-8")
+    assert "scripts/preserve-harvest-d-d4-r1-evidence.ps1" in workflow
+    assert "scripts/test-harvest-d-d4-r1-evidence-publisher.ps1" in workflow
+    assert "D4/R1 evidence publisher integration" in workflow
+    assert INTEGRATION_SCRIPT.is_file(), "D4/R1 evidence publisher integration script is missing"
