@@ -29,16 +29,13 @@ function Resolve-FrozenD3V1Evidence {
 
     Write-Host "Local D3-v1 run is absent; materializing immutable frozen evidence commit."
 
-    git cat-file -e "$FrozenD3EvidenceCommit^{commit}" 2>$null
+    git fetch origin $FrozenD3EvidenceBranch --no-tags --depth=1
     if ($LASTEXITCODE -ne 0) {
-        git fetch origin $FrozenD3EvidenceBranch --no-tags --depth=1
-        if ($LASTEXITCODE -ne 0) {
-            throw "Unable to fetch frozen D3-v1 evidence branch; no R1 model calls were started."
-        }
-        git cat-file -e "$FrozenD3EvidenceCommit^{commit}" 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            throw "Pinned frozen D3-v1 evidence commit is unavailable after fetch; no R1 model calls were started."
-        }
+        throw "Unable to fetch frozen D3-v1 evidence branch; no R1 model calls were started."
+    }
+    $FetchedEvidenceCommit = (git rev-parse FETCH_HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $FetchedEvidenceCommit -ne $FrozenD3EvidenceCommit) {
+        throw "Frozen D3-v1 evidence branch no longer resolves to the pinned commit; no R1 model calls were started."
     }
 
     if (Test-Path $FrozenD3CacheRoot) {
