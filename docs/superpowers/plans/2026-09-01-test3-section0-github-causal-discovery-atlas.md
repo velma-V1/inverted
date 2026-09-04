@@ -21,7 +21,7 @@
 - Bad routing, bad verification, stale memory, failed mentoring, unused calls, cache/accounting defects, provenance defects, and instrumentation failures remain evidence.
 - Exact Tier-A budgets remain unfrozen. S0 may emit a recommended range, never an automatically frozen budget.
 - Random-extra-compute/context controls must be measured where replayable or queued for new inference.
-- Approved design baseline: `0db53efda83060af06a1984fe099d6d52fb515d7`.
+- Approved design baseline: `cf72657037c4d3fb6cc6381c48ab6c4abdc831ce`.
 
 ---
 
