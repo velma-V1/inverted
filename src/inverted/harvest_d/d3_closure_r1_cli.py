@@ -10,7 +10,14 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from .d3_closure_cli import _build_adapters, load_closure_config, load_frozen_d4_policy
-from .d3_closure_r1 import R1CalibrationCampaign, R1_MAX_CALLS, build_r1_model_free_package, validate_r1_stage_authorization
+from .d3_closure_r1 import (
+    R1CalibrationCampaign,
+    R1_MAX_CALLS,
+    build_r1_model_free_package,
+    build_r1_plan,
+    validate_r1_stage_authorization,
+)
+from .d3_closure_r1_runtime import R1RuntimeRecorder
 
 
 def _load_json(path: str | Path, label: str) -> dict[str, Any]:
@@ -25,6 +32,20 @@ def _load_json(path: str | Path, label: str) -> dict[str, Any]:
 
 def _sha256(path: str | Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _committed_experiment_ids(root: Path) -> set[str]:
+    path = root / "closure_r1_call_ledger.jsonl"
+    if not path.exists():
+        return set()
+    committed: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row, dict) and row.get("committed") and row.get("experiment_id"):
+            committed.add(str(row["experiment_id"]))
+    return committed
 
 
 def _runtime_identity(config: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
@@ -148,8 +169,22 @@ def main(argv: list[str] | None = None) -> int:
             "ready_for_physical_r1": True, "ready_for_test5": False,
         }
         (root / "closure_r1_readiness.json").write_text(json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        campaign = R1CalibrationCampaign(root, config=config, adapters=_build_adapters(config), runtime_identity=identity)
-        result = campaign.run(max_calls=limit)
+
+        base_adapters = _build_adapters(config)
+        committed = _committed_experiment_ids(root)
+        recorder = R1RuntimeRecorder(
+            root,
+            plan=build_r1_plan(config),
+            committed_experiment_ids=committed,
+            target_calls=limit,
+            calls_available=R1_MAX_CALLS,
+        )
+        adapters = {key: recorder.wrap(key, adapter) for key, adapter in base_adapters.items()}
+        campaign = R1CalibrationCampaign(root, config=config, adapters=adapters, runtime_identity=identity)
+        try:
+            result = campaign.run(max_calls=limit)
+        finally:
+            recorder.finish()
         print(json.dumps(result, sort_keys=True))
         return 0 if result["final_state"] in {"R1_CALIBRATION_COMPLETE", "R1_CALIBRATION_PARTIAL"} else 2
     except Exception as exc:
