@@ -23,7 +23,7 @@ def test_r1_launcher_runs_fresh_r0_then_r1_model_free_before_any_physical_path()
     text = SCRIPT.read_text(encoding="utf-8")
     r0 = text.index("d3_closure_cli")
     r1 = text.index("d3_closure_r1_cli")
-    auth = text.index("StageAuthorization")
+    auth = text.index("$Stage = Get-Content")
     real = text.index("R1 calibration real local campaign")
     assert r0 < r1 < auth < real
     assert "-ModelFreeOnly" in text
