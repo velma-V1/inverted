@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,15 @@ _REQUIRED_ZERO_CALL_ARTIFACTS = (
     "d3_recovery_trajectories.jsonl",
     "d3_sequential_analysis_state.jsonl",
     "d3_uncovered_space.jsonl",
+)
+
+_REQUIRED_FROZEN_SOURCE = (
+    "00-HARVEST-D-D3-MASTER-INDEX.json",
+    "d3_final_report.json",
+    "d3_call_ledger.jsonl",
+    "d3_normalized_model_calls.jsonl",
+    "d3_runtime_telemetry.jsonl",
+    "SHA256SUMS.csv",
 )
 
 
@@ -34,12 +45,88 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_frozen_d3_v1(root: Path) -> dict[str, Any]:
+    root = Path(root).resolve()
+    missing = [name for name in _REQUIRED_FROZEN_SOURCE if not (root / name).is_file()]
+    if missing:
+        raise ValueError(f"frozen D3-v1 evidence package is incomplete; missing: {missing}")
+
+    try:
+        master = json.loads((root / "00-HARVEST-D-D3-MASTER-INDEX.json").read_text(encoding="utf-8"))
+        report = json.loads((root / "d3_final_report.json").read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ValueError("frozen D3-v1 master/report is unreadable") from exc
+
+    if str(master.get("mode")) != "REAL_LOCAL" or str(report.get("mode")) != "REAL_LOCAL":
+        raise ValueError("frozen D3-v1 source must be a REAL_LOCAL empirical run")
+    if not bool(master.get("audit_passed")) or not bool(report.get("audit_passed")):
+        raise ValueError("frozen D3-v1 source did not pass its recorded audit")
+    if not bool(master.get("empirical_claims_authorized")) or not bool(report.get("empirical_claims_authorized")):
+        raise ValueError("frozen D3-v1 source did not authorize empirical claims")
+
+    ledger = _read_jsonl(root / "d3_call_ledger.jsonl")
+    calls = _read_jsonl(root / "d3_normalized_model_calls.jsonl")
+    runtime = _read_jsonl(root / "d3_runtime_telemetry.jsonl")
+    expected_calls = int(master.get("physical_model_calls", -1))
+    if expected_calls <= 0:
+        raise ValueError("frozen D3-v1 source has no physical calls")
+    if int(report.get("physical_model_calls", -1)) != expected_calls:
+        raise ValueError("frozen D3-v1 master/report physical-call counts disagree")
+    if len(ledger) != expected_calls or len(calls) != expected_calls or len(runtime) != expected_calls:
+        raise ValueError(
+            "frozen D3-v1 call artifacts are incomplete: "
+            f"expected={expected_calls} ledger={len(ledger)} normalized={len(calls)} runtime={len(runtime)}"
+        )
+    if any(not bool(row.get("capture_complete", False)) for row in ledger):
+        raise ValueError("frozen D3-v1 ledger contains incomplete captures")
+
+    manifest_path = root / "SHA256SUMS.csv"
+    try:
+        with manifest_path.open("r", encoding="utf-8", newline="") as handle:
+            manifest_rows = list(csv.DictReader(handle))
+    except OSError as exc:
+        raise ValueError("frozen D3-v1 checksum manifest is unreadable") from exc
+    if not manifest_rows or set(manifest_rows[0]) != {"file", "bytes", "sha256"}:
+        raise ValueError("frozen D3-v1 checksum manifest has an invalid schema")
+    manifest = {str(row["file"]): row for row in manifest_rows}
+    for name in _REQUIRED_FROZEN_SOURCE:
+        if name == "SHA256SUMS.csv":
+            continue
+        if name not in manifest:
+            raise ValueError(f"frozen D3-v1 checksum manifest does not cover required artifact: {name}")
+    for name, row in manifest.items():
+        path = root / name
+        if not path.is_file():
+            raise ValueError(f"frozen D3-v1 checksum artifact is missing: {name}")
+        actual_bytes = path.stat().st_size
+        actual_sha = _sha256(path)
+        if actual_bytes != int(row["bytes"]) or actual_sha != str(row["sha256"]):
+            raise ValueError(f"frozen D3-v1 checksum mismatch: {name}")
+
+    return {
+        "physical_model_calls": expected_calls,
+        "master": master,
+        "report": report,
+        "manifest_entries": len(manifest_rows),
+        "source_verified": True,
+    }
+
+
 def analyze_d3_v1(root: Path, output: Path) -> dict[str, object]:
     root = Path(root).resolve()
     output = Path(output).resolve()
     if root == output:
         raise ValueError("post-D3 analysis output must not overwrite frozen D3-v1 evidence")
 
+    validation = validate_frozen_d3_v1(root)
     output.mkdir(parents=True, exist_ok=True)
     calls = _read_jsonl(root / "d3_normalized_model_calls.jsonl")
     runtime = _read_jsonl(root / "d3_runtime_telemetry.jsonl")
@@ -71,6 +158,7 @@ def analyze_d3_v1(root: Path, output: Path) -> dict[str, object]:
     findings: dict[str, object] = {
         "protocol": "D3-V1-POSTHOC-SALVAGE",
         "source_root": str(root),
+        "source_verified": bool(validation["source_verified"]),
         "physical_calls_observed": len(calls),
         "disposition_correct_calls": disposition_correct,
         "qwen_context_exhausted": qwen_context_exhausted,
@@ -115,6 +203,7 @@ def analyze_d3_v1(root: Path, output: Path) -> dict[str, object]:
 
     decision_map = {
         "freeze_d3_v1": True,
+        "source_checksum_verified": True,
         "repair_measurement_harness": True,
         "run_d4_before_qwen_confirmation": True,
         "run_d3_closure_v2": True,
@@ -143,7 +232,7 @@ def analyze_d3_v1(root: Path, output: Path) -> dict[str, object]:
     _write_json(output / "post_d3_followup_budget_justification.json", budget)
     (output / "post_d3_followup_test_spec.md").write_text(
         "# Post-D3 Follow-up Test Spec\n\n"
-        "Freeze D3-v1. Repair the measurement boundary, resolve Qwen call policy in D4, "
+        "Freeze D3-v1. Verify its manifest. Repair the measurement boundary, resolve Qwen call policy in D4, "
         "then run D3-CLOSURE-v2 only against decision-relevant unresolved gaps.\n",
         encoding="utf-8",
     )

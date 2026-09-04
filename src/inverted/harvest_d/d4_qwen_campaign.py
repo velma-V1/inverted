@@ -76,7 +76,6 @@ def build_d4_plan(config: Mapping[str, Any]) -> D4Plan:
     )
     cases = _balanced_cases(all_cases, 24)
     experiments: list[D4Experiment] = []
-    # Keep each matched pair adjacent so interruption cannot create large policy imbalance.
     for case in cases:
         for policy_id in ("DEFAULT", "THINK_OFF"):
             experiments.append(
@@ -95,6 +94,7 @@ def build_d4_plan(config: Mapping[str, Any]) -> D4Plan:
 def _append_jsonl(path: Path, row: Mapping[str, Any]) -> None:
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(dict(row), sort_keys=True) + "\n")
+        handle.flush()
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -119,6 +119,7 @@ def _ensure_outputs(root: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
     for name in (
         "d4_call_ledger.jsonl",
+        "d4_campaign_journal.jsonl",
         "d4_raw_model_requests.jsonl",
         "d4_raw_model_responses.jsonl",
         "d4_normalized_model_calls.jsonl",
@@ -129,7 +130,39 @@ def _ensure_outputs(root: Path) -> None:
             path.write_text("", encoding="utf-8")
 
 
-def _finalize(root: Path, *, config: Mapping[str, Any], plan: D4Plan, calls: int, state: str, policy: Mapping[str, Any], model_free: bool) -> None:
+def _assert_unambiguous_resume(root: Path) -> None:
+    ledger = _read_jsonl(root / "d4_call_ledger.jsonl")
+    committed_call_ids = {str(row.get("physical_model_call_id")) for row in ledger if row.get("committed")}
+    committed_experiments = {str(row.get("experiment_id")) for row in ledger if row.get("committed")}
+    journal = _read_jsonl(root / "d4_campaign_journal.jsonl")
+    started: dict[str, dict[str, Any]] = {}
+    for row in journal:
+        call_id = str(row.get("physical_model_call_id", ""))
+        if not call_id:
+            continue
+        if str(row.get("state")) == "STARTED":
+            started[call_id] = row
+        elif str(row.get("state")) == "COMMITTED":
+            started.pop(call_id, None)
+    ambiguous = [
+        row for call_id, row in started.items()
+        if call_id not in committed_call_ids and str(row.get("experiment_id")) not in committed_experiments
+    ]
+    if ambiguous:
+        ids = sorted(str(row.get("experiment_id")) for row in ambiguous)
+        raise ValueError(f"ambiguous in-flight D4 physical call on resume: {ids}; automatic replay forbidden")
+
+
+def _finalize(
+    root: Path,
+    *,
+    config: Mapping[str, Any],
+    plan: D4Plan,
+    calls: int,
+    state: str,
+    policy: Mapping[str, Any],
+    model_free: bool,
+) -> None:
     _write_json(root / "d4_frozen_policy.json", dict(policy))
     master = {
         "protocol": "D4-QWEN-POLICY-v1",
@@ -196,6 +229,7 @@ class D4QwenCampaign:
 
     def run_model_free(self) -> D4CampaignResult:
         self._ensure_provenance()
+        _assert_unambiguous_resume(self.root)
         progress = InPlaceProgress(stream=self.progress_stream, min_interval_s=0.0)
         progress.update(
             completed=0,
@@ -213,12 +247,14 @@ class D4QwenCampaign:
             "chat_options": {},
             "matched_cases": 0,
             "semantic_decision": "UNRESOLVED",
+            "evidence_status": "NOT_RUN",
         }
         _finalize(self.root, config=self.config, plan=self.plan, calls=0, state="MODEL_FREE_COMPLETE", policy=policy, model_free=True)
         return D4CampaignResult(0, "MODEL_FREE_COMPLETE", "NOT_RUN")
 
     def run(self, *, max_calls: int | None = None) -> D4CampaignResult:
         self._ensure_provenance()
+        _assert_unambiguous_resume(self.root)
         if set(self.adapters) != {"DEFAULT", "THINK_OFF"}:
             raise ValueError("D4 real run requires DEFAULT and THINK_OFF adapters")
         limit = 48 if max_calls is None else int(max_calls)
@@ -262,6 +298,14 @@ class D4QwenCampaign:
                     "prompt": prompt,
                     "generation_options": dict(getattr(adapter, "generation_options", {}) or {}),
                     "chat_options": dict(getattr(adapter, "chat_options", {}) or {}),
+                },
+            )
+            _append_jsonl(
+                self.root / "d4_campaign_journal.jsonl",
+                {
+                    "physical_model_call_id": call_id,
+                    "experiment_id": experiment.experiment_id,
+                    "state": "STARTED",
                 },
             )
             try:
@@ -347,6 +391,14 @@ class D4QwenCampaign:
                     "committed": True,
                 },
             )
+            _append_jsonl(
+                self.root / "d4_campaign_journal.jsonl",
+                {
+                    "physical_model_call_id": call_id,
+                    "experiment_id": experiment.experiment_id,
+                    "state": "COMMITTED",
+                },
+            )
             calls_used += 1
             completed.add(experiment.experiment_id)
             progress.update(
@@ -358,18 +410,22 @@ class D4QwenCampaign:
                 force=True,
             )
 
-            # Only evaluate after a complete matched pair.
-            if calls_used % 2 == 0 and calls_used >= 24:
-                rows = _read_jsonl(self.root / "d4_normalized_model_calls.jsonl")
-                policy = select_qwen_policy(rows, model_id=str(self.config["model"]))
-                if policy["state"] == "FROZEN":
-                    break
-
         progress.finish()
         rows = _read_jsonl(self.root / "d4_normalized_model_calls.jsonl")
+        infrastructure_failures = sum(row.get("completion_class") == "INFRASTRUCTURE_OR_ADAPTER" for row in rows)
         policy = select_qwen_policy(rows, model_id=str(self.config["model"]))
-        if calls_used < 48 and policy["state"] != "FROZEN":
-            policy = {**policy, "state": "INCOMPLETE"}
+        if infrastructure_failures:
+            policy = {
+                **policy,
+                "state": "UNRESOLVED",
+                "policy_id": None,
+                "chat_options": {},
+                "evidence_status": "INFRASTRUCTURE_INVALID",
+                "selection_reason": f"{infrastructure_failures} infrastructure/adapter failures contaminate D4",
+            }
+            final_state = "INVALID_INFRASTRUCTURE"
+        elif calls_used < self.plan.planned_physical_calls:
+            policy = {**policy, "state": "INCOMPLETE", "evidence_status": "INCOMPLETE"}
             final_state = "EVIDENCE_CEILING_REACHED"
         elif policy["state"] == "FROZEN":
             final_state = "COMPLETE"

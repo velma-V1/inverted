@@ -28,6 +28,7 @@ class SystemSemantics:
     missing_required_evidence: bool = False
     external_effect_status: str = "NOT_COMMITTED"
     hard_invariant_ok: bool = True
+    authority_allows: bool = True
 
 
 def _parse_json_relaxed(text: str) -> tuple[Any, bool, bool]:
@@ -61,6 +62,8 @@ def score_semantic_action(response_text: str, *, expected_answer: Any) -> Semant
 def compile_system_disposition(semantics: SystemSemantics) -> Disposition:
     if not semantics.hard_invariant_ok:
         return Disposition.SAFE_STOP
+    if not semantics.authority_allows:
+        return Disposition.ESCALATE
     if str(semantics.external_effect_status).upper() == "UNKNOWN":
         return Disposition.ESCALATE
     if semantics.missing_required_evidence:
