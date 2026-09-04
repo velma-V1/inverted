@@ -19,7 +19,7 @@ def test_publisher_script_exists_and_uses_validated_bundle_module():
 
 def test_publisher_uses_isolated_orphan_worktree_and_never_switches_active_checkout():
     text = SCRIPT.read_text(encoding="utf-8")
-    assert "git worktree add --detach" in text
+    assert "git worktree add --detach $Worktree $PublisherCommit" in text
     assert "git -C $Worktree switch --orphan $EvidenceBranch" in text
     assert "git -C $Worktree push origin" in text
     assert "live-evidence" in text
@@ -49,9 +49,13 @@ def test_publisher_is_zero_inference_and_cannot_rerun_d4_or_r1():
     assert "PackageOnly" in text
 
 
-def test_publisher_records_current_implementation_commit_and_preserves_local_bundle():
+def test_publisher_records_r1_execution_commit_separately_from_publisher_commit():
     text = SCRIPT.read_text(encoding="utf-8")
-    assert "git rev-parse HEAD" in text
+    assert "[string]$R1ExecutionCommit" in text
+    assert "$PublisherCommit = (git rev-parse HEAD).Trim()" in text
+    assert "--implementation-commit $R1ExecutionCommit" in text
+    assert "git cat-file -e" in text
+    assert "R1 execution commit" in text
     assert "evidence_provenance.json" in text
     assert "SHA256SUMS-D4-R1-ARCHIVES.csv" in text
     assert "Remove-Item -Recurse -Force $BundleRoot" not in text
