@@ -34,6 +34,27 @@ def test_r1_launcher_runs_fresh_r0_then_r1_model_free_before_any_physical_path()
     assert "Start-Job" not in text
 
 
+def test_r1_launcher_materializes_pinned_frozen_d3_when_local_run_is_absent():
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "3d220cc5445942e22f2ac70228f8ff846a6c7230" in text
+    assert "evidence/harvest-d-d3-20260903" in text
+    assert "live-evidence/harvest-d-d3-real-20260903-185137/D3-COMPLETE-CAMPAIGN.zip" in text
+    assert "371588D6C5616D371E7EF891E939271F0AF09AC6462A0DF00F8B1486CFC4AC2B" in text
+    assert "git fetch origin" in text
+    assert "git archive --format=zip" in text
+    assert "Get-FileHash" in text
+    assert "Expand-Archive" in text
+    assert "00-HARVEST-D-D3-MASTER-INDEX.json" in text
+
+
+def test_r1_model_free_windows_gate_exercises_frozen_d3_resolution_and_revalidation():
+    text = SCRIPT.read_text(encoding="utf-8")
+    resolve = text.index("R1 prerequisite: resolve frozen D3-v1 evidence")
+    post_d3 = text.index("post_d3_cli")
+    model_free_exit = text.index("if ($ModelFreeOnly)")
+    assert resolve < post_d3 < model_free_exit
+
+
 def test_r1_launcher_requires_fresh_r0_historical_d3_and_exact_d4_policy_before_real_calls():
     text = SCRIPT.read_text(encoding="utf-8")
     assert "closure_r0_readiness_report.json" in text
