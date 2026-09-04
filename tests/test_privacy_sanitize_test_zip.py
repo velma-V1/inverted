@@ -107,6 +107,49 @@ def test_clean_nested_zip_remains_byte_identical_when_other_member_is_redacted(t
         assert archive.read("nested/source.zip") == clean_nested
 
 
+def test_extensionless_git_reflog_is_sanitized_as_text(tmp_path: Path) -> None:
+    source = tmp_path / "git-log.zip"
+    output = tmp_path / "git-log.sanitized.zip"
+    reflog = b"0000000 1111111 TestUser <owner@example.com> 1700000000 -0400\tcommit from C:\\Users\\TestUser\\inverted\n"
+    git_object = b"\x00C:\\Users\\TestUser\\must-not-be-rewritten\xff"
+
+    with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("repo/.git/logs/HEAD", reflog)
+        archive.writestr("repo/.git/objects/aa/binary", git_object)
+
+    with pytest.raises(ValueError, match="binary member contains a privacy identifier"):
+        sanitize_zip(
+            source_zip=source,
+            output_zip=output,
+            replacements={
+                r"C:\Users\TestUser": r"C:\Users\[REDACTED_USER]",
+                "owner@example.com": "[REDACTED_GIT_EMAIL]",
+            },
+        )
+
+    # Remove the deliberately unsafe Git object and prove the extensionless reflog itself is redacted.
+    source_ok = tmp_path / "git-log-text-only.zip"
+    output_ok = tmp_path / "git-log-text-only.sanitized.zip"
+    with zipfile.ZipFile(source_ok, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("repo/.git/logs/HEAD", reflog)
+
+    result = sanitize_zip(
+        source_zip=source_ok,
+        output_zip=output_ok,
+        replacements={
+            r"C:\Users\TestUser": r"C:\Users\[REDACTED_USER]",
+            "owner@example.com": "[REDACTED_GIT_EMAIL]",
+        },
+    )
+    assert result["remaining_matches"] == 0
+    with zipfile.ZipFile(output_ok) as archive:
+        text = archive.read("repo/.git/logs/HEAD").decode("utf-8")
+    assert r"C:\Users\TestUser" not in text
+    assert "owner@example.com" not in text
+    assert "[REDACTED_USER]" in text
+    assert "[REDACTED_GIT_EMAIL]" in text
+
+
 def test_sanitizer_refuses_binary_member_with_exact_identifier(tmp_path: Path) -> None:
     source = tmp_path / "binary.zip"
     output = tmp_path / "binary.sanitized.zip"
