@@ -135,3 +135,14 @@ def test_r0_claim_adequacy_remains_fail_closed_for_physical_inference(tmp_path: 
     blocker_text = " ".join(adequacy["blockers"]).lower()
     assert "calibration" in blocker_text
     assert "recovery" in blocker_text or "minimality" in blocker_text
+
+
+def test_r0_claim_adequacy_exports_computed_package_integrity_inputs(tmp_path: Path):
+    module = _load_module()
+    repo_root = Path.cwd()
+    module.build_r0_package(repo_root, tmp_path, _config(repo_root))
+
+    adequacy = _read_json(tmp_path / "closure_claim_adequacy_report.json")
+    assert adequacy["r0_required_artifacts_complete"] is True
+    assert adequacy["evidence_tier_integrity"] is True
+    assert adequacy["uncovered_mandatory_obligations"] == 0
