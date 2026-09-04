@@ -188,6 +188,29 @@ Transition models are conditional only:
 - 8B only for a residual near the Qwen boundary;
 - 14B only to discriminate a model-capacity ceiling from a specification/oracle/architecture ceiling.
 
+### 10.1 Local-model resource envelope
+
+For the current local deployment target, **models in the 9.6 GB through 13 GB size/footprint range are explicitly tolerable and must not be rejected solely because they exceed the current ~9.6 GB Qwen anchor.**
+
+Model selection and substitution analysis must therefore distinguish:
+
+- parameter count;
+- quantization;
+- model artifact size;
+- actual runtime-loaded memory footprint where observable;
+- VRAM residency/spill behavior;
+- RAM use;
+- latency/throughput;
+- and verified semantic capability.
+
+A larger-parameter model with a quantization that places its practical local footprint inside the **9.6–13 GB tolerable envelope** remains an admissible transition or final candidate. Parameter count alone may not exclude it.
+
+Models below 9.6 GB are preferred only when they preserve equivalent verified capability, reliability, and operational behavior. The project must not sacrifice meaningful verified capability merely to stay below 9.6 GB.
+
+Models above 13 GB are not automatically forbidden, but they require explicit evidence that the additional verified capability or failure-class removal justifies the additional local resource, latency, and operational cost.
+
+The pre-test runtime audit must record the actual artifact identity/size and, where exposed by the runtime, loaded memory behavior so that the 9.6–13 GB tolerance is applied to observed deployment cost rather than guessed from parameter count.
+
 ## 11. D3-Closure v2 physical-call budget
 
 Hard maximum: 200 physical model calls.
@@ -298,7 +321,7 @@ D3-Closure must emit raw/normalized/derived layers and at minimum:
 
 D3-Closure ends when the project can defensibly state or explicitly bound:
 
-- smallest useful model;
+- smallest useful model within the accepted local resource envelope;
 - SMALL_A raw capability;
 - SMALL_A uplift under INVERTED;
 - Qwen anchor capability under frozen D4 policy;
