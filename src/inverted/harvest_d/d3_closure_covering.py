@@ -45,11 +45,13 @@ def _pair_obligations(factors: Mapping[str, tuple[str, ...]]) -> set[tuple[str, 
     return obligations
 
 
-def _covered_by_row(row: Mapping[str, str]) -> set[tuple[str, str, str, str]]:
-    names = tuple(row)
+def _covered_by_row(
+    row: Mapping[str, str],
+    factor_order: tuple[str, ...],
+) -> set[tuple[str, str, str, str]]:
     return {
         (left, row[left], right, row[right])
-        for left, right in combinations(names, 2)
+        for left, right in combinations(factor_order, 2)
     }
 
 
@@ -58,9 +60,12 @@ def measure_pairwise_coverage(
     factors: Mapping[str, tuple[str, ...]],
 ) -> PairwiseCoverage:
     expected = _pair_obligations(factors)
+    factor_order = tuple(factors)
     observed: set[tuple[str, str, str, str]] = set()
     for row in rows:
-        observed |= _covered_by_row(row)
+        if set(row) != set(factor_order):
+            raise ValueError("covering row does not contain exactly the declared factors")
+        observed |= _covered_by_row(row, factor_order)
     missing = tuple(sorted(expected - observed))
     return PairwiseCoverage(
         covered_pairs=len(expected) - len(missing),
@@ -98,6 +103,7 @@ def generate_covering_design(
 
     _validate_factors(factors)
     names = tuple(factors)
+    index = {name: position for position, name in enumerate(names)}
     legal = row_is_legal or (lambda row: True)
     rng = random.Random(int(seed))
     tie_rank: dict[tuple[str, str], float] = {
@@ -114,7 +120,7 @@ def generate_covering_design(
         for level in factors[name]:
             gain = 0
             for other, other_level in partial.items():
-                if names.index(other) < names.index(name):
+                if index[other] < index[name]:
                     pair = (other, other_level, name, level)
                 else:
                     pair = (name, level, other, other_level)
@@ -131,10 +137,11 @@ def generate_covering_design(
             raise RuntimeError("covering design failed to converge")
         anchor = min(uncovered)
         left, left_level, right, right_level = anchor
-        row: dict[str, str] = {left: left_level, right: right_level}
+        partial: dict[str, str] = {left: left_level, right: right_level}
         for name in names:
-            if name not in row:
-                row[name] = choose_level(name, row)
+            if name not in partial:
+                partial[name] = choose_level(name, partial)
+        row = {name: partial[name] for name in names}
 
         if not legal(row):
             # Deterministically search single-coordinate repairs before failing.
@@ -155,7 +162,7 @@ def generate_covering_design(
             if not repaired:
                 raise ValueError(f"no legal covering row found for obligation {anchor}")
 
-        covered = _covered_by_row(row) & uncovered
+        covered = _covered_by_row(row, names) & uncovered
         if not covered:
             raise RuntimeError(f"covering row made no progress for obligation {anchor}")
         rows.append(row)
