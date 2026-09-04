@@ -49,6 +49,58 @@ class ClosureRenderedTreatment:
     approx_token_count: int
 
 
+@dataclass(frozen=True)
+class ExposureSegment:
+    component_id: str
+    channel: str
+    order_index: int
+    byte_start: int
+    byte_end: int
+    approx_token_start: int
+    approx_token_end: int
+    position_fraction: float
+    source_trust: str
+    semantic_value_hash: str
+    representation: str
+    timing: str
+    placement: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "component_id": self.component_id,
+            "channel": self.channel,
+            "order_index": self.order_index,
+            "byte_start": self.byte_start,
+            "byte_end": self.byte_end,
+            "approx_token_start": self.approx_token_start,
+            "approx_token_end": self.approx_token_end,
+            "position_fraction": self.position_fraction,
+            "source_trust": self.source_trust,
+            "semantic_value_hash": self.semantic_value_hash,
+            "representation": self.representation,
+            "timing": self.timing,
+            "placement": self.placement,
+        }
+
+
+@dataclass(frozen=True)
+class TreatmentExposure:
+    exposure_id: str
+    system_message_hash: str
+    user_message_hash: str
+    approx_token_count: int
+    segments: tuple[ExposureSegment, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "exposure_id": self.exposure_id,
+            "system_message_hash": self.system_message_hash,
+            "user_message_hash": self.user_message_hash,
+            "approx_token_count": self.approx_token_count,
+            "segments": [segment.to_dict() for segment in self.segments],
+        }
+
+
 def _hash(value: object) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
@@ -125,7 +177,6 @@ def _render_representation(ordered: tuple[str, ...], source: dict[str, Any], rep
 
 def _apply_amount(rendered: str, amount: str) -> str:
     if amount == "MINIMUM":
-        # Lossless compacting of the same selected semantic field set.
         return " ".join(part.strip() for part in rendered.splitlines() if part.strip())
     if amount == "COMPRESSED":
         return " ".join(rendered.split())
@@ -213,9 +264,6 @@ def render_treatment(case: Any, plan: ClosureTreatmentPlan) -> ClosureRenderedTr
 
     if plan.placement == "SYSTEM_CONTEXT":
         system = system + "\n" + _wrap_context(rendered)
-        # System context is necessarily upstream of the user turn. Timing labels
-        # that do not create a physically distinct message will collapse through
-        # the treatment equivalence key.
         user = task
     elif plan.placement == "TASK_CONTEXT":
         context = _wrap_context(rendered)
@@ -264,4 +312,93 @@ def render_treatment(case: Any, plan: ClosureTreatmentPlan) -> ClosureRenderedTr
         system_message_hash=_hash(system),
         user_message_hash=_hash(user),
         approx_token_count=_approx_tokens(system + "\n" + user),
+    )
+
+
+def _component_marker_span(text: str, component_id: str) -> tuple[int, int] | None:
+    markers = (
+        f'"{component_id}"',
+        f"[{component_id}]",
+        f"step-context {component_id}:",
+        f"{component_id} ->",
+        f"{component_id} |",
+        f"{component_id}=",
+        f"{component_id}:",
+    )
+    for marker in markers:
+        start = text.find(marker)
+        if start >= 0:
+            component_start = start + marker.find(component_id)
+            return component_start, component_start + len(component_id)
+    return None
+
+
+def derive_treatment_exposure(rendered: ClosureRenderedTreatment, case: Any) -> TreatmentExposure:
+    information = dict((case.metadata or {}).get("d3_information", {}))
+    combined = rendered.system_message + "\n" + rendered.user_message
+    total_bytes = max(1, len(combined.encode("utf-8")))
+    pending: list[dict[str, object]] = []
+
+    for component_id in tuple(rendered.field_order) + tuple(rendered.plan.assistance):
+        if component_id.startswith("A"):
+            channel_text = rendered.user_message
+            span = _component_marker_span(channel_text, component_id)
+            if span is None:
+                raise UnsupportedTreatment(f"assistance component not found in actual outbound treatment: {component_id}")
+            channel = "ASSISTANCE"
+            global_char_start = len(rendered.system_message) + 1 + span[0]
+            global_char_end = len(rendered.system_message) + 1 + span[1]
+            semantic_value = _assistance_payload(case, (component_id,)).get(component_id)
+            source_trust = "SYSTEM_DERIVED_ASSISTANCE"
+        else:
+            system_span = _component_marker_span(rendered.system_message, component_id)
+            user_span = _component_marker_span(rendered.user_message, component_id)
+            if system_span is not None:
+                channel = "SYSTEM"
+                global_char_start, global_char_end = system_span
+            elif user_span is not None:
+                channel = "TASK"
+                global_char_start = len(rendered.system_message) + 1 + user_span[0]
+                global_char_end = len(rendered.system_message) + 1 + user_span[1]
+            else:
+                raise UnsupportedTreatment(f"information component not found in actual outbound treatment: {component_id}")
+            semantic_value = information.get(component_id)
+            source_trust = "CANONICAL_SYSTEM_INFORMATION"
+
+        byte_start = len(combined[:global_char_start].encode("utf-8"))
+        byte_end = len(combined[:global_char_end].encode("utf-8"))
+        pending.append(
+            {
+                "component_id": component_id,
+                "channel": channel,
+                "byte_start": byte_start,
+                "byte_end": byte_end,
+                "approx_token_start": byte_start // 4,
+                "approx_token_end": (byte_end + 3) // 4,
+                "position_fraction": min(1.0, max(0.0, byte_start / total_bytes)),
+                "source_trust": source_trust,
+                "semantic_value_hash": _hash(semantic_value),
+                "representation": rendered.plan.representation,
+                "timing": rendered.plan.timing,
+                "placement": rendered.plan.placement,
+            }
+        )
+
+    pending.sort(key=lambda row: (int(row["byte_start"]), str(row["component_id"])))
+    segments = tuple(
+        ExposureSegment(order_index=index, **row)
+        for index, row in enumerate(pending)
+    )
+    identity_payload = {
+        "system_message_hash": rendered.system_message_hash,
+        "user_message_hash": rendered.user_message_hash,
+        "approx_token_count": rendered.approx_token_count,
+        "segments": [segment.to_dict() for segment in segments],
+    }
+    return TreatmentExposure(
+        exposure_id=_hash(identity_payload),
+        system_message_hash=rendered.system_message_hash,
+        user_message_hash=rendered.user_message_hash,
+        approx_token_count=rendered.approx_token_count,
+        segments=segments,
     )
