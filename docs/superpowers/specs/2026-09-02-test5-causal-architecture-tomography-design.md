@@ -26,7 +26,7 @@ The evidence, not INVERTED identity, is authoritative.
 
 Test 5 must start from the frozen Test 3 S2 Tier-A evidence lineage, currently anchored at commit:
 
-`96306482153b1ced76fc7a811afe2beb7a1b5b38`
+`0d67ba4e5578b4c14225eb83b726fd137dfffecd`
 
 This lineage already contains Test 0–3 code/evidence support, S2 forensic instrumentation, model-call accounting, failure-safe evidence finalization, and router-observability analysis. Main is not an acceptable provenance substitute.
 

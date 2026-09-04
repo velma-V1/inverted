@@ -2,7 +2,7 @@
 
 **Goal:** Build Test 5 as an evidence-forensics → architecture-discovery → causal-falsification → compression → sealed-certification pipeline without contaminating prior frozen evidence.
 
-**Base evidence commit:** `96306482153b1ced76fc7a811afe2beb7a1b5b38`
+**Base evidence commit:** `0d67ba4e5578b4c14225eb83b726fd137dfffecd`
 
 **Design:** `docs/superpowers/specs/2026-09-02-test5-causal-architecture-tomography-design.md`
 
