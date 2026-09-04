@@ -3,6 +3,8 @@ param(
     [string]$Output = "runs/harvest-d-d3-closure-r1",
     [string]$R0Output = "runs/harvest-d-d3-closure-r0-gate",
     [string]$D4Output = "runs/harvest-d-d4-qwen-policy",
+    [string]$D3V1Input = "runs/harvest-d-d3",
+    [string]$PostD3Output = "runs/post-d3-analysis-r1",
     [string]$StageAuthorization = "configs/harvest-d-d3-closure-v2-r1-authorization.json",
     [string]$LegacyAuthorization = "configs/harvest-d-d3-closure-v2-execution-authorization.json",
     [switch]$ModelFreeOnly,
@@ -84,6 +86,22 @@ if ($Legacy.physical_execution_authorized -ne $false) {
     throw "Legacy C1-C7 Closure must remain physically blocked during R1."
 }
 
+# Tie R1 back to the actual frozen D3-v1 run. This remains E1 historical
+# evidence only; it is revalidated and hashed for provenance, never promoted
+# into R1's fresh repeat count.
+if (-not (Test-Path $D3V1Input)) {
+    throw "Frozen D3-v1 evidence is unavailable; no R1 model calls were started."
+}
+Write-Host "R1 prerequisite: revalidate frozen D3-v1 historical evidence"
+python -m inverted.harvest_d.post_d3_cli --input $D3V1Input --output $PostD3Output
+if ($LASTEXITCODE -ne 0) {
+    throw "Post-D3 historical evidence revalidation failed; no R1 model calls were started."
+}
+$HistoricalGapRegistry = Join-Path $PostD3Output "post_d3_gap_registry.json"
+if (-not (Test-Path $HistoricalGapRegistry)) {
+    throw "post_d3_gap_registry.json was not produced; no R1 model calls were started."
+}
+
 $D4PolicyFile = Join-Path $D4Output "d4_frozen_policy.json"
 if (-not (Test-Path $D4PolicyFile)) {
     throw "Frozen D4 policy is missing; no R1 model calls were started. Do not rerun D4 blindly."
@@ -100,6 +118,7 @@ $Args = @(
     "--output", $Output,
     "--stage-authorization", $StageAuthorization,
     "--r0-readiness-file", $R0Readiness,
+    "--historical-gap-registry", $HistoricalGapRegistry,
     "--d4-policy-file", $D4PolicyFile
 )
 if ($MaxCalls -gt 0) { $Args += @("--max-calls", "$MaxCalls") }
