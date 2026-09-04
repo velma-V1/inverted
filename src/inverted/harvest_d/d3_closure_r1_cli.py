@@ -74,11 +74,16 @@ def _validate_fresh_r0(path: str | Path) -> dict[str, Any]:
     return raw
 
 
-def _validate_historical_gap_registry(path: str | Path) -> dict[str, Any]:
-    raw = _load_json(path, "revalidated post-D3 historical gap registry")
-    # The registry is E1 historical evidence only. Presence/provenance can
-    # prioritize later work, but it may never become a fresh R1 observation.
-    return raw
+def _validate_historical_gap_registry(path: str | Path) -> list[dict[str, Any]]:
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"unable to load revalidated post-D3 historical gap registry: {path}") from exc
+    if not isinstance(raw, list) or not raw or not all(isinstance(row, dict) for row in raw):
+        raise ValueError("post-D3 historical gap registry must be a non-empty JSON array of objects")
+    if any(not str(row.get("gap_id") or "").startswith("GAP-") for row in raw):
+        raise ValueError("post-D3 historical gap registry contains invalid gap identity")
+    return [dict(row) for row in raw]
 
 
 def _parser() -> argparse.ArgumentParser:
