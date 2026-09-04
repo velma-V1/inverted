@@ -198,6 +198,12 @@ def _sanitize_zip_bytes(
                 if _sha256_bytes(new_data) != _sha256_bytes(original_data):
                     raise AssertionError(f"unchanged member content hash changed: {original_name}")
 
+    # If this archive contained no privacy identifier at all, return its original bytes.
+    # This prevents a clean nested ZIP from being reserialized merely because its parent
+    # archive needed a redaction elsewhere.
+    if stats["redaction_occurrences"] == 0:
+        return source_bytes, stats
+
     sanitized = output_stream.getvalue()
 
     with zipfile.ZipFile(io.BytesIO(sanitized), "r") as archive:
