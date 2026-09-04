@@ -16,6 +16,7 @@ on:
       - 'configs/harvest-d-d3-closure-v2.json'
       - 'scripts/run-harvest-d-d3.ps1'
       - 'scripts/run-harvest-d-d4-qwen-policy.ps1'
+      - 'scripts/run-harvest-d-d4-through-closure.ps1'
       - 'scripts/run-harvest-d-d3-closure-v2.ps1'
       - 'TESTING.md'
       - 'docs/research/2026-09-02-harvest-d-research-synthesis.md'
@@ -39,6 +40,7 @@ on:
       - 'configs/harvest-d-d3-closure-v2.json'
       - 'scripts/run-harvest-d-d3.ps1'
       - 'scripts/run-harvest-d-d4-qwen-policy.ps1'
+      - 'scripts/run-harvest-d-d4-through-closure.ps1'
       - 'scripts/run-harvest-d-d3-closure-v2.ps1'
       - 'TESTING.md'
       - 'docs/research/2026-09-02-harvest-d-research-synthesis.md'
@@ -191,3 +193,6 @@ jobs:
       - name: D3 Closure PowerShell launcher model-free gate
         shell: powershell
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-harvest-d-d3-closure-v2.ps1 -Output "runs/ci-harvest-d-d3-closure-v2" -ModelFreeOnly
+      - name: D4 through Closure PowerShell launcher model-free gate
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-harvest-d-d4-through-closure.ps1 -D4Output "runs/ci-harvest-d-d4-qwen-policy-chain" -ClosureOutput "runs/ci-harvest-d-d3-closure-v2-chain" -StateOutput "runs/ci-harvest-d-d4-through-closure" -ModelFreeOnly
