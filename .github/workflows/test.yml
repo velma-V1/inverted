@@ -62,7 +62,9 @@ jobs:
         run: |
           $scripts = @(
             'scripts/publish-inverted-checkpoints.ps1',
-            'scripts/test-checkpoint-publisher.ps1'
+            'scripts/test-checkpoint-publisher.ps1',
+            'scripts/preserve-harvest-d-d4-r1-evidence.ps1',
+            'scripts/test-harvest-d-d4-r1-evidence-publisher.ps1'
           )
           foreach ($script in $scripts) {
             $tokens = $null
@@ -81,6 +83,9 @@ jobs:
       - name: End-to-end checkpoint publisher integration
         shell: powershell
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-checkpoint-publisher.ps1
+      - name: D4/R1 evidence publisher integration
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-harvest-d-d4-r1-evidence-publisher.ps1
       - run: python -m inverted.cli --config configs/smoke.yaml --output-dir ci-runs --run-id ci-smoke > ci-report.txt
       - run: >-
           python -c "from pathlib import Path; text=Path('ci-report.txt').read_text(encoding='utf-8'); assert 'VERDICT: NON-DECISIVE' in text"
