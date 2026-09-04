@@ -34,10 +34,13 @@ def test_r1_launcher_runs_fresh_r0_then_r1_model_free_before_any_physical_path()
     assert "Start-Job" not in text
 
 
-def test_r1_launcher_requires_fresh_r0_and_exact_d4_policy_before_real_calls():
+def test_r1_launcher_requires_fresh_r0_historical_d3_and_exact_d4_policy_before_real_calls():
     text = SCRIPT.read_text(encoding="utf-8")
     assert "closure_r0_readiness_report.json" in text
     assert "R0_MODEL_FREE_COMPLETE" in text
+    assert "post_d3_cli" in text
+    assert "post_d3_gap_registry.json" in text
+    assert "--historical-gap-registry" in text
     assert "d4_frozen_policy.json" in text
     assert "model_digest" in text
     assert "stage_physical_execution_authorized" in text
