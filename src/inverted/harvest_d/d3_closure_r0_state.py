@@ -134,7 +134,7 @@ def derive_pre_state(case: Any) -> PreStateDescriptor:
             )
         )
     missing = _as_tuple(evidence.get("missing"))
-    scope = authority.get("allowed_resources", authority.get("scope", ()))
+    scope = _as_tuple(authority.get("allowed_resources", authority.get("scope", ())))
     admissible = _as_tuple(actions.get("admissible_actions"))
     state_version = state.get("canonical_version", state.get("version"))
     novelty_raw = uncertainty.get("novelty", uncertainty.get("known_policy_coverage", ""))
@@ -152,9 +152,9 @@ def derive_pre_state(case: Any) -> PreStateDescriptor:
         "objective": str(objective.get("objective", "")),
         "canonical_state": state,
         "state_version": state_version,
-        "available_evidence": list(available),
-        "missing_evidence": list(missing),
-        "authority_scope": list(_as_tuple(scope)),
+        "available_evidence": available,
+        "missing_evidence": missing,
+        "authority_scope": scope,
         "irreversible": consequence.get("reversible") is False,
         "risk": str(consequence.get("risk", "UNKNOWN")),
         "invariant_sensitive": bool(invariants),
@@ -177,7 +177,8 @@ def derive_action_frontier(case: Any) -> ActionFrontierDescriptor:
 
     admissible = _as_tuple(actions.get("admissible_actions"))
     candidates = _as_tuple(actions.get("candidate_actions", admissible))
-    removed = tuple(action for action in candidates if action not in set(admissible))
+    admitted = set(admissible)
+    removed = tuple(action for action in candidates if action not in admitted)
     removal_reasons = _as_tuple(actions.get("removal_reasons"))
     irreversible = consequence.get("reversible") is False
     authority_sensitive = bool(authority.get("requested_resource") or authority.get("allowed_resources"))
@@ -185,10 +186,10 @@ def derive_action_frontier(case: Any) -> ActionFrontierDescriptor:
 
     payload = {
         "case_id": str(case.case_id),
-        "candidate_actions": list(candidates),
-        "admissible_actions": list(admissible),
-        "removed_actions": list(removed),
-        "removal_reasons": list(removal_reasons),
+        "candidate_actions": candidates,
+        "admissible_actions": admissible,
+        "removed_actions": removed,
+        "removal_reasons": removal_reasons,
         "candidate_count": len(candidates),
         "action_count": len(admissible),
         "irreversible_action_count": len(admissible) if irreversible else 0,
