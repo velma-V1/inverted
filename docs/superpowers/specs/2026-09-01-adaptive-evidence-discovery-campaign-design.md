@@ -2,7 +2,7 @@
 
 Date: 2026-09-01
 Status: DESIGN ONLY — NO TIER-A INFERENCE AUTHORIZED
-Base SHA: `ac17c75fea03987a0e4cce4d404fa71b269a773e`
+Base SHA: `e646d2e7e77ce28e92e0c8060ff758b950de995f`
 Design branch: `design/test3-adaptive-evidence-discovery`
 
 ## 1. Purpose
