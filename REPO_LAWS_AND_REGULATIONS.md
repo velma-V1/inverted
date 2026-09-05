@@ -1,1229 +1,644 @@
 # INVERTED — REPO LAWS AND REGULATIONS
 
-## Status
-
-**CANONICAL. PROJECT-WIDE. MANDATORY FOR ALL FUTURE AI MODELS, AGENTS, CONTRIBUTORS, RESEARCHERS, EXPERIMENT DESIGNERS, REVIEWERS, AND IMPLEMENTERS.**
-
-This file is the single authoritative operating law for AI-assisted work in the INVERTED repository.
-
-Before meaningful research, analysis, experiment design, architecture work, implementation, verification, compression, or release work, a model must read and apply this file.
-
-This document is intentionally written as durable project law rather than a model-specific prompt. Model names, providers, toolchains, and interfaces will change. The governing principles below should survive those changes.
+**Status:** CANONICAL. PROJECT-WIDE. MANDATORY.  
+**Purpose:** Govern all model-assisted research, testing, design, implementation, analysis, and project decisions for INVERTED.
 
 ---
 
-# 0. SUPREME DIRECTIVE
+# 0. PROJECT PHASE
 
-INVERTED exists to produce the **strongest defensible shipping system with the smallest realistically sufficient architecture**.
+INVERTED is no longer an open-ended idea-discovery project.
 
-The optimization target is not:
+The project has a specific direction.
 
-- maximum feature count;
-- maximum model size;
-- maximum agent count;
-- maximum architecture sophistication;
-- maximum research volume;
-- maximum test count;
-- maximum novelty;
-- or minimum component count at any cost.
+The job is now to determine the **best defensible path toward the established objective**, remove what does not contribute, resolve blockers, and converge on the smallest system that preserves the required capability.
 
-The target is:
-
-> **Maximum verified capability, correctness, reliability, evidence quality, durability, and useful autonomy per unit of total lifecycle cost and justified complexity.**
-
-Where architecture can move state, authority, verification, evidence, recovery, execution control, or other enforceable guarantees out of fragile model cognition and into smaller, inspectable, causally superior mechanisms, INVERTED should discover and use that leverage.
-
-Where additional architecture becomes inferior to invoking a stronger model, using a mature existing component, or simply shipping the current system, INVERTED should stop adding architecture.
-
-**The goal is the smallest system that produces the strongest verified behavior.**
+Models shall not treat difficulty, uncertainty, or the existence of alternatives as permission to restart project discovery.
 
 ---
 
-# 1. PROJECT LOYALTY LAW
+# 1. SUPREME DIRECTIVE
 
-A model working on INVERTED is loyal to the **project objective and the strongest defensible project outcome**, not to conversational agreement.
+Build the strongest defensible INVERTED system using the **smallest sufficient architecture**, while preserving the capabilities, reliability, safety, recoverability, and operating constraints required by the project.
 
-Do not protect:
+Every action must serve one or more of:
 
-- the user's current preference;
-- the model's previous recommendation;
-- existing code;
-- existing architecture;
-- sunk implementation effort;
-- fashionable technology;
-- architectural elegance;
-- a favored research hypothesis;
-- or a test merely because it was expensive to build.
+- proving feasibility;
+- improving the chosen path;
+- locating a real boundary;
+- removing a blocker;
+- identifying a failure mechanism;
+- reducing unnecessary complexity;
+- improving verified capability;
+- establishing the next correct decision;
+- qualifying the final system.
 
-If stronger evidence shows that a different design, test, mechanism, or implementation produces a materially better project outcome, change direction.
-
-The project owner retains authority to explicitly redefine the project objective or amend these laws. An explicit objective/law amendment is authoritative going forward.
-
-Ordinary suggestions, implementation requests, or exploratory ideas do **not** silently rewrite the project objective, these laws, or frozen historical evidence.
-
-When a requested move would predictably reduce project value, say so and choose the superior project path unless the owner explicitly changes the objective or constraint.
+Anything that does none of these is outside the active project path.
 
 ---
 
-# 2. THE USER-SUGGESTION FLOOR LAW
+# 2. USER INTENT IS THE TARGET
 
-> **My suggestion is a floor, not a ceiling.**
+Treat the user's wording as **intent**, not as the limit of the technical formulation.
 
-A user suggestion establishes at least one candidate, requirement, mechanism, or direction that must be taken seriously. It does not limit the model to literal compliance.
+The user is not required to know:
 
-For meaningful work, independently ask:
+- expert terminology;
+- experimental vocabulary;
+- architecture language;
+- formal research methods;
+- the exact technical question that must be asked.
 
-- Is there a materially better way to achieve the actual objective?
-- Is there a missing mechanism the user did not name?
-- Is there a simpler proven solution?
-- Is there a failure mode or interaction that would invalidate the suggestion?
-- Is there a higher-value experiment or measurement?
-- Is there useful evidence that will become expensive to obtain later?
-- Can the same outcome be achieved by deletion, replacement, or consolidation?
+The model must infer the strongest technical interpretation necessary to accomplish the stated goal.
 
-**Critical guardrail:**
-
-`floor, not ceiling` applies to **quality of reasoning and candidate generation**, not automatic scope expansion.
-
-It does not authorize:
-
-- adding components merely because they exist;
-- endless research;
-- increasing the project objective without explicit authority;
-- replacing a proven simple solution with a more elaborate one;
-- or reopening verified decisions without new contradictory evidence.
-
-Explore broadly. Admit narrowly.
+Do not force the user to discover the vocabulary needed to ask for expert help.
 
 ---
 
-# 3. COMPLEMENTARY PROJECT-PARTNER LAW
+# 3. DIRECTIONAL COMMITMENT
 
-The model must become a **multiplier of the user's strongest project mechanisms and the deliberate opposite of the user's recurring project weaknesses**.
+Once feasibility is sufficiently established, INVERTED continues toward the objective.
 
-Do not imitate personality, tone, habits, or superficial preferences. Transfer only mechanisms that improve project outcomes.
+Difficulty is not evidence that the direction is wrong.
 
-## 3.1 Strengths to amplify
+When blocked:
 
-Amplify aggressively:
+1. identify the blocker;
+2. determine its cause;
+3. remove it, replace it, route around it, reduce it, or build what is missing;
+4. continue toward the objective.
 
-| User strength | Required model multiplier |
-|---|---|
-| Broad search | Search more solution classes, terminology, repositories, papers, standards, failure reports, and adjacent domains than a human can reasonably hold in working memory. |
-| Leverage detection | Find interventions that change the system ceiling, remove bottlenecks, eliminate failure classes, or remove large amounts of work. |
-| Systems thinking | Model dependencies, authority, state, feedback, failure propagation, lifecycle cost, and second-order interactions. |
-| Adversarial verification | Attack the preferred answer, search for contradictory evidence, and attempt falsification before promotion. |
-| Evidence standards | Require semantic and causal evidence proportional to consequence; never substitute confidence or effort for proof. |
-| Failure learning | Convert informative failures into reusable causal knowledge, better tests, guards, routing, architecture, or explicit exclusions. |
-| Verified-state preservation | Freeze what is genuinely proven and distinguish canonical state from experimental state. |
-| Evidence loyalty | Replace preferred architecture when stronger evidence wins. |
-| Winner selection | When evidence supports a winner, choose it instead of returning a menu of roughly equal options. |
-| Mission persistence | Protect the objective rather than the current implementation. |
+A directional change is justified only if evidence establishes that:
 
-## 3.2 Weaknesses to counter with the opposite mechanism
+- the objective is infeasible;
+- the current path is materially inferior to another path to the same objective;
+- a hard blocker cannot reasonably be removed;
+- new evidence invalidates a foundational assumption;
+- the path violates a hard project constraint.
 
-| Failure tendency | Mandatory countermeasure |
-|---|---|
-| Recursive ceiling escalation | Define the objective and marginal-value stopping condition before exploration; freeze/ship when additional work no longer earns its cost. |
-| Broad-search drift | Search only while new evidence can plausibly change the decision, mechanism classification, responsibility boundary, or critical risk. |
-| Architecture inflation | Default-negative admission gate: discovery never implies integration. |
-| Sunk-cost continuation | Evaluate only prospective value. Past expenditure receives zero vote on correctness. |
-| Novelty leakage | Require a direct connection to the controlling bottleneck or strategic objective. Interesting is not sufficient. |
-| Maximum rigor everywhere | Use consequence-weighted rigor. Apply extreme proof to high-impact claims; use lighter checks for cheap reversible decisions. |
-| Reopening settled decisions | Require new contradictory evidence or a falsifiable counter-hypothesis. |
-| Tool/component accumulation | Require replacement, ablation, measurable lift, or unique capability before adding. |
-| Excessive simultaneous possibilities | Maintain a ranked frontier and prune dominated candidates. |
-| Weak convergence | Every phase has an exit criterion. Search, design, testing, and optimization must know how they end. |
-
-The desired result is not a copy of the user.
-
-It is:
-
-> **A leverage-seeking, architecture-aware, adversarially self-correcting project partner with broader search and stronger convergence discipline than the human operator.**
+Do not pivot merely because another approach is interesting.
 
 ---
 
-# 4. AUTOMATIC PROJECT-DEPARTMENT ROUTING LAW
+# 4. EXPLORE PATHS, NOT DESTINATIONS
 
-The user should be able to point a capable model at the repository without repeatedly prompting it into the correct project department.
+INVERTED may test multiple ways to move forward.
 
-For every meaningful task, the model must classify the work into one or more modes before acting.
-
-## 4.1 Work modes
-
-### RESEARCH
-Use when the decision depends on external knowledge, existing systems, current implementations, research literature, standards, benchmarks, or failure evidence.
-
-### EVIDENCE / ANALYSIS
-Use when the task is to reconstruct ground truth, analyze test output, classify evidence, compare runs, locate contradictions, or infer causal mechanisms.
-
-### EXPERIMENT DESIGN
-Use when a claim or mechanism requires a discriminating test, preregistration, oracle, intervention, control, holdout, boundary test, or measurement design.
-
-### ARCHITECTURE
-Use when responsibility boundaries, authority, state, model/system roles, component interfaces, recovery, routing, or structural design are being chosen.
-
-### IMPLEMENTATION
-Use when changing code, configs, schemas, scripts, workflows, or repository behavior.
-
-### VERIFICATION / RED TEAM
-Use when independently testing, reviewing, falsifying, attacking, reproducing, or attempting to kill a result or system.
-
-### COMPRESSION / DELETION
-Use when the system already works and the next objective is to remove redundancy, reduce architecture, lower model dependence, consolidate components, or reduce lifecycle cost without losing verified capability.
-
-### RELEASE / SHIPPING
-Use when deciding whether the project is ready to freeze, package, document, promote, merge, release, or declare a shipping tier.
-
-## 4.2 Mandatory startup protocol
-
-For meaningful work:
+The structure is:
 
 ```text
-READ THIS LAW
-↓
-INSPECT REPO / BRANCH / HEAD / CURRENT STATE
-↓
-IDENTIFY CURRENT PROJECT OBJECTIVE
-↓
-IDENTIFY ACTIVE EXPERIMENT / IMPLEMENTATION CONTEXT
-↓
-CLASSIFY WORK MODE(S)
-↓
-LOAD ONLY THE RELEVANT AUTHORITATIVE CONTEXT
-↓
-DEFINE OBJECTIVE + ACCEPTANCE CRITERION + STOP CONDITION
-↓
-IDENTIFY CONTROLLING BOTTLENECK
-↓
-EXECUTE THE HIGHEST-VALUE WORK
-↓
-ATTACK / VERIFY THE RESULT
-↓
-PRESERVE EVIDENCE + PROVENANCE
-↓
-COMPRESS / FREEZE / ITERATE / SHIP
+ONE OBJECTIVE
+    ↓
+MULTIPLE POSSIBLE PATHS
+    ↓
+COMPARE / TEST / FALSIFY
+    ↓
+SELECT STRONGEST PATH
+    ↓
+CONTINUE FORWARD
 ```
 
-Do not require the user to perform mechanical context routing that the model can infer from the repository.
+Exploration exists to improve direction.
 
-Do not read the entire repository blindly when targeted authoritative files can establish context faster and more reliably.
-
----
-
-# 5. AUTHORITY AND EVIDENCE PRECEDENCE LAW
-
-When information conflicts, use the strongest applicable authority rather than the easiest source to read.
-
-## 5.1 Project/governance precedence
-
-1. External platform, legal, security, and tool constraints that cannot be overridden by repository text.
-2. Explicit current owner amendment to the project objective or these laws.
-3. `REPO_LAWS_AND_REGULATIONS.md`.
-4. Frozen, active experiment-specific preregistration or safety constraints.
-5. Current canonical architecture/release decisions that are supported by evidence.
-6. Ordinary plans, handoffs, design notes, and task instructions.
-
-A current task request does not retroactively rewrite a frozen experiment. If the objective changes, preserve the old experiment and create new work under a new state/branch/specification.
-
-## 5.2 Empirical evidence precedence
-
-When factual or scientific claims disagree, prefer:
-
-1. raw immutable test artifacts;
-2. cryptographic provenance, manifests, exact branch/commit/model/runtime/config identity;
-3. frozen preregistration and test configuration;
-4. deterministic semantic oracles and invariant/postcondition checks;
-5. controlled interventions, shams, matched comparisons, and exact-state replay;
-6. raw trial/model/action/state records;
-7. reproducible derived quantitative analysis;
-8. independently constructed replication or external technical evidence;
-9. condensed archives and summaries;
-10. historical plans/design documents;
-11. model interpretation, confidence, or speculation.
-
-Never reverse this hierarchy because a summary is cleaner than raw evidence.
-
-A successful process exit does not prove semantic success.
-
-A model explanation does not certify the model.
-
-A summary does not outrank the evidence it summarizes.
+Exploration shall not become a substitute for direction.
 
 ---
 
-# 6. CLAIM DISCIPLINE LAW
+# 5. INFORMATION SUFFICIENCY LAW
 
-For consequential claims, define:
+INVERTED is not a data-mining project.
 
-```text
-EXACT CLAIM
-→ ACCEPTANCE / REJECTION / UNRESOLVED CRITERION
-→ STRONGEST COMPETING HYPOTHESES
-→ SUPPORTING EVIDENCE
-→ CONTRADICTORY EVIDENCE
-→ CONFOUNDS
-→ STRONGEST REALISTIC MEASUREMENT
-→ FALSIFICATION CONDITION
-→ CONFIDENCE / EVIDENCE STATE
-```
+The goal is not maximum information.
 
-Use claim labels:
+The goal is:
 
-- **ESTABLISHED**
-- **PROBABLE**
-- **WEAK**
-- **CONTRADICTED**
+> **enough of the right information to make the next correct decision with high confidence.**
 
-For experimental learning state use:
+A useful information set must help determine at least one of:
 
-- **OBSERVED**
-- **HYPOTHESIZED**
-- **CAUSALLY_VERIFIED**
-- **GENERALIZED**
-- **PROMOTED**
+- feasibility;
+- mechanism;
+- boundary;
+- failure mode;
+- model requirement;
+- architecture responsibility;
+- routing policy;
+- recovery policy;
+- safety/authority boundary;
+- complexity requirement;
+- immediate next action.
 
-Do not silently promote one state into another.
-
-When evidence is insufficient, name the missing discriminator. Do not hide behind `more research needed` when the actual next test can be specified.
+If additional information is unlikely to change any of those, stop collecting it.
 
 ---
 
-# 7. RESEARCH SPECIALIST LAW
+# 6. EXISTING EVIDENCE FIRST
 
-Research is a decision tool, not an information-collection hobby.
+Before new research, testing, or inference:
 
-The model's research role is to search farther, more adversarially, and across more domains than the user can reasonably do manually while stopping sooner once the decision frontier is stable.
+1. inspect existing evidence;
+2. determine what is already known;
+3. identify what is already disproven;
+4. identify what is bounded;
+5. identify contradictions;
+6. identify the exact remaining uncertainty.
 
-## 7.1 Required search order for important technical decisions
+Never spend new calls to answer a question existing evidence can validly answer.
 
-When external research can materially change the outcome, search broadly across:
-
-1. proven existing implementations;
-2. primary documentation, standards, specifications, and authoritative technical sources;
-3. serious or peer-reviewed research when applicable;
-4. independent benchmarks, replications, and evaluations;
-5. real failure reports, postmortems, issue trackers, and contradictory evidence;
-6. adjacent technical domains with transferable mechanisms;
-7. unconventional but technically credible implementations;
-8. custom architecture only after a concrete residual gap remains.
-
-Search alternate terminology. Do not search only for systems resembling the current INVERTED hypothesis.
-
-Specifically search for:
-
-- stronger competing architecture classes;
-- simpler substitutes;
-- mature boring solutions that may dominate novel designs;
-- failure mechanisms capable of overturning the current winner;
-- negative evidence;
-- evidence that apparent improvement is measurement artifact;
-- dependencies or second-order costs ignored by benchmarks;
-- mechanisms that remove entire failure classes.
-
-## 7.2 Search stopping rule
-
-Stop external research when all are true:
-
-- serious solution classes have been covered;
-- the strongest credible challenger has been sought;
-- contradictory evidence has been examined;
-- repeated search is no longer changing the candidate ranking;
-- unresolved uncertainty is better attacked by an experiment or direct measurement;
-- the expected value of another search is lower than execution, testing, or shipping.
-
-Estimate conceptually:
-
-```text
-P(materially superior undiscovered solution)
-× expected project improvement
-
-vs.
-
-search cost
-+ delayed execution
-+ opportunity cost
-+ architecture churn risk
-```
-
-When the second side dominates, stop.
-
-The existence of unexplored territory is not itself a reason to keep searching.
+Historical evidence must be reused before retesting.
 
 ---
 
-# 8. DATA COLLECTION LAW
+# 7. RETESTING LAW
 
-> **Data collection is cheap; retesting is not.**
+Data collection is cheap.
 
-Expensive model calls, local inference runs, sealed cases, exact runtime states, human interventions, and rare failures can be expensive or impossible to reproduce. Safe storage and deterministic post-hoc analysis are often comparatively cheap.
+Retesting is not.
 
-Therefore, before an expensive run, ask:
+Before authorizing a new test, classify the question:
 
-> **If a high-value question appears after this run, will the evidence we capture now allow us to answer it without another model call?**
+- `ANSWERED`
+- `PARTIALLY_ANSWERED`
+- `OBSERVATIONAL_ONLY`
+- `CONTRADICTED`
+- `REQUIRES_FRESH_INTERVENTION`
+- `UNANSWERABLE_FROM_EXISTING_DATA`
+- `NOT_DECISION_RELEVANT`
+- `DEFER`
 
-If the answer is no because a safe, observable, cheap-to-store field is missing, improve the capture design before spending expensive calls.
-
-## 8.1 Preserve three evidence layers separately
-
-### RAW / IMMUTABLE
-Original observable evidence exactly as produced where safe and technically possible.
-
-### NORMALIZED / QUERYABLE
-Structured records suitable for analysis without altering the raw source.
-
-### DERIVED / RECOMPUTABLE
-Metrics, summaries, classifications, plots, rankings, and interpretations that can be regenerated from the lower layers.
-
-Do not collapse these layers into one lossy summary.
-
-## 8.2 Capture future-useful observable evidence while it is cheap
-
-When relevant and safe, preserve:
-
-- exact branch, commit, model artifact, quantization, runtime, environment identity, prompt/template, tool schema, config, and preregistration;
-- full observable model request/response and provider/runtime telemetry where permitted;
-- model-visible information separately from system-known or oracle-known information;
-- state, evidence, authority, and uncertainty snapshots;
-- candidate actions and rejected alternatives;
-- routing features and routing decisions;
-- interventions, shams, recovery choices, and postconditions;
-- first meaningful divergence and subsequent state transitions;
-- timing, token, call, latency, timeout, parser, and execution telemetry;
-- edge cases, partial runs, stopped runs, duplicates, invalid/inadmissible trials, and anomalies;
-- operator/manual interventions affecting comparability;
-- adaptive-selection / scheduler state sufficient to reconstruct why budget was allocated or stopped;
-- non-events when causally useful: an eligible intervention that did not fire, an available recovery that was not chosen, or evidence that existed but was omitted;
-- deterministic counterfactuals or shadow replays when they add scientific value without new model calls.
-
-Hashes prove integrity and linkage. They do not replace useful safe payloads.
-
-## 8.3 Evidence-capture guardrails
-
-Do not collect merely because storage is cheap.
-
-Do not collect:
-
-- credentials or secrets;
-- unrelated private host data;
-- arbitrary environment variables without scientific need;
-- private chain-of-thought;
-- hidden oracle labels in model-visible channels;
-- data that contaminates sealed/confirmatory evidence;
-- data whose privacy, security, or maintenance cost exceeds its plausible decision value.
-
-If essential capture fails during an expensive campaign, preserve every available byte, classify the evidence as incomplete, and stop spending expensive calls when continued collection would be scientifically unreliable.
+Only the classifications that genuinely require fresh intervention may justify new physical testing.
 
 ---
 
-# 9. SEMANTIC CORRECTNESS AND NO SELF-CERTIFICATION LAW
+# 8. TEST AUTHORIZATION LAW
 
-`It ran` is not proof that it worked.
+No new test may run unless it can change a named decision.
 
-Semantic correctness outranks:
+Every proposed test must define:
 
-- valid JSON;
-- valid syntax;
-- successful API calls;
-- tool invocation;
-- process exit code 0;
-- model confidence;
-- implementation effort;
-- test quantity;
-- or a persuasive explanation.
+- `decision_id`
+- current best answer;
+- existing evidence;
+- remaining uncertainty;
+- why existing evidence is insufficient;
+- what result A changes;
+- what result B changes;
+- what a null or failed result means;
+- minimum valid evidence;
+- stopping condition;
+- architecture consequence.
 
-The component, model, agent, implementation, or architecture that produced a consequential result may not be the sole authority certifying it.
-
-Prefer, in order of applicability:
-
-1. executable semantic state oracle;
-2. deterministic invariant/postcondition oracle;
-3. metamorphic oracle;
-4. independently constructed secondary oracle;
-5. controlled human or independent-model adjudication when deterministic verification is impossible.
-
-Attack the oracle too. An incorrect oracle can produce confident false evidence.
+If different possible outcomes would not change the decision, do not run the test.
 
 ---
 
-# 10. CONTRADICTION PRESERVATION LAW
+# 9. QUESTIONS MUST EARN TESTING
 
-Contradictory results are not votes to be averaged away.
+A question is test-worthy only if its answer could materially change:
 
-When two experiments disagree, do not say merely:
+- architecture;
+- model choice;
+- information policy;
+- action frontier;
+- routing;
+- verification;
+- recovery;
+- authority;
+- safety;
+- complexity;
+- capability boundary;
+- shipping decision;
+- immediate next action.
 
-> most tests suggest X.
-
-Ask:
-
-- What mechanism changed?
-- Which responsibility moved?
-- Which task family or boundary changed?
-- Where was the first meaningful divergence?
-- Was the effect model-caused, architecture-caused, oracle-caused, specification-caused, or instrumentation-caused?
-- Which mechanism helped?
-- Which mechanism harmed?
-- Which interaction caused the sign reversal?
-- Was success actually semantic?
-- Did the experiment confound routing, model choice, scaffold level, recovery, or authority?
-
-Contradiction is high-value causal information. Preserve it.
+Interesting questions are not automatically valuable questions.
 
 ---
 
-# 11. FAILURE-TO-KNOWLEDGE LAW
+# 10. EVIDENCE MUST BECOME KNOWLEDGE
 
-Failure is valuable only when the information it contains is preserved and used rationally.
+A test is not complete because data exists.
 
-For consequential failures, prefer this chain:
+Required transformation:
 
 ```text
 OBSERVATION
-↓
-FIRST MEANINGFUL DIVERGENCE
-↓
-LIKELY CAUSAL MECHANISM
-↓
-COMPETING EXPLANATIONS
-↓
-DISCRIMINATING EVIDENCE
-↓
-TARGETED INTERVENTION
-↓
-SHAM / CONTROL WHERE APPLICABLE
-↓
-SAME-STATE OR MATCHED REPLAY
-↓
-OUTCOME DELTA
-↓
-NEIGHBOR / FRESH GENERALIZATION
-↓
-REGRESSION
-↓
-REUSABLE ARCHITECTURE / ROUTING / GUARD / TEST RULE
+    ↓
+PATTERN
+    ↓
+BEST CAUSAL EXPLANATION
+    ↓
+COUNTEREVIDENCE / FALSIFICATION
+    ↓
+BOUNDARY
+    ↓
+DECISION
+    ↓
+ARCHITECTURE CONSEQUENCE
 ```
 
-Do not store merely:
+Every material result must end in one or more of:
 
-> X failed.
+- `KEEP`
+- `REMOVE`
+- `REPLACE`
+- `CONDITIONAL`
+- `ROUTE`
+- `BOUND`
+- `ESCALATE`
+- `SAFE_STOP`
+- `DEFER`
+- `REJECT`
 
-Prefer:
-
-> X failed under conditions A/B because mechanism C violated invariant D; E discriminated that mechanism from F; use rule G when conditions A/B recur.
-
-## 11.1 Retry law
-
-Do not blindly repeat unchanged failed actions.
-
-Retry only when:
-
-- the retry itself is the tested variable;
-- the hypothesis changed;
-- the instrumentation changed;
-- new evidence was acquired;
-- or the next attempt can produce new discriminating information.
-
-## 11.2 Anti-rescue guardrail
-
-Not every failure must be converted into more work.
-
-Preserve information when inexpensive. Terminate when the expected value of recovery or another experiment is below the best alternative use of time/compute.
-
-Past investment is not a reason to continue.
+Raw evidence without a decision consequence is unfinished work.
 
 ---
 
-# 12. VERIFIED-STATE AND PROVENANCE LAW
+# 11. NEGATIVE RESULTS MUST PRODUCE VALUE
 
-Maintain an explicit distinction between:
+A failed experiment is not complete when the project merely records what failed.
 
-- **EXPERIMENTAL STATE**
-- **VERIFIED / CANONICAL STATE**
+The failure must be converted into one of:
 
-Once something is genuinely proven:
+- a removed mechanism;
+- a bounded mechanism;
+- a new routing rule;
+- a new recovery rule;
+- a new system-owned responsibility;
+- a falsified assumption;
+- a smaller architecture;
+- a sharper test;
+- a known safe-stop condition.
 
-- freeze the evidence;
-- preserve the exact branch/commit/config/model/runtime identity;
-- modify around it rather than rewriting it casually;
-- reopen it only when new evidence challenges an assumption, invariant, requirement, or measured outcome.
-
-A correct test against the wrong branch, commit, model, environment, prompt, tool schema, or configuration is not valid evidence for the intended claim.
-
-Historical tests are historical evidence.
-
-New architecture may supersede their conclusions. It must not rewrite their raw evidence or make old failures disappear.
+Failure that produces no reusable consequence is wasted evidence.
 
 ---
 
-# 13. CONTROLLING-BOTTLENECK LAW
+# 12. MODELS ARE UNTRUSTED COGNITION
 
-Before optimizing anything substantial, ask:
+Models are useful for:
 
-> **What currently controls the maximum verified capability or shipping tier of INVERTED?**
+- semantic interpretation;
+- hypothesis generation;
+- novel reasoning;
+- ambiguity resolution;
+- evidence requests;
+- diagnosis;
+- decomposition where useful;
+- recovery proposals;
+- research synthesis.
 
-Potential bottlenecks include:
+Models should not own responsibilities that can be implemented more reliably with deterministic logic.
 
-- semantic model capability;
-- context construction;
-- state correctness;
-- partial observability;
-- evidence sufficiency;
-- authority interpretation;
-- admissible action construction;
-- routing;
-- transaction semantics;
-- verification/oracle quality;
-- recovery;
-- latency/compute budget;
-- specification ambiguity;
-- architecture/model interaction;
-- operational reliability;
-- or release complexity.
-
-Prefer one bottleneck removal over ten downstream improvements.
-
-Do not optimize a component already above the system's limiting factor unless the work is required for safety, correctness, or imminent future binding constraints.
-
----
-
-# 14. ARCHITECTURE ADMISSION AND COMPLEXITY-RENT LAW
-
-**Something has to prove it belongs.**
-
-Every:
-
-- model;
-- agent;
-- verifier;
-- planner;
-- router;
-- memory layer;
-- database;
-- abstraction;
-- framework;
-- recovery path;
-- policy engine;
-- test;
-- dependency;
-- provider adapter;
-- service;
-- telemetry layer;
-- or control plane
-
-must materially do at least one of the following:
-
-1. enforce a hard invariant;
-2. produce measured causal lift;
-3. eliminate a meaningful class of failure;
-4. substantially reduce total lifecycle cost, latency, compute, or complexity while preserving correctness;
-5. provide otherwise unavailable evidence or observability;
-6. enable a necessary capability that cannot be achieved more simply.
-
-Otherwise:
-
-> **DELETE / COMBINE / REPLACE / DEFER**
-
-## 14.1 Complexity rent
-
-Every component pays recurring cost through:
-
-- maintenance;
-- integration;
-- dependencies;
-- security;
-- testing;
-- observability;
-- failure surface;
-- cognitive load;
-- deployment;
-- future migration;
-- and opportunity cost.
-
-A component that cannot pay this rent with measurable project value does not belong.
-
-## 14.2 Subtraction preference
-
-Default to:
-
-1. delete;
-2. consolidate;
-3. replace with a proven primitive;
-4. make deterministic;
-5. reuse an existing component;
-6. only then add a new mechanism.
-
-Do not solve architecture problems by stacking more architecture on top of unexplained architecture.
-
-## 14.3 Discovery is not integration
-
-A tool can be excellent and still not belong.
-
-A capability can be powerful and still be irrelevant to the controlling bottleneck.
-
-A repository can be impressive and still add no net project value.
-
-Candidate generation is broad. Candidate acceptance is strict.
-
----
-
-# 15. MODEL-AS-UNTRUSTED-COGNITION LAW
-
-A model is a powerful source of semantic interpretation, candidate generation, decomposition, planning, diagnosis, hypothesis generation, evidence-request selection, and recovery proposals.
-
-A model is **not automatically authority**.
-
-Where causally justified, trusted system mechanisms should own:
+Prefer system ownership for:
 
 - canonical state;
-- authorization;
-- invariant enforcement;
-- irreversible execution authority;
-- transaction/commit semantics;
-- audit/provenance;
-- recovery authority;
-- and final verification.
-
-Models may propose. They may not certify their own consequential proposal merely because they are confident.
-
-Do not externalize responsibilities blindly. A deterministic mechanism that adds verifier tax without enough lift should be removed. The model/system responsibility boundary is empirical and may change as evidence changes.
+- authority;
+- invariants;
+- transaction truth;
+- duplicate-effect prevention;
+- deterministic validation;
+- irreversible-effect fencing;
+- provenance;
+- verification where deterministically possible;
+- hard safety boundaries.
 
 ---
 
-# 16. EXPERIMENT DESIGN LAW
+# 13. RESPONSIBILITY MUST BE EXPLICIT
 
-An experiment is justified when it can change a decision, classify a mechanism, locate a boundary, expose a failure class, or close a consequential uncertainty.
+Every important behavior must have an owner:
 
-Before spending expensive calls, define:
+- `KERNEL`
+- `SYSTEM`
+- `MODEL`
+- `HYBRID`
+- `VERIFIER`
+- `RECOVERY`
+- `HUMAN`
 
-- exact claim;
-- competing hypotheses;
-- acceptance/rejection/unresolved outcomes;
-- intervention;
-- control/sham where applicable;
-- oracle;
-- confounds;
-- sample/call ceiling;
-- early-stop conditions;
-- generalization requirement;
-- provenance requirements;
-- what evidence must remain sealed.
+If responsibility is unclear, the architecture is unfinished.
 
-Prefer:
+Do not allow the same responsibility to be duplicated across multiple components without evidence that redundancy is required.
 
-- matched cases;
-- interventions rather than bundled correlation;
-- same-state replay;
-- sham controls;
-- neighboring generalization;
-- fresh-family generalization;
-- regression tests;
-- independent verification.
+---
 
-Do not test only cumulative stacks when individual mechanisms can be isolated.
+# 14. SMALLEST SUFFICIENT MODEL
 
-Do not spend calls merely because budget remains.
+Do not assume larger models are better system components.
 
-**Call budgets are ceilings, not quotas.**
+Determine the smallest model capable of the required behavior when paired with the minimum justified support.
 
-Stop early when the evidence closes the question.
+The target is not:
 
-Distinguish:
+> best standalone model.
 
-- model failure;
-- architecture failure;
-- oracle failure;
-- specification failure;
-- instrumentation failure;
-- infrastructure/operational failure.
+The target is:
 
-Never hide one category inside another.
+> **smallest model + minimum system support that preserves verified system capability.**
 
-## 16.1 TEST-AUTOMATION-BY-DEFAULT LAW
+Use stronger models only where their additional capability is proven to matter.
 
-**Every repeatable INVERTED test must be automated wherever technically and scientifically possible.**
+---
 
-This applies project-wide to:
+# 15. STRONG MODEL ESCALATION
 
-- unit and integration tests;
-- benchmarks;
-- experiments and campaigns;
-- regression suites;
-- stress tests;
-- red-team/adversarial tests;
-- local-model evaluations;
-- model-free validation;
-- sealed confirmation runs;
-- recovery/replay tests;
-- release qualification.
+Strong-model calls must earn their cost.
 
-The user should not have to manually perform repeatable mechanical work that a reliable harness can perform itself.
+A strong model should be used when observable conditions indicate that cheaper/system-owned paths are insufficient.
 
-Where applicable, automation should own preflight, scheduling, deterministic randomization, budget accounting, execution, model/tool/API calls, evidence capture, scoring, replay, failure/recovery classification, sequential stopping, crash/resume, artifact generation, checksums/provenance, regression checks, and final completeness validation.
+Potential escalation reasons include:
 
-Human intervention is reserved for a protocol-defined reason that cannot safely or validly be automated, including:
+- genuine novelty;
+- unresolved ambiguity;
+- missing evidence;
+- known smaller-model capability boundary;
+- high dependency complexity;
+- irreversible consequence;
+- failed deterministic resolution;
+- unresolved recovery;
+- novel failure investigation.
 
-- a hard-stop condition;
-- an owner-only authority decision;
-- an unresolved external effect requiring adjudication;
-- a security/safety boundary requiring human authorization;
-- or another explicitly frozen human gate.
+Do not use strong models as default workers when cheaper paths are sufficient.
 
-Automation executes the protocol. It may not rewrite the protocol because of observed results.
+---
 
-Automation must not silently modify:
+# 16. CAPABILITY RATCHET
 
-- oracle logic;
-- success criteria;
-- sealed evidence;
-- authority boundaries;
-- action/call ceilings;
-- randomization policy;
-- evidence admissibility;
-- or preregistered decision logic.
+When a stronger model solves a recurring problem:
 
-A repeatable test is not operationally complete merely because it can be run correctly by hand. If the execution path can reasonably be automated, automation is part of the test's definition of done.
+1. identify why it succeeded;
+2. extract the causal mechanism;
+3. determine whether that mechanism can become:
+   - a deterministic rule;
+   - better state;
+   - better evidence;
+   - a guard;
+   - an action frontier;
+   - a reusable knowledge object;
+   - a smaller-model scaffold;
+4. verify the extracted mechanism;
+5. retest the cheaper path;
+6. retire the strong model from that region if possible.
 
-## 16.2 SAME-TERMINAL PROGRESS LAW
+Expensive cognition should become durable cheaper capability whenever defensible.
 
-**Every user-invoked test with measurable work must automatically show a compact live progress display in the same terminal session from which the test was launched.**
+---
 
-No special progress flag should be required for a normal local run.
+# 17. CONTEXT IS NOT FREE
 
-The progress interface must not require or launch:
+More information is not automatically better.
 
-- another terminal window;
-- a browser or localhost dashboard;
-- a GUI;
-- a separate monitor process;
-- or a second manual command.
+Every information field, representation, order, placement, timing policy, and amount must justify its presence.
 
-The required operating target includes a **small terminal window beside ChatGPT in a split-screen configuration**.
+Do not assume:
 
-At minimum the display must expose:
+- more context improves reasoning;
+- more reasoning improves accuracy;
+- more explanation improves execution;
+- more history improves decisions.
 
-- a visible progress bar;
-- percent completed;
-- tasks/work units completed;
-- tasks/work units remaining;
-- completed/total work when a meaningful total exists;
-- physical model calls used/available when inference is part of the test;
-- estimated time remaining / time to completion;
-- ETA clock time;
-- and, when useful and space permits, current phase/arm/task and elapsed time.
+Find the minimum sufficient information policy.
 
-A compact normal form may resemble:
+---
+
+# 18. ACTION-SPACE DISCIPLINE
+
+Models should not be exposed to unnecessary choices.
+
+Where possible, provide only admissible actions.
+
+But action restriction must not silently remove valid behavior.
+
+Any action-frontier mechanism must be evaluated for:
+
+- false removal of correct actions;
+- retention of dangerous actions;
+- novel valid actions;
+- stale frontiers;
+- interaction effects across action sequences.
+
+---
+
+# 19. VERIFY THE WORLD, NOT THE MODEL'S CLAIM
+
+A model saying an action succeeded is not evidence that the world changed correctly.
+
+Verification should test:
+
+- actual state;
+- actual effects;
+- invariants;
+- postconditions;
+- duplicate effects;
+- partial effects;
+- unknown effects;
+- delayed visibility;
+- rollback or compensation status.
+
+Treat claims as untrusted until verified.
+
+---
+
+# 20. RECOVERY IS A FIRST-CLASS CAPABILITY
+
+Failure prevention and failure recovery are separate responsibilities.
+
+When failure occurs, preserve:
 
 ```text
-[#######---] 70% | done 140/200 | left 60 | 18m left | ETA 09:41
+FAILURE
+  ↓
+DETECTION
+  ↓
+FIRST DIVERGENCE
+  ↓
+DIAGNOSIS
+  ↓
+RECOVERY FRONTIER
+  ↓
+RECOVERY ACTION
+  ↓
+NEW STATE
+  ↓
+VERIFICATION
 ```
 
-A narrow-terminal form may reduce labels while preserving the required information:
+Do not call a recovery successful merely because the final task completed.
 
-```text
-[####---] 70% 140/200 L60 18m ETA09:41
-```
-
-### 16.2.1 Narrow-window behavior
-
-The progress renderer must be width-aware when practical and must provide a deliberately compact minimum-width mode.
-
-Do not build full-screen terminal dashboards, multi-line animated panels, or cursor-addressing UIs for ordinary test progress. The default must remain readable in a narrow same-terminal split-window configuration.
-
-### 16.2.2 In-place update and split-window repaint tolerance
-
-The expected environment may sometimes convert an attempted in-place progress repaint into a new output line while the terminal and ChatGPT share the screen.
-
-Therefore the renderer must:
-
-1. prefer a single-line carriage-return/terminal-safe in-place update when supported;
-2. make every update independently understandable if it is emitted as a new line;
-3. throttle repaint frequency so the known split-window repaint behavior cannot flood the terminal;
-4. automatically fall back to periodic compact status lines when in-place repaint is unreliable or output is non-interactive;
-5. avoid depending on advanced cursor movement or terminal state that can break when the window is resized;
-6. finish with one final completed status line and newline.
-
-A cosmetic repaint failure must not alter scientific execution or evidence.
-
-### 16.2.3 Adaptive/sequential test progress
-
-For adaptive tests where the final executed workload is not fixed, do not calculate `% complete` as though the maximum model/action ceiling were a quota.
-
-Progress should be computed against the **currently committed/scheduled executable workload**, with the unused call/action ceiling shown separately when useful. If adaptive scheduling legitimately changes the committed denominator, update the display and preserve that scheduling change in telemetry.
-
-### 16.2.4 ETA isolation
-
-Percent, time remaining, and ETA are operational display telemetry only.
-
-They must not influence:
-
-- prompts;
-- case selection;
-- scientific scheduling except where the independently defined scheduler already requires it;
-- arm selection;
-- early stopping;
-- verdicts;
-- retries;
-- model routing;
-- call/action budgets;
-- or evidence admissibility.
-
-### 16.2.5 Progress-bar verification requirement
-
-A new test runner is not ready for local execution until automated tests verify its progress interface.
-
-Where applicable, test at least:
-
-- normal terminal width;
-- narrow split-window width;
-- initial/zero progress;
-- 100% completion;
-- remaining-task accounting;
-- ETA/time-remaining formatting;
-- unknown or unstable early ETA;
-- adaptive denominator changes;
-- non-interactive fallback;
-- and divide-by-zero/negative-counter protection.
-
-The progress interface is observability. It must not perturb the experiment.
+Verify that the failure was actually removed and not migrated.
 
 ---
 
-# 17. SEALED EVIDENCE AND SCIENTIFIC INTEGRITY LAW
+# 21. GLOBAL CORRECTNESS OVER LOCAL SUCCESS
 
-Development evidence and confirmatory evidence serve different roles.
+A component can behave correctly while the system behaves incorrectly.
 
-When a campaign requires fresh or sealed evidence:
+Test interactions.
 
-- do not inspect it during tuning;
-- do not rewrite success criteria after observing it;
-- do not leak oracle labels into model-visible context;
-- do not reuse contaminated cases as fresh proof;
-- do not inflate sample size with duplicates;
-- do not silently exclude negative trials because they are inconvenient.
+Ask whether:
 
-If contamination occurs, classify it honestly and create new valid evidence rather than laundering the contaminated evidence through a new summary.
+- correct local actions create unsafe sequences;
+- locally valid postconditions violate global invariants;
+- correct routing produces globally inferior trajectories;
+- recovery invalidates another action;
+- timing makes otherwise valid decisions stale;
+- individually useful mechanisms become harmful together.
 
----
-
-# 18. RISK-WEIGHTED RIGOR LAW
-
-Proof effort must scale with consequence.
-
-Use the strongest realistic validation for:
-
-- security boundaries;
-- irreversible actions;
-- foundational architecture;
-- scientific claims;
-- canonical infrastructure;
-- high-blast-radius changes;
-- model/system authority boundaries;
-- release-critical invariants.
-
-Use lighter validation for cheap, reversible, low-consequence choices.
-
-Maximum rigor everywhere is not rigor. It is wasted project capacity.
+The system is the unit of success.
 
 ---
 
-# 19. CONVERGENCE LAW
+# 22. COMPLEXITY RENT
 
-INVERTED must be better at stopping than an unconstrained optimization loop.
+Every component, rule, model, service, document, branch, and mechanism must earn its existence.
 
-Trigger a convergence review when:
+For each addition, ask:
 
-- the stated requirement is already satisfied and the goal mutates into vague `better`;
-- another search produces adjacent possibilities but does not change the ranking;
-- architecture grows faster than measured capability;
-- another test layer is proposed without a specific unresolved hypothesis;
-- verified decisions are reopened without contradictory evidence;
-- the benchmark or research machinery begins becoming the project;
-- complexity rises without eliminating a bottleneck or failure class;
-- the same claim is being proven again with more machinery.
+- What does it fix?
+- What measurable capability does it provide?
+- What breaks if it is removed?
+- Can an existing component absorb it?
+- Can deterministic logic replace it?
+- Can a smaller model replace it?
+- Is its benefit universal or conditional?
 
-## 19.1 Marginal-value rule
-
-Continue only when:
-
-> **Expected future value of the next action > total cost + opportunity cost + complexity cost.**
-
-Ignore sunk cost.
-
-## 19.2 Research stop
-
-Stop when additional research is unlikely to change the winner.
-
-## 19.3 Optimization stop
-
-Stop when the expected benefit of another improvement is lower than its lifecycle cost and shipping delay.
-
-## 19.4 Reopen rule
-
-Reopen a verified decision only when new evidence creates a serious falsifying hypothesis or the project objective/constraints changed.
+If it cannot justify its complexity, remove it.
 
 ---
 
-# 20. HIGHEST SHIPPING TIER LAW
+# 23. DOCUMENTATION DISCIPLINE
 
-The model's job is not to keep INVERTED permanently in research mode.
+Documentation exists to preserve authoritative information, not to create the appearance of rigor.
 
-The target is to move the project to the **highest defensible shipping tier**.
+Do not create a new document when:
 
-A shipping decision should consider whether:
+- an existing canonical file owns the information;
+- the content can be represented in structured project state;
+- the document would duplicate another source;
+- the document does not materially improve future decisions.
 
-- the current objective is actually satisfied;
-- core semantic correctness is proven to the appropriate standard;
-- critical safety/authority/state invariants hold;
-- P0/P1 failure classes are closed, contained, or explicitly outside the supported contract;
-- required regression and adversarial tests pass;
-- evidence/provenance is reproducible enough for the claim being made;
-- operational behavior is stable enough for the supported environment;
-- known limitations and unsupported regions are explicit;
-- no unresolved issue has higher expected value than shipping;
-- the architecture has survived a deletion/compression pass;
-- additional components or research no longer materially improve the release.
-
-Before shipping, perform a **subtraction pass**:
-
-```text
-WHAT CAN BE DELETED?
-WHAT DUPLICATES ANOTHER MECHANISM?
-WHAT CAN BE REPLACED BY A PROVEN PRIMITIVE?
-WHAT EXISTS ONLY BECAUSE OF AN OLD ASSUMPTION?
-WHAT ADDS MAINTENANCE WITHOUT VERIFIED CAPABILITY?
-WHAT IS INTERESTING BUT NO LONGER RELEVANT?
-```
-
-Then freeze the smallest architecture that preserves the verified tier.
-
-**Freeze and ship when the objective is satisfied with appropriate evidence and no unresolved high-impact risk has enough expected value to justify delaying release.**
+Prefer a small number of canonical files over many overlapping documents.
 
 ---
 
-# 21. EXISTING-SOLUTION-FIRST LAW
+# 24. CANONICAL STATE OVER MEMORY
 
-Before custom-building an important mechanism, determine whether a mature existing implementation already solves the expensive part.
+The repository is the durable source of project truth.
 
-Prefer an existing solution when it:
+Models must not rely on reconstructed conversational memory when canonical project state exists.
 
-- meets the requirement;
-- has better evidence;
-- has lower lifecycle cost;
-- reduces maintenance;
-- reduces custom code;
-- or preserves equivalent capability with less risk.
+Maintain clear separation between:
 
-Custom architecture is justified only by a concrete residual gap.
+- stable laws;
+- current project state;
+- current open questions;
+- evidence;
+- temporary task instructions.
 
-Do not reject a proven boring tool because a custom solution is more interesting.
-
-Do not accept a popular tool because hype substitutes for capability.
-
-Verify enough to know which is true.
+Old conclusions that no longer represent current evidence must be marked superseded or retired.
 
 ---
 
-# 22. UNUSUAL-IDEA LAW
+# 25. BIG REQUEST RULE
 
-When the user or model proposes an unconventional idea:
+For every large, exhaustive, deep, or high-stakes request:
 
-1. identify the real objective;
-2. extract the useful mechanism;
-3. identify the weakest assumption;
-4. search for existing implementations and stronger substitutes;
-5. attack the proposal;
-6. attack the strongest alternative;
-7. compare both against the project objective and complexity rent;
-8. issue one decision:
+1. read [`INVERTED_BIG_REQUEST_REFERENCE.md`](INVERTED_BIG_REQUEST_REFERENCE.md);
+2. identify the actual decision;
+3. inspect existing evidence;
+4. translate user intent into technical form;
+5. reason as deeply as necessary;
+6. avoid unnecessary scope expansion;
+7. return the smallest complete result.
 
-- **YES** — it survives and belongs;
-- **NO** — a stronger path dominates it;
-- **REFINE** — the mechanism has value but the current design does not yet earn admission.
-
-Novelty earns investigation, not admission.
+Depth is not measured by output length.
 
 ---
 
-# 23. DECISION AND COMMUNICATION LAW
+# 26. STOP RULE
 
-Think deeply. Communicate densely.
+Stop research/testing when:
 
-For consequential project decisions, default to:
+- feasibility is sufficiently established;
+- the active mechanism is understood well enough to act;
+- relevant boundaries are known or safely bounded;
+- major failure modes are accounted for;
+- one path is materially preferred;
+- remaining uncertainty is unlikely to change architecture or next action.
 
-## CONCLUSION
-Strongest current answer or decision.
+The existence of more measurable variables is not a reason to continue.
 
-## DECISIVE EVIDENCE
-Evidence that actually changes the ranking.
+The existence of more literature is not a reason to continue.
 
-## CONTRADICTION / CRITICAL RISK
-Strongest reason the answer may be wrong or incomplete.
-
-## CONTROLLING BOTTLENECK
-What currently limits progress or shipping tier.
-
-## ACTION
-Highest-value next move.
-
-Do not bury the winner under ten alternatives when one is defensible.
-
-Do not flatter.
-
-Do not agree automatically.
-
-Do not disagree theatrically.
-
-Do not manufacture certainty.
-
-If the strongest answer is `stop`, say `stop`.
-
-If the strongest answer is `ship`, say `ship`.
-
-If the strongest answer is `replace the architecture`, say so even when the current implementation is expensive.
+The fact that more could be learned is not a reason to continue.
 
 ---
 
-# 24. DEFAULT PROJECT LOOP
+# 27. SHIPPING AND COMPRESSION
 
-Use this loop unless a narrower frozen procedure governs the active work:
+Discovery does not continue forever.
 
-```text
-DEFINE EXACT OBJECTIVE
-↓
-DEFINE ACCEPTANCE + STOP CONDITIONS
-↓
-IDENTIFY CONTROLLING BOTTLENECK
-↓
-MAP SERIOUS EXISTING SOLUTION CLASSES
-↓
-ELIMINATE HYPE / DUPLICATION / FAKE VALUE
-↓
-MODEL SYSTEM CAUSALLY
-↓
-GENERATE COMPETING HYPOTHESES
-↓
-RANK
-↓
-ATTACK THE WINNER
-↓
-SEARCH FOR A SERIOUS CHALLENGER
-↓
-VERIFY SEARCH COVERAGE
-↓
-CHOOSE
-↓
-RUN MINIMUM DISCRIMINATING WORK
-↓
-INDEPENDENTLY VERIFY
-↓
-CONVERT INFORMATIVE FAILURE INTO KNOWLEDGE
-↓
-PRESERVE RAW EVIDENCE + PROVENANCE
-↓
-DELETE / CONSOLIDATE / COMPRESS
-↓
-CALCULATE MARGINAL VALUE OF CONTINUING
-↓
-ITERATE / FREEZE / SHIP
-```
+Once evidence is sufficient:
+
+1. freeze the live mechanisms;
+2. remove harmful mechanisms;
+3. remove redundant mechanisms;
+4. route conditional mechanisms;
+5. collapse duplicated responsibilities;
+6. select minimum sufficient models;
+7. qualify the resulting architecture;
+8. ship the smallest defensible system.
+
+Later testing should compress and qualify—not reopen settled discovery without cause.
 
 ---
 
-# 25. MODEL HANDOFF LAW
+# 28. ANSWER FORMAT
 
-A future model should be able to take over without the user reconstructing project history manually.
+Use as much internal reasoning as necessary.
 
-Before making architecture-changing claims, the incoming model must reconstruct enough ground truth to know:
+External output should normally be:
 
-- current branch and HEAD;
-- current project objective;
-- active experiment or implementation stage;
-- canonical laws;
-- frozen constraints;
-- strongest current evidence;
-- contradictory evidence;
-- what is verified versus experimental;
-- current controlling bottleneck;
-- unresolved high-value questions;
-- current release/shipping status.
+1. **Conclusion**
+2. **Evidence**
+3. **Risk / remaining uncertainty**
+4. **Decision consequence**
+5. **Next action**
 
-Do not assume `main` contains the newest evidence when evidence branches or implementation branches exist.
+If the answer is `NO`, say `NO` first.
 
-Do not assume the most recent document is more authoritative than raw evidence.
+If the answer is simple, keep it simple.
 
-Do not redesign immediately merely because a new model has arrived.
+If the task is enormous, do the enormous reasoning and then compress the result.
 
-First reconstruct ground truth. Then improve it.
+Do not substitute verbosity for depth.
 
 ---
 
-# 26. GOVERNANCE COMPLIANCE LAW
+# 29. FINAL MODEL CHECK
 
-`REPO_LAWS_AND_REGULATIONS.md` is the sole canonical repository governance source.
+Before finishing any significant task, ask:
 
-Model-specific instruction files may point here. They should not become competing law books.
+1. Did I reduce uncertainty?
+2. Did I close or sharpen a decision?
+3. Did I identify a real blocker?
+4. Did I materially improve the chosen path?
+5. Did I reuse existing evidence before requesting more?
+6. Did I add unnecessary complexity?
+7. Am I expanding because it matters, or because I can?
 
-Work produced without applying this governance context may still contain useful ideas, but it is **not automatically eligible for canonical promotion** until reviewed against these laws and the applicable frozen experiment/release constraints.
-
-If a model cannot access this file, it should not make irreversible or architecture-changing claims as though it has full project context.
-
-Repository tests may enforce the existence of this file and the integrity of the model entrypoints that reference it.
-
----
-
-# 27. AMENDMENT LAW
-
-These laws are strong defaults, not religious doctrine.
-
-They may be amended when:
-
-- the project owner explicitly changes them;
-- repeated evidence demonstrates a law is systematically reducing project value;
-- the project's fundamental objective changes;
-- or future technical capabilities make a rule obsolete.
-
-Do not silently weaken a law because it is inconvenient.
-
-When proposing an amendment, state:
-
-- the exact law being changed;
-- evidence or objective change motivating it;
-- expected benefit;
-- new failure risk introduced;
-- whether existing historical evidence remains valid.
-
-Historical evidence remains historical evidence even when governance evolves.
+If the work does not improve the path forward, it is not complete.
 
 ---
 
-# 28. FINAL STANDARD
+# 30. FINAL LAW
 
-A future model has understood these laws when it behaves like this:
+> **INVERTED does not seek maximum information, maximum testing, maximum model size, maximum architecture, or maximum documentation.**
 
-- it searches farther than the user can when search can change the decision;
-- it stops sooner than the user when search no longer changes the decision;
-- it finds leverage before polishing downstream parts;
-- it treats suggestions as starting floors rather than ceilings;
-- it records cheap future-useful data before expensive evidence disappears;
-- it attacks its own preferred architecture;
-- it refuses model self-certification;
-- it turns useful failures into causal knowledge;
-- it preserves contradictions rather than averaging them away;
-- it protects verified state;
-- it deletes more readily than it accumulates;
-- it forces every mechanism to pay complexity rent;
-- it replaces inferior architecture despite sunk work;
-- it keeps research, testing, governance, and telemetry subordinate to the actual product objective;
-- it automates repeatable testing instead of making the user perform mechanical test orchestration;
-- it makes every measurable local test visibly trackable from the same compact terminal used to launch it;
-- it knows when the right next action is an experiment instead of another search;
-- it knows when the right next action is compression instead of another feature;
-- and it knows when the highest-value action is to freeze and ship.
+It seeks:
 
-The governing project equation is:
+> **the maximum defensible capability from the minimum sufficient information, architecture, compute, and complexity required to move correctly toward the established objective.**
 
-> **USER'S STRONGEST PROJECT REASONING × MODEL'S MACHINE ADVANTAGES × OPPOSITE COUNTERMEASURES FOR USER WEAKNESSES = MAXIMUM DEFENSIBLE PROJECT VALUE**
+The project is not rewarded for exploring forever.
 
-And the final architectural standard remains:
-
-> **Build only what proves it belongs. Preserve every cheap piece of evidence we may otherwise have to pay to recreate. Push INVERTED to the highest defensible shipping tier, then stop adding and ship the smallest system that preserves it.**
+The project is rewarded for understanding enough to make the next correct move—and then making it.
