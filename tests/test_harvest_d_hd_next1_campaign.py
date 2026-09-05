@@ -49,3 +49,27 @@ def test_authorized_campaign_attempts_each_assignment_once_without_retry(tmp_pat
     assert len(rows) == 1
     assert rows[0]["attempt"] == 1
     assert rows[0]["automatic_retry"] is False
+
+
+def test_authorized_campaign_reports_responsive_call_progress_and_eta(tmp_path, capsys):
+    cfg = load_hd_next1_config(CONFIG)
+    prereg = tmp_path / "prereg"
+    build_preregistration_package(REPO, prereg, cfg)
+    owner = authorize_hd_next1_execution(prereg, owner_approved=True)
+    adapter = FailingAdapter()
+    campaign = HDNext1Campaign(
+        tmp_path / "run",
+        prereg_root=prereg,
+        config=cfg,
+        adapters={"SMALL_A": adapter, "QWEN": adapter},
+        owner_authorization=owner,
+    )
+
+    campaign.run_authorized(max_calls=1)
+
+    output = capsys.readouterr().out
+    assert "0/672" in output
+    assert "1/672" in output
+    assert "left=" in output or " ETA" in output
+    assert "T1_CALIBRATION" in output
+    assert output.endswith("\n")

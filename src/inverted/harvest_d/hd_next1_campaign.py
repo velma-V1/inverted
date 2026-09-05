@@ -33,6 +33,7 @@ from .hd_next1_randomization import (
 from .hd_next1_scheduler import Candidate, HDNext1Scheduler
 from .hd_next1_space import build_zero_call_design, render_treatment_messages
 from .models import ModelAdapter
+from ..progress import InPlaceProgress
 from .types import Disposition, stable_hash
 
 
@@ -179,6 +180,7 @@ class HDNext1Campaign:
         self.budget = HDNext1BudgetState.default(max_inference_seconds=86400.0)
         self.calls_used = 0
         self.previous_call_id: str | None = None
+        self._progress = InPlaceProgress(min_interval_s=0.0)
         self.expected_seconds_by_model = {"SMALL_A": 0.5, "QWEN": 75.0}
 
     def run_model_free(self) -> HDNext1CampaignResult:
@@ -806,6 +808,17 @@ class HDNext1Campaign:
         )
         self.calls_used += 1
         self.previous_call_id = call_id
+        self._progress.update(
+            completed=self.calls_used,
+            total=672,
+            current=f"{unit.stage} {unit.model_key}",
+            force=True,
+        )
+
+    def _finish_result(self, state: str) -> HDNext1CampaignResult:
+        self._progress.update(completed=self.calls_used, total=672, current=state, force=True)
+        self._progress.finish()
+        return HDNext1CampaignResult(self.calls_used, state)
 
     def _run_units(self, units: Iterable[ExecutionUnit], limit: int) -> bool:
         for unit in units:
@@ -871,36 +884,37 @@ class HDNext1Campaign:
             raise ValueError("requested max_calls exceeds frozen HD-NEXT-1 ceiling")
         self.root.mkdir(parents=True, exist_ok=True)
         self._assert_safe_start()
+        self._progress.update(completed=0, total=672, current="STARTING", force=True)
 
         if not self._run_units(self._calibration_units(), limit):
-            return HDNext1CampaignResult(self.calls_used, "EVIDENCE_CEILING_REACHED")
+            return self._finish_result("EVIDENCE_CEILING_REACHED")
         self._freeze_cost_calibration()
 
         broad = self._broad_small_a_units()
         if not self._run_units(broad, limit):
-            return HDNext1CampaignResult(self.calls_used, "EVIDENCE_CEILING_REACHED")
+            return self._finish_result("EVIDENCE_CEILING_REACHED")
         preliminary = self._preliminary_winner()
 
         local_units = self._local_minimality_units(preliminary)
         if not self._run_units(local_units, limit):
-            return HDNext1CampaignResult(self.calls_used, "EVIDENCE_CEILING_REACHED")
+            return self._finish_result("EVIDENCE_CEILING_REACHED")
         snapshot = self._development_freeze(preliminary)
         _write_json(self.root / "development_freeze.json", snapshot)
 
         if not self._run_units(self._qwen_development_units(snapshot), limit):
-            return HDNext1CampaignResult(self.calls_used, "EVIDENCE_CEILING_REACHED")
+            return self._finish_result("EVIDENCE_CEILING_REACHED")
 
         resolved = self._resolve_protected(snapshot)
         evidence_state = ProtectedEvidenceState(resolved)
         evidence_state.open_partition("hd-next1-fresh")
         if not self._run_units(self._protected_units(resolved, "hd-next1-fresh"), limit):
-            return HDNext1CampaignResult(self.calls_used, "EVIDENCE_CEILING_REACHED")
+            return self._finish_result("EVIDENCE_CEILING_REACHED")
         if not self._fresh_gate_passes():
-            return HDNext1CampaignResult(self.calls_used, "FRESH_CONFIRMATION_REFUTED")
+            return self._finish_result("FRESH_CONFIRMATION_REFUTED")
         evidence_state.mark_fresh_gate_passed()
         evidence_state.open_partition("hd-next1-sealed")
         if not self._run_units(self._protected_units(resolved, "hd-next1-sealed"), limit):
-            return HDNext1CampaignResult(self.calls_used, "EVIDENCE_CEILING_REACHED")
+            return self._finish_result("EVIDENCE_CEILING_REACHED")
 
         rows = _read_jsonl(self.root / "normalized_model_calls.jsonl")
         decisions = analyze_protected_evidence(rows, snapshot)
@@ -912,4 +926,4 @@ class HDNext1Campaign:
             state = "INVALID_INFRASTRUCTURE"
         else:
             state = "COMPLETE"
-        return HDNext1CampaignResult(self.calls_used, state)
+        return self._finish_result(state)
