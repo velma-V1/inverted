@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 
 from inverted.harvest_d.hd_next1_authorization import authorize_hd_next1_execution
 from inverted.harvest_d.hd_next1_campaign import HDNext1Campaign
@@ -22,10 +23,39 @@ class DeterministicFakeAdapter:
         self.model_id = model_id
         self.calls = 0
 
+    @staticmethod
+    def _answer_for_case(prompt: str) -> str:
+        match = re.search(r"D3 controlled decision case (\d+)\.(\d+)", prompt)
+        if not match:
+            raise AssertionError("synthetic HD-NEXT-1 prompt lost D3 case identity")
+        family = int(match.group(1))
+        index = int(match.group(2))
+        fixed = {
+            1: "USE_CURRENT",
+            3: "FOLLOW_CANONICAL",
+            4: "DO_PARENT_FIRST",
+            7: "TRUST_VERIFIER",
+            8: "REPLAN",
+            10: "REJECT_LOCAL_FIX",
+            11: "INVESTIGATE",
+        }
+        if family in fixed:
+            return fixed[family]
+        if family == 2:
+            return "REQUEST_EVIDENCE" if index % 2 == 1 else "EXECUTE_NOW"
+        if family == 5:
+            return "ESCALATE_SCOPE" if index % 2 == 1 else "EXECUTE_SCOPED"
+        if family == 6:
+            return "RECONCILE" if index % 2 == 1 else "START_NEW"
+        if family == 9:
+            return "QWEN_STANDARD" if index % 2 == 1 else "ROUTINE_LOCAL"
+        raise AssertionError(f"unknown synthetic D3 family {family}")
+
     def complete(self, prompt: str, system: str | None = None) -> ModelResponse:
         self.calls += 1
+        answer = self._answer_for_case(prompt)
         return ModelResponse(
-            text='{"answer":"USE_CURRENT"}',
+            text=json.dumps({"answer": answer}),
             model=self.model_id,
             input_tokens=10,
             output_tokens=4,
@@ -55,6 +85,7 @@ def test_complete_fake_campaign_uses_exact_frozen_budget_and_compiles_three_ques
     ).run_authorized()
 
     assert result.physical_model_calls == 672
+    assert result.final_state == "COMPLETE"
     assert small.calls == 576
     assert qwen.calls == 96
 
