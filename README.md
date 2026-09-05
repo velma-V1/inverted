@@ -1,10 +1,18 @@
-# Inverted AI Architecture Benchmark
+# INVERTED — Model Operating-Surface and System Capability Program
 
-A falsifiable experiment for one narrow architectural question:
+INVERTED is an evidence-driven program for making the **whole system and every model operating inside it materially more capable in practice than the same model raw**.
 
-> Does a non-AI system that generates/executes candidate outcomes, with an AI model used primarily as auditor, outperform the same model used as the direct executor?
+The current model-uplift objective is not one universal prompt and not “make the small model beat Qwen.” It is to discover each model's **model-specific operating surface**: what information/support it needs, how much, in what order, when, where, in what representation, under which task/failure/state conditions, and at what correctness/latency/token/compute tradeoff.
 
-The benchmark does **not** claim universal proof. A decisive campaign returns `SUPPORTED`, `REFUTED`, or `INCONCLUSIVE` for the preregistered tested hypothesis. Smoke/development runs return `NON-DECISIVE` by design.
+The eventual policy is conditional rather than static:
+
+`Support = f(model, task, difficulty, failure/state, context pressure, resource target, evidence state)`
+
+Discovery maps the high-performance Pareto frontier first. Compression toward minimum-equivalent support, smaller models, fewer tokens, or simpler machinery comes afterward and must prove what capability it preserves.
+
+The repository began with a narrower falsifiable architecture benchmark asking whether a non-AI candidate executor plus AI auditor could outperform direct model execution. That benchmark and later Harvest/Test campaigns remain preserved evidence streams; they do not limit the current project objective.
+
+Before designing new model-uplift inference, read [`docs/OPERATING_SURFACE_EVIDENCE_FRONTIER.md`](docs/OPERATING_SURFACE_EVIDENCE_FRONTIER.md) and its JSON companion so work starts from the strongest existing evidence.
 
 ## Permanent model operating rules
 

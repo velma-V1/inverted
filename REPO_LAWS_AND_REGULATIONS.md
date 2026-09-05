@@ -322,21 +322,23 @@ Do not allow the same responsibility to be duplicated across multiple components
 
 ---
 
-# 14. SMALLEST SUFFICIENT MODEL
+# 14. MODEL-SPECIFIC CAPABILITY FIRST; COMPRESSION SECOND
 
-Do not assume larger models are better system components.
+Do not assume larger models are better system components, and do not assume smaller models should imitate larger ones.
 
-Determine the smallest model capable of the required behavior when paired with the minimum justified support.
+During discovery, maximize the defensible operating frontier of **each model against its own raw baseline** before optimizing model size or minimum support.
 
 The target is not:
 
-> best standalone model.
+> one universal recipe, one universal model ranking, or the smallest model at any cost.
 
-The target is:
+The discovery target is:
 
-> **smallest model + minimum system support that preserves verified system capability.**
+> **the exact model-specific conditions that maximize verified practical capability, including the information, amount, order, timing, placement, representation, assistance, task/state conditions, and resource tradeoffs that create the gain.**
 
-Use stronger models only where their additional capability is proven to matter.
+Only after that frontier is understood may INVERTED compress toward smaller models, minimum-equivalent support, lower latency, fewer tokens, or simpler machinery while preserving the desired capability.
+
+A stronger model is not a failure condition for a smaller model. Cross-model comparison is diagnostic; model-specific uplift is the primary discovery measure.
 
 ---
 
@@ -384,20 +386,23 @@ Expensive cognition should become durable cheaper capability whenever defensible
 
 ---
 
-# 17. CONTEXT IS NOT FREE
+# 17. CONTEXT IS NOT FREE — MAP BEFORE MINIMIZING
 
 More information is not automatically better.
 
-Every information field, representation, order, placement, timing policy, and amount must justify its presence.
+Every information field, representation, order, placement, timing policy, amount, source, and interaction may change model behavior and must be treated as part of a model-specific operating surface.
 
 Do not assume:
 
 - more context improves reasoning;
 - more reasoning improves accuracy;
 - more explanation improves execution;
-- more history improves decisions.
+- more history improves decisions;
+- the same information policy is optimal for different models, tasks, difficulty levels, failure states, or context pressures.
 
-Find the minimum sufficient information policy.
+During discovery, map the performance and negative-transfer surface deeply enough to identify the defensible frontier. **Do not minimize support before knowing what maximum useful capability looks like.**
+
+After the frontier is established, find minimum-equivalent policies that preserve the chosen Pareto-optimal operating point.
 
 ---
 
@@ -589,7 +594,7 @@ Once evidence is sufficient:
 7. qualify the resulting architecture;
 8. ship the smallest defensible system.
 
-Later testing should compress and qualify—not reopen settled discovery without cause.
+Later testing should compress and qualify—not reopen settled discovery without cause. Compression begins only after the relevant capability frontier is mapped well enough that simplification can be measured against a known high-performance reference.
 
 ---
 
@@ -637,8 +642,8 @@ If the work does not improve the path forward, it is not complete.
 
 It seeks:
 
-> **the maximum defensible capability from the minimum sufficient information, architecture, compute, and complexity required to move correctly toward the established objective.**
+> **the maximum defensible capability from each model and the whole system, discovered across the model-specific operating surface, then compressed to the minimum information, architecture, compute, and complexity that preserves the chosen capability frontier.**
 
-The project is not rewarded for exploring forever.
+Discovery and compression are different phases. The project is not rewarded for minimizing before it knows what capability is being sacrificed, and it is not rewarded for exploring forever.
 
 The project is rewarded for understanding enough to make the next correct move—and then making it.
