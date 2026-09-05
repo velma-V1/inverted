@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "experiment_id": "HD-NEXT-1",
+  "historical_fingerprint": "6c120d155432b380436f2d26e734364316321a87dffd03996d10eaeb31ba3069",
+  "question_ids": [
+    "Q-MODEL-SUBSTITUTION",
+    "Q-MINIMUM-SUPPORT",
+    "Q-NEGATIVE-TRANSFER-BOUNDARY"
+  ],
+  "max_calls": 672,
+  "model_call_caps": {"SMALL_A": 576, "QWEN": 96},
+  "qwen_pools": {"calibration": 12, "development": 21, "confirmation": 63},
+  "effect_margin": 0.05,
+  "family_alpha": 0.05,
+  "blind_retries_allowed": false,
+  "protected_pool_size": 63,
+  "randomization_seed": 20260905,
+  "ollama_base_url": "http://127.0.0.1:11434",
+  "models": {
+    "SMALL_A": "qwen2.5:1.5b-instruct-q8_0",
+    "QWEN": "qwen3.5:9b-q8_0"
+  },
+  "generation_options": {"temperature": 0.0, "seed": 20260902, "num_ctx": 4096},
+  "seeds": {"development": 20260921, "fresh": 20260931, "sealed": 20261021},
+  "scheduler": {"protected_random_stream_fraction": 0.10},
+  "reproducibility_calibration": {"structurally_distinct_cases": 4, "repetitions": 3, "physical_call_ceiling": 24}
+}
