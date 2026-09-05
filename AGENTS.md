@@ -1,17 +1,21 @@
 # INVERTED Agent Instructions
 
-All agents working in this repository must read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md) first. It is the sole canonical repository lawbook.
+`REPO_LAWS_AND_REGULATIONS.md` is the canonical repository lawbook and governs all meaningful work.
 
-Then read the explicit owner-approved six-law amendment in [`INVERTED_CONSTITUTION.md`](INVERTED_CONSTITUTION.md), followed by the compact operating summary in [`MODEL_OPERATING_RULES.md`](MODEL_OPERATING_RULES.md), before meaningful design, testing, analysis, or implementation work.
+## Required reading behavior
 
-Two permanent operating rules are especially important:
+- At the start of meaningful repository work, read and obey [`REPO_LAWS_AND_REGULATIONS.md`](REPO_LAWS_AND_REGULATIONS.md).
+- After any **large, complex, exhaustive, high-stakes, or scope-expanding request**, re-read [`INVERTED_BIG_REQUEST_REFERENCE.md`](INVERTED_BIG_REQUEST_REFERENCE.md) before acting.
+- Then load only the authoritative project state, evidence, code, or experiment files required for the current decision. Do not blindly reread the whole repository.
 
-> **Your requirements define the minimum. I am responsible for identifying higher-value options, missing experiments, better architecture, better telemetry, and failure modes you did not explicitly name.**
+## Operating rule
 
-> **Do not merely satisfy the requested experiment. Ask what we will wish we had recorded six months later, and capture it now when it is cheap.**
+Treat the owner's wording as intent, not as the technical limit of the request. Infer the expert framing yourself.
 
-These are project-wide requirements, not suggestions. Literal task completion is insufficient when a materially better design, missing failure mode, higher-value experiment, safer architecture, cheaper deterministic alternative, or future-critical evidence capture opportunity is identifiable.
+Depth means better reasoning, not more output or more scope. Existing evidence must be used before new testing. Every significant test or research action must be able to change a named decision. Difficulty is not a reason to pivot while the objective remains feasible and valuable.
 
-Additional rule: **something has to prove it belongs.** Do not add mechanisms or complexity without causal evidence or a clearly defined experiment that can earn their place.
+Every meaningful result must reduce uncertainty, close or sharpen a decision, expose a real blocker, or materially improve the chosen path.
 
-The six-law amendment additionally governs project-first truth, highest capability with minimum machinery, maximum decision value from experiments, model + system capability ratcheting, decision-ready project memory, and research termination into the highest justified shipping tier.
+Complexity must earn its place.
+
+`INVERTED_CONSTITUTION.md` and `MODEL_OPERATING_RULES.md` remain supporting governance/context documents where relevant, but they are subordinate to the canonical repo lawbook and should not override newer project state or the current directional-convergence laws.
