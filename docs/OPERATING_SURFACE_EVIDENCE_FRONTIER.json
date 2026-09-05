@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-09-05",
+  "status": "CURRENT_PROJECT_EVIDENCE_STATE",
+  "objective": "Map each model's conditional operating surface against its own raw baseline before compression.",
+  "evidence_classes": ["ESTABLISHED", "STRONG_SIGNAL", "CONDITIONAL", "DIAGNOSTIC_ONLY", "UNDERRESOLVED", "UNMAPPED", "MEASUREMENT_RISK"],
+  "global_findings": {
+    "model_specific_response_surfaces": "ESTABLISHED",
+    "task_failure_region_conditionality": "ESTABLISHED",
+    "non_monotonic_support_value": "ESTABLISHED",
+    "evidence_quality_and_trust_importance": "ESTABLISHED",
+    "rich_observable_state_routing": "STRONG_SIGNAL",
+    "temperature_zero_stochasticity": "ESTABLISHED",
+    "pareto_multi_objective_requirement": "ESTABLISHED",
+    "ceiling_saturation_invalid_for_uplift": "ESTABLISHED"
+  },
+  "dimensions": {
+    "ingredient_content": "CONDITIONAL_UNDERRESOLVED",
+    "quality_source_trust": "ESTABLISHED_IMPORTANCE_UNDERRESOLVED_DELIVERY",
+    "amount_dose": "UNDERRESOLVED",
+    "order_sequence": "UNDERRESOLVED",
+    "timing": "STRONG_SIGNAL_UNDERRESOLVED",
+    "placement": "STRONG_SIGNAL_UNDERRESOLVED",
+    "representation": "STRONG_SIGNAL_UNDERRESOLVED",
+    "context_length_position": "UNMAPPED_TO_INSUFFICIENT_DEPTH",
+    "higher_order_interactions": "ESTABLISHED_IMPORTANCE_UNDERRESOLVED_MAP",
+    "task_failure_family": "ESTABLISHED_CONDITIONALITY",
+    "structural_complexity": "STRONG_SIGNAL",
+    "model_specific_data_needs": "ESTABLISHED",
+    "model_failure_routing_state": "STRONG_SIGNAL",
+    "deterministic_assistance": "CONDITIONAL_UNDERRESOLVED_FOR_MODEL_COGNITION",
+    "recovery_pipeline": "ESTABLISHED_IMPORTANCE_CONDITIONAL_MODEL_BEHAVIOR",
+    "negative_transfer": "ESTABLISHED_EXISTENCE_BOUNDARY_UNDERRESOLVED",
+    "latency_tokens_compute": "ESTABLISHED_NECESSITY",
+    "fresh_sealed_transfer": "UNDERRESOLVED"
+  },
+  "evidence_dispositions": {
+    "test1_decisive": "VALID_BUT_CEILING_SATURATED_FOR_UPLIFT",
+    "test2_tier_a": "DIAGNOSTIC_ONLY_NON_UNIQUE_CALL_IDENTITY",
+    "test3_s2_tier_a": "VALID_STRONG_SIGNAL_NON_DECISIVE",
+    "harvest_a_b_c": "VALID_SYSTEM_RESPONSIBILITY_AND_RECOVERABILITY_EVIDENCE",
+    "harvest_d_d2": "VALID_DEVELOPMENT_FRONTIER_EVIDENCE",
+    "harvest_d_d3": "DIAGNOSTIC_MODEL_CONTEXT_EVIDENCE_WITH_DISPOSITION_SCORING_RISK",
+    "harvest_d_d4": "VALID_PARETO_TRADEOFF_EVIDENCE",
+    "harvest_d_r1": "VALID_REPRODUCIBILITY_AND_COST_CALIBRATION",
+    "hd_next_1": "VALID_EARLY_OPERATING_SURFACE_EVIDENCE_STOPPED_AT_FRESH_GATE"
+  },
+  "highest_information_regions": [
+    "GLOBAL_INTERACTION",
+    "TRANSACTION",
+    "VERIFIER_ORACLE",
+    "policy_ordering_L3_L4",
+    "preservation",
+    "structural_dependency",
+    "observable_failure_and_routing_state"
+  ],
+  "next_design_constraint": "Spend new inference only to increase surface resolution, locate conditional switch points, or obtain independent transfer confirmation; do not restart broad mechanism discovery."
+}
