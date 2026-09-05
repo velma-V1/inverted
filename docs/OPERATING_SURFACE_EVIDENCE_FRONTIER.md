@@ -3,7 +3,7 @@
 **Status:** CURRENT PROJECT EVIDENCE STATE — 2026-09-05  
 **Purpose:** Start future model-uplift experiments from the strongest defensible position supported by existing evidence.
 
-This registry synthesizes Test 1, contaminated-but-diagnostic Test 2, valid Test 3 S2, Harvest A/B/C, Harvest D D2/D3/D4/R1, and HD-NEXT-1.
+This registry synthesizes Test 1, contaminated-but-diagnostic Test 2, valid Test 3 S2, Harvest A/B/C, Harvest D D2/D3/D4/R1, and HD-NEXT-1. The 2026-09-05 raw-ZIP audit additionally opened and cross-compared the preserved raw archives rather than relying on their summary reports.
 
 ## Evidence classes
 
@@ -22,16 +22,19 @@ Historical frozen runs remain historical truth for the protocols they actually e
    - D2 showed the 1.5B→9B gap is not a simple parameter-size threshold: 3B/3.8B/8B models solved different residuals, while 14B recovered only 1/8 of the 1.5B+9B shared failures.
    - HD-NEXT-1 fresh evidence showed the same support treatment behaving very differently on Small-A and Qwen.
    - Test 3 S2 showed different interventions/models win different failure states.
+   - Raw Harvest C makes the model-specific reversal explicit: Qwen DIRECT 51% -> CHECKED 94% while INVERTED reached 55%; Ministral DIRECT 8% -> CHECKED 16% but INVERTED 52%; Devstral DIRECT 33% -> CHECKED 81% / INVERTED 68%.
 
 2. **Task/failure region changes the useful support. — ESTABLISHED**
    - HD-NEXT-1 Small-A promoted support scored 0/4 on `GLOBAL_INTERACTION` and 0/4 on `TRANSACTION`, while its raw baseline scored 4/4 and 3/4 respectively.
    - The same promoted support scored 3/3 on `EVIDENCE` and 2/3 on `AUTHORITY`.
    - Test 3 retains recurring policy/order and preservation-specific failure regions even when aggregate success is high.
+   - Raw Harvest B shows regime-level sign reversal: for insufficient-only, no-valid-action, plausible-unsupported, and source-ambiguity cases, DIRECT was 0% while CHECKED and INVERTED were 100% across all three tested models; on adversarial cases DIRECT and CHECKED were 100% while INVERTED was 0% across all three models.
 
 3. **More support is not monotonically better. — ESTABLISHED**
    - HD-NEXT-1 development and fresh results contain component removals and alternate support bundles that equal or outperform the promoted bundle.
    - Harvest B shows unnecessary evidence load exists even when evidence quality is useful.
    - Context/support must therefore be treated as a dose-response problem, not an inclusion checklist.
+   - D3 answer-level matched diagnostics sharpen this: Qwen RAW beat the full I1-I10 packet on 2/8 matched cases (both GLOBAL_INTERACTION), and removing I5 or I8 rescued 3/8 matched Qwen cases; for Small-A, removing I1 harmed a GLOBAL_INTERACTION case. These are priors only because D3's disposition scorer was invalid.
 4. **Evidence quality/trust/freshness is a first-class ingredient. — ESTABLISHED at system level; model recipe UNDERRESOLVED**
    - Harvest B measured provenance conflict, stale evidence, majority-wrong evidence, forged authority, source ambiguity, and insufficient evidence.
    - Targeted deterministic correction generalized without regression in that campaign.
@@ -53,6 +56,7 @@ Historical frozen runs remain historical truth for the protocols they actually e
    - D4 Qwen policy evidence showed DEFAULT at 14/24 versus THINK_OFF at 10/24, but THINK_OFF eliminated six context-exhaustions and reduced median latency from roughly 77.7 seconds to roughly 0.4 seconds.
    - Test 3 S2 likewise produced accuracy/latency/token tradeoffs between router arms.
    - Future analysis must preserve Pareto-optimal points rather than collapse all metrics into one winner.
+   - Test 1 adds a second efficiency boundary: a checked/direct intervention improved Qwen by +20.0pp and policy tasks by +23.89pp while adding 0pp on saturated state/reconciliation tasks; a third checked retry recovered only 1/37 = 2.70%, making repeated retries a sharply diminishing-return region.
 
 9. **Ceiling-saturated benchmarks cannot measure uplift well. — ESTABLISHED**
    - Test 1 had Qwen direct at 100%, Gemma direct/system-assisted at 100%, and Devstral direct/system-assisted at 100% in major arms.
@@ -61,21 +65,21 @@ Historical frozen runs remain historical truth for the protocols they actually e
 ## Evidence that is useful but cannot be promoted
 
 - **Test 2 matrices and role champions — DIAGNOSTIC_ONLY.** Its own verdict records `non_unique_physical_model_call_identity`, so model/representation/order/synergy tables are priors only.
-- **D3 combined semantic verdicts — MEASUREMENT_RISK.** All 632 calls failed the bundled semantic contract because disposition ownership was scored against the model; answer-level/context observations remain diagnostic, but the run cannot certify recipe performance.
+- **D3 combined semantic verdicts — MEASUREMENT_RISK.** All 632 calls failed the bundled semantic contract because disposition ownership was scored against the model; answer-level/context observations remain diagnostic, but the run cannot certify recipe performance. The raw ZIP also shows its reproducibility calibration was NOT_RUN; D3.3 was 111/120 STATE-family calls; and several intended dedicated outputs are empty even though some equivalent metadata exists elsewhere. D3 therefore supplies targeted priors, not fine-grained operating-surface estimates.
 - **Harvest A/B/C targeted repairs — system-responsibility evidence, not model-uplift proof.** They show deterministic recovery/correction can remove injected failures, but the correction often supplies the correct system action directly.
 - **HD-NEXT-1 T2 factor marginals — DIAGNOSTIC_ONLY.** They come from a covering design with unequal/confounded factor exposure; use them to choose local neighborhoods, not as causal main effects.
 ## Dimension frontier
 
 | Dimension | Current state | Most advanced defensible starting point |
 |---|---|---|
-| Ingredient/content identity | CONDITIONAL / UNDERRESOLVED | I1–I10 and A1–A11 already define useful candidate families. Do not restart binary inclusion screening; deepen model×task conditional effects around historical high-value regions. |
+| Ingredient/content identity | CONDITIONAL / UNDERRESOLVED | Do not restart generic binary screening. D3 leave-one-out is useful diagnostic targeting: on matched GLOBAL_INTERACTION cases, removing I5 or I8 rescued 3/8 Qwen cases, while removing I1 harmed Small-A on one matched case. HD-NEXT-1 independently found fresh component/bundle sign changes. Deepen these model×region interactions with valid scoring and noise calibration. |
 | Evidence quality/source/trust | ESTABLISHED importance; UNDERRESOLVED delivery | Preserve provenance, freshness, contradiction, sufficiency, and authority class. Optimize how each model receives them rather than whether they matter. |
-| Amount/dose | UNDERRESOLVED | Existing levels are only coarse categories. Overload can hurt, but no dense dose curve or model×family dose optimum exists. |
-| Order/sequence | UNDERRESOLVED | Coarse orders exist; Test 2 ordering is contaminated and HD-NEXT-1 is shallow. Exact sequence and interaction with dose/timing remain open. |
-| Timing | STRONG_SIGNAL / UNDERRESOLVED | Small-A screening strongly favored pre-decision/JIT over upfront, but matching is inadequate. Real progressive multi-step delivery was explicitly uncovered in HD-NEXT-1. |
-| Placement | STRONG_SIGNAL / UNDERRESOLVED | Task/system/mixed differences exist, but placement is confounded with other factors and almost untested dynamically. |
-| Representation | STRONG_SIGNAL / UNDERRESOLVED | Matrix/JSON/structured forms repeatedly look promising in some roles/models, but robust matched model×task confirmation is missing. |
-| Context length / useful-token ratio / position | UNMAPPED to insufficient depth | Controls were designed in D3 but not resolved into promotable evidence. Dense length and critical-information-position curves remain open. |
+| Amount/dose | UNMAPPED TO REQUIRED RESOLUTION / MEASUREMENT_RISK | Do not credit D3 as a dose experiment: on five matched D3.3 model/case cells, MINIMUM, COMPRESSED, MODERATE, FULL, and OVERLOADED rendered to byte-identical information packets. HD-NEXT-1 has only coarse amount categories. True per-ingredient and total-support dose curves remain open. |
+| Order/sequence | STRONG_DIAGNOSTIC_SIGNAL / UNDERRESOLVED | D3 matched Qwen STATE cases show EVIDENCE_FIRST rescuing 2/4 and SAFETY_STATE_EVIDENCE_FIRST rescuing 1/4 versus DEFAULT, while TASK_OBJECTIVE_FIRST and shuffled control rescued none; Test 2 ordering is contaminated and D3 lacks noise calibration. Exact precedence rules and interaction with dose/timing remain open. |
+| Timing | STRONG_SIGNAL / UNDERRESOLVED | D3 used genuinely different message geometry: on four matched Qwen STATE cases, JUST_IN_TIME rescued 3/4 and PRE_DECISION 1/4 versus UPFRONT, while PROGRESSIVE rescued 0/4. HD-NEXT-1 also favored pre-decision/JIT directionally. D3's scorer/noise limitations and state-heavy coverage prevent promotion. |
+| Placement | MOSTLY UNMAPPED / UNDERRESOLVED | D3's 476 non-RAW information packets were all recorded as TASK_CONTEXT; its timing variants sometimes redistributed content between system/user messages, so timing and placement can be entangled. HD-NEXT-1 includes task/system/mixed levels but with shallow/confounded exposure. Dedicated placement remains open. |
+| Representation | STRONG_DIAGNOSTIC_SIGNAL / UNDERRESOLVED | D3 matched Qwen STATE cases: ADMISSIBLE_ACTION_MATRIX rescued 2/4 relative to TYPED_FIELDS; compressed summary, decision table, decomposition, explicit alternatives, minimal ledger, and raw prose each rescued 1/4; priority block and strict JSON rescued 0/4. Test 2 also shows model×representation differences but is contaminated. Robust model×task confirmation remains open. |
+| Context length / useful-token ratio / position | UNMAPPED TO SUFFICIENT DEPTH | D3 did create overload, redundant-history, and token-matched-irrelevant controls, but they were not matched against a same-case TARGET baseline in D3.7 and its main amount labels were often literal no-ops. Dense length, useful-token ratio, and critical-information-position curves remain open. |
 | Pairwise/higher-order interactions | ESTABLISHED importance; UNDERRESOLVED map | Pairwise coverage exists, but HD-NEXT-1 showed sign changes after fresh transfer and across families. High-order interactions must be targeted from observed contradictions, not exhaustively enumerated. |
 | Task/failure family | ESTABLISHED conditionality | `GLOBAL_INTERACTION`, `TRANSACTION`, `VERIFIER_ORACLE`, policy ordering, preservation, and structural dependency regions are high-information non-saturated targets. |
 | Structural complexity | STRONG_SIGNAL | Existing data shows model/role behavior changes with complexity, but some older matrices are contaminated. Use objective descriptors such as dependency depth, requirement count, action-space size, irreversibility, and interaction layers rather than one coarse difficulty label. |
@@ -100,6 +104,17 @@ Do not rerun broad experiments merely to establish that:
 - one universal recipe is unlikely to be optimal across models and task families.
 
 New calls are justified only when they increase **resolution**: dose curves, conditional switch points, exact sequencing, timing/placement, representation, higher-order interactions, state-dependent policies, or fresh/sealed transfer.
+
+## Raw ZIP audit and equivalence findings — 2026-09-05
+
+The preserved ZIP archives were opened and compared at raw-record level before further test design.
+
+- **12 project-relevant ZIPs were inventoried.** `D3-COMPLETE-CAMPAIGN.zip` and the quarantined `harvest-d-d3-evidence.zip` are byte-identical copies (same SHA-256), so they are one empirical source, not two runs.
+- **Test 1 raw equivalence verified.** The META packet's `ALL-6480-TRIALS.jsonl` and the COMPLETE packet's `derived/trials-complete.jsonl` contain exactly the same 6,480 parsed trial records in the same order. The 615 MB `Test1Evidence.zip` identifies the same run/checkpoint and its first embedded raw checkpoint record exactly matches the COMPLETE packet.
+- **Test 2 forensic equivalence verified.** All eight core raw JSONL streams match the current repo semantically record-for-record: 452 model calls, 452 prompts, 452 responses, 400 trials, 482 events, 216 candidates, 72 repairs, and 208 validator results. The historical non-unique-call-identity contamination therefore remains the correct evidence disposition.
+- **Test 3 S2 equivalence verified.** ZIP versus repo: 720 model calls, 720 raw transactions, 720 routing snapshots, 720 events, 732 external actions, and five parse/composition failures are semantically identical. The 6,530-row forensic journal differs only in regenerated hash-chain fields; removing `record_sha256`/`previous_sha256` leaves zero semantic differences.
+- **Focused/zero-call D3 ZIPs add no inference observations.** They contain source/tests or zero-byte run-data streams. `INVERTED_entire_chat_condensed.zip` is design/history context, not empirical model evidence.
+- **The S2/A/B/C full dump contains unique high-value raw slices not exposed by summary tables.** Those slices are incorporated into this frontier, especially the Harvest B regime sign reversals and Harvest C model-specific support reversals.
 
 ## Highest-value unresolved frontier
 

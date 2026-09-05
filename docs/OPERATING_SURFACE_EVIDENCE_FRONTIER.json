@@ -1,9 +1,17 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "as_of": "2026-09-05",
   "status": "CURRENT_PROJECT_EVIDENCE_STATE",
   "objective": "Map each model's conditional operating surface against its own raw baseline before compression.",
-  "evidence_classes": ["ESTABLISHED", "STRONG_SIGNAL", "CONDITIONAL", "DIAGNOSTIC_ONLY", "UNDERRESOLVED", "UNMAPPED", "MEASUREMENT_RISK"],
+  "evidence_classes": [
+    "ESTABLISHED",
+    "STRONG_SIGNAL",
+    "CONDITIONAL",
+    "DIAGNOSTIC_ONLY",
+    "UNDERRESOLVED",
+    "UNMAPPED",
+    "MEASUREMENT_RISK"
+  ],
   "global_findings": {
     "model_specific_response_surfaces": "ESTABLISHED",
     "task_failure_region_conditionality": "ESTABLISHED",
@@ -12,16 +20,18 @@
     "rich_observable_state_routing": "STRONG_SIGNAL",
     "temperature_zero_stochasticity": "ESTABLISHED",
     "pareto_multi_objective_requirement": "ESTABLISHED",
-    "ceiling_saturation_invalid_for_uplift": "ESTABLISHED"
+    "ceiling_saturation_invalid_for_uplift": "ESTABLISHED",
+    "architecture_value_can_reverse_by_model": "ESTABLISHED",
+    "support_value_can_reverse_by_regime": "ESTABLISHED"
   },
   "dimensions": {
     "ingredient_content": "CONDITIONAL_UNDERRESOLVED",
     "quality_source_trust": "ESTABLISHED_IMPORTANCE_UNDERRESOLVED_DELIVERY",
-    "amount_dose": "UNDERRESOLVED",
-    "order_sequence": "UNDERRESOLVED",
+    "amount_dose": "UNMAPPED_TO_REQUIRED_RESOLUTION_MEASUREMENT_RISK",
+    "order_sequence": "STRONG_DIAGNOSTIC_SIGNAL_UNDERRESOLVED",
     "timing": "STRONG_SIGNAL_UNDERRESOLVED",
-    "placement": "STRONG_SIGNAL_UNDERRESOLVED",
-    "representation": "STRONG_SIGNAL_UNDERRESOLVED",
+    "placement": "MOSTLY_UNMAPPED_UNDERRESOLVED",
+    "representation": "STRONG_DIAGNOSTIC_SIGNAL_UNDERRESOLVED",
     "context_length_position": "UNMAPPED_TO_INSUFFICIENT_DEPTH",
     "higher_order_interactions": "ESTABLISHED_IMPORTANCE_UNDERRESOLVED_MAP",
     "task_failure_family": "ESTABLISHED_CONDITIONALITY",
@@ -54,5 +64,52 @@
     "structural_dependency",
     "observable_failure_and_routing_state"
   ],
-  "next_design_constraint": "Spend new inference only to increase surface resolution, locate conditional switch points, or obtain independent transfer confirmation; do not restart broad mechanism discovery."
+  "next_design_constraint": "Start from raw-ZIP-adjusted priors; spend new inference only to increase model-specific surface resolution, run true dose manipulations, localize conditional switch points, or obtain independent transfer confirmation.",
+  "raw_zip_audit": {
+    "completed": "2026-09-05",
+    "project_relevant_archives_inventoried": 12,
+    "d3_duplicate_archives_byte_identical": true,
+    "test1_6480_trials_cross_archive_exact_parsed_match": true,
+    "test2_core_raw_streams_semantically_match_repo": true,
+    "test3_s2_core_raw_streams_semantically_match_repo": true,
+    "focused_d3_archives_add_inference_observations": false
+  },
+  "raw_priors": {
+    "harvest_c": {
+      "qwen_direct_checked_inverted": [
+        0.51,
+        0.94,
+        0.55
+      ],
+      "ministral_direct_checked_inverted": [
+        0.08,
+        0.16,
+        0.52
+      ],
+      "devstral_direct_checked_inverted": [
+        0.33,
+        0.81,
+        0.68
+      ]
+    },
+    "harvest_b": {
+      "insufficient_no_valid_plausible_source_ambiguity": "DIRECT_0_CHECKED_1_INVERTED_1_ACROSS_THREE_MODELS",
+      "adversarial": "DIRECT_1_CHECKED_1_INVERTED_0_ACROSS_THREE_MODELS"
+    },
+    "test1": {
+      "checked_minus_direct_qwen_pp": 20.0,
+      "checked_minus_direct_policy_pp": 23.8888888889,
+      "third_checked_retry_success": "1/37"
+    },
+    "d3_answer_level_diagnostics": {
+      "qwen_raw_vs_i_all_matched": "RAW_ONLY_2_OF_8_BOTH_GLOBAL_INTERACTION",
+      "qwen_without_i5_rescues": "3_OF_8_MATCHED",
+      "qwen_without_i8_rescues": "3_OF_8_MATCHED",
+      "small_a_without_i1_harms": "1_MATCHED_GLOBAL_INTERACTION_CASE",
+      "qwen_jit_vs_upfront_rescues": "3_OF_4_MATCHED_STATE_CASES",
+      "qwen_admissible_action_matrix_vs_typed_fields_rescues": "2_OF_4_MATCHED_STATE_CASES",
+      "reproducibility_calibration": "NOT_RUN",
+      "disposition_scoring": "INVALID_FOR_RECIPE_PROMOTION"
+    }
+  }
 }
