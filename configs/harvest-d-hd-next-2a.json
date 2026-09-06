@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "experiment_id": "HD-NEXT-2A",
+  "combined_action_ceiling": 1000,
+  "non_model_action_reserve": 40,
+  "protected_exploration_fraction": 0.2,
+  "blind_retries_allowed": false,
+  "primary_model": "SMALL_A",
+  "models": {
+    "SMALL_A": "qwen2.5:1.5b-instruct-q8_0",
+    "QWEN": "qwen3.5:9b-q8_0",
+    "DEVSTRAL_24B": "devstral-small-2:24b"
+  },
+  "stages": [
+    "2A-0",
+    "2A-1",
+    "2A-2",
+    "2A-3",
+    "2A-4",
+    "2A-5",
+    "2A-6",
+    "2A-7",
+    "2A-8",
+    "2A-9",
+    "2A-10"
+  ]
+}
