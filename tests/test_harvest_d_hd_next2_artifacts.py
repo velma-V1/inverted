@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from inverted.harvest_d.hd_next2 import rendering
 from inverted.harvest_d.hd_next2.artifacts import CALL_PROJECTIONS, EvidenceWriter
 from inverted.harvest_d.hd_next2.cases import generate_hd_next2_cases
 from inverted.harvest_d.hd_next2.rendering import render_hd_next1_historical_seed
@@ -31,7 +32,16 @@ def _canonical_historical_seed_bytes(case_id):
 
 def _complete_call(*, treatment_kind="HISTORICAL_SEED", physical_call_id="pc-1"):
     unit = next(item for item in build_canonical_a0_plan().units if item.treatment_kind == treatment_kind)
-    request_bytes = b'{"messages":[{"role":"user","content":"exact"}]}'
+    cases = generate_hd_next2_cases("development", seed=20260921, per_region=1)
+    case = next(item for item in cases if item.case_id == unit.case_id)
+    model_ids = {
+        "SMALL_A": "qwen2.5:1.5b-instruct-q8_0",
+        "QWEN": "qwen3.5:9b-q8_0",
+        "DEVSTRAL_24B": "devstral-small-2:24b",
+    }
+    request_bytes = rendering.serialize_canonical_a0_request(
+        case, model_ids[unit.model_key], treatment_kind
+    )
     support = _canonical_historical_seed_bytes(unit.case_id)
     schedule = {
         key: getattr(unit, key) for key in (
@@ -46,7 +56,7 @@ def _complete_call(*, treatment_kind="HISTORICAL_SEED", physical_call_id="pc-1")
         "unit_id": unit.unit_id,
         "physical_call_id": physical_call_id,
         "model": {
-            "model_key": unit.model_key, "model_id": "qwen-test-id",
+            "model_key": unit.model_key, "model_id": model_ids[unit.model_key],
             "model_digest": "sha256:model-digest", "runtime_identity": "ollama-test-runtime",
         },
         "request": {
@@ -160,6 +170,59 @@ def test_non_raw_rejects_empty_support_layers(tmp_path):
     with pytest.raises(ValueError, match="HISTORICAL_SEED"):
         writer.write_call(call)
     assert not (tmp_path / "call_journal.jsonl").read_bytes()
+
+
+def test_raw_rejects_request_with_injected_historical_support(tmp_path):
+    writer = EvidenceWriter(tmp_path)
+    call = _complete_call(treatment_kind="RAW")
+    historical = _complete_call(treatment_kind="HISTORICAL_SEED")
+    forged = historical["request"]["rendered_request_bytes"]
+    call["request"] = {
+        "rendered_request_bytes": forged,
+        "rendered_request_sha256": hashlib.sha256(forged).hexdigest(),
+    }
+
+    with pytest.raises(ValueError, match="canonical A0 request"):
+        writer.write_call(call)
+
+
+def test_historical_seed_rejects_request_with_omitted_support(tmp_path):
+    writer = EvidenceWriter(tmp_path)
+    call = _complete_call(treatment_kind="HISTORICAL_SEED")
+    raw = _complete_call(treatment_kind="RAW")
+    forged = raw["request"]["rendered_request_bytes"]
+    call["request"] = {
+        "rendered_request_bytes": forged,
+        "rendered_request_sha256": hashlib.sha256(forged).hexdigest(),
+    }
+
+    with pytest.raises(ValueError, match="canonical A0 request"):
+        writer.write_call(call)
+
+
+@pytest.mark.parametrize("mismatch", ["model", "case", "treatment"])
+def test_writer_rejects_request_for_different_canonical_binding(tmp_path, mismatch):
+    writer = EvidenceWriter(tmp_path)
+    call = _complete_call()
+    unit = next(item for item in build_canonical_a0_plan().units if item.unit_id == call["unit_id"])
+    cases = generate_hd_next2_cases("development", seed=20260921, per_region=1)
+    case = next(item for item in cases if item.case_id == unit.case_id)
+    model_id = call["model"]["model_id"]
+    treatment_kind = unit.treatment_kind
+    if mismatch == "model":
+        model_id = "qwen3.5:9b-q8_0"
+    elif mismatch == "case":
+        case = next(item for item in cases if item.case_id != unit.case_id)
+    else:
+        treatment_kind = "RAW"
+    forged = rendering.serialize_canonical_a0_request(case, model_id, treatment_kind)
+    call["request"] = {
+        "rendered_request_bytes": forged,
+        "rendered_request_sha256": hashlib.sha256(forged).hexdigest(),
+    }
+
+    with pytest.raises(ValueError, match="canonical A0 request"):
+        writer.write_call(call)
 
 
 def test_reconcile_repairs_injected_secondary_failure_without_reexecution(tmp_path, monkeypatch):

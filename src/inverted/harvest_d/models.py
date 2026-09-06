@@ -45,12 +45,12 @@ class OllamaChatAdapter:
         self._opener = opener
         self.generation_options = dict(generation_options or self.DEFAULT_GENERATION_OPTIONS)
 
-    def complete(self, prompt: str, system: str | None = None) -> ModelResponse:
+    def request_bytes(self, prompt: str, system: str | None = None) -> bytes:
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        body = json.dumps(
+        return json.dumps(
             {
                 "model": self.model_id,
                 "messages": messages,
@@ -58,6 +58,9 @@ class OllamaChatAdapter:
                 "options": self.generation_options,
             }
         ).encode("utf-8")
+
+    def complete(self, prompt: str, system: str | None = None) -> ModelResponse:
+        body = self.request_bytes(prompt, system)
         req = Request(
             self.base_url + "/api/chat",
             data=body,

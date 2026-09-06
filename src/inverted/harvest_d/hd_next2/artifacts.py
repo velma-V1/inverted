@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .cases import generate_hd_next2_cases
-from .rendering import render_hd_next1_historical_seed
+from .config import canonical_a0_planner_config
+from .rendering import render_hd_next1_historical_seed, serialize_canonical_a0_request
 from .stages import build_canonical_a0_plan
 
 
@@ -39,6 +40,7 @@ _CANONICAL_CASES = {
     for case in generate_hd_next2_cases("development", seed=20260921, per_region=1)
 }
 _HISTORICAL_SEED_INGREDIENT = "HD_NEXT_1_HISTORICAL_SEED"
+_CANONICAL_MODEL_IDS = canonical_a0_planner_config()["models"]
 
 
 def _reject_json_pairs(pairs):
@@ -144,6 +146,8 @@ class EvidenceWriter:
             self._required_string(model, field, "model")
         if model["model_key"] != unit.model_key:
             raise ValueError("model.model_key does not match canonical A0 schedule")
+        if model["model_id"] != _CANONICAL_MODEL_IDS[unit.model_key]:
+            raise ValueError("model.model_id does not match canonical A0 model identity")
 
         request = self._mapping(call, "request")
         self._exact_schema(request, {"rendered_request_bytes", "rendered_request_sha256"}, set(), "request")
@@ -153,6 +157,11 @@ class EvidenceWriter:
         request_hash = self._required_string(request, "rendered_request_sha256", "request")
         if request_hash != hashlib.sha256(request_bytes).hexdigest():
             raise ValueError("request.rendered_request_sha256 mismatch")
+        case = _CANONICAL_CASES.get(unit.case_id)
+        if case is None or request_bytes != serialize_canonical_a0_request(
+            case, _CANONICAL_MODEL_IDS[unit.model_key], unit.treatment_kind,
+        ):
+            raise ValueError("request bytes do not match canonical A0 request")
         request["rendered_request_bytes_hex"] = request_bytes.hex()
 
         response = self._mapping(call, "response")

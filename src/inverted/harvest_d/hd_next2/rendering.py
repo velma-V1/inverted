@@ -8,7 +8,8 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from ..hd_next1_space import render_treatment_messages
+from ..hd_next1_space import _SYSTEM, render_treatment_messages
+from ..models import OllamaChatAdapter
 from .ingredients import IngredientPayload, extract_ingredient_payload
 from .types import DeliveryMode, IngredientLayer, TreatmentPath
 
@@ -16,7 +17,6 @@ SUPPORTED_FORMULATIONS = frozenset({
     "RAW_PROSE", "TYPED_FIELDS", "STRICT_JSON", "LEDGER", "MATRIX",
     "GRAPH", "ORDERED_LIST", "COMPACT_SUMMARY", "EXPLICIT_ALTERNATIVES",
 })
-
 
 @dataclass(frozen=True)
 class RenderedLayer:
@@ -199,3 +199,22 @@ def render_hd_next1_historical_seed(case: object):
     vector.update({f"A{i}": "TARGET" if i in {1, 3} else "OFF" for i in range(1, 5)})
     vector.update(amount="MINIMUM", ordering="DEFAULT", representation="ADMISSIBLE_ACTION_MATRIX", timing="JUST_IN_TIME", placement="SYSTEM_CONTEXT")
     return render_treatment_messages(case, vector)
+
+
+def serialize_canonical_a0_request(
+    case: object, model_id: str, treatment_kind: str,
+) -> bytes:
+    """Return the exact static Ollama request bytes for one frozen A0 cell."""
+    if not isinstance(model_id, str) or not model_id:
+        raise ValueError("canonical A0 model identity is required")
+    if treatment_kind == "RAW":
+        user = str(getattr(case, "prompt")).replace(
+            "Return one JSON object with exactly keys disposition and answer.",
+            "Return one JSON object with exactly key answer. Do not return a system disposition.",
+        )
+        system = _SYSTEM
+    elif treatment_kind == "HISTORICAL_SEED":
+        system, user, _ = render_hd_next1_historical_seed(case)
+    else:
+        raise ValueError(f"unsupported canonical A0 treatment: {treatment_kind}")
+    return OllamaChatAdapter(model_id).request_bytes(user, system)

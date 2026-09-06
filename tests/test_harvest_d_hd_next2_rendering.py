@@ -4,6 +4,8 @@ from dataclasses import replace
 
 import pytest
 
+from inverted.harvest_d.hd_next2 import rendering
+from inverted.harvest_d.models import OllamaChatAdapter
 from inverted.harvest_d.d3_cases import generate_d3_cases
 from inverted.harvest_d.hd_next1_space import render_treatment_messages
 from inverted.harvest_d.hd_next2.ingredients import extract_ingredient_payload
@@ -203,3 +205,70 @@ def test_historical_seed_delegates_to_frozen_hd_next1_renderer():
     actual = render_hd_next1_historical_seed(case)
 
     assert actual == expected
+
+
+def test_canonical_a0_raw_request_preserves_frozen_baseline_without_support_context():
+    case = _case()
+    expected_user = str(case.prompt).replace(
+        "Return one JSON object with exactly keys disposition and answer.",
+        "Return one JSON object with exactly key answer. Do not return a system disposition.",
+    )
+    expected_system = (
+        "INVERTED HD-NEXT-1 controlled measurement. Use only the supplied model-visible context. "
+        "Return exactly one JSON object containing key answer. Do not invent a system disposition."
+    )
+
+    actual = rendering.serialize_canonical_a0_request(
+        case, "qwen2.5:1.5b-instruct-q8_0", "RAW"
+    )
+
+    assert json.loads(actual)["messages"] == [
+        {"role": "system", "content": expected_system},
+        {"role": "user", "content": expected_user},
+    ]
+    assert b"HD_NEXT1_CONTEXT" not in actual
+
+
+def test_canonical_a0_request_bytes_are_the_bytes_ollama_adapter_sends():
+    case = _case()
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return b'{"message":{"content":"ok"}}'
+
+    def fake_opener(request, **kwargs):
+        captured["data"] = request.data
+        return FakeResponse()
+
+    system, user, _ = render_hd_next1_historical_seed(case)
+    OllamaChatAdapter(
+        "qwen3.5:9b-q8_0", opener=fake_opener
+    ).complete(user, system=system)
+
+    actual = rendering.serialize_canonical_a0_request(
+        case, "qwen3.5:9b-q8_0", "HISTORICAL_SEED"
+    )
+
+    assert actual == captured["data"]
+
+
+def test_canonical_a0_historical_seed_preserves_frozen_system_context_placement():
+    case = _case()
+    system, user, _ = render_hd_next1_historical_seed(case)
+    expected_messages = [
+        {"content": system, "role": "system"},
+        {"content": user, "role": "user"},
+    ]
+
+    actual = rendering.serialize_canonical_a0_request(
+        case, "qwen3.5:9b-q8_0", "HISTORICAL_SEED"
+    )
+
+    assert json.loads(actual)["messages"] == expected_messages
