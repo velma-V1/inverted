@@ -218,6 +218,8 @@ def extract_ingredient_payload(case: object, ingredient_id: str, dose_id: str) -
     atoms = _select_atoms(ingredient_id, source, field_ids)
     if not atoms:
         return None
+    if dose_id == "FULL" and len(atoms) < 2:
+        return None
     selected = atoms[:1] if dose_id == "CORE" else atoms
     payload = {transform: {atom: value for atom, value in selected}}
     lineage = tuple(f"metadata:d3_information:{atom}" for atom, _ in selected) + (

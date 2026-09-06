@@ -34,6 +34,17 @@ def test_core_and_full_payloads_are_semantically_distinct():
     assert core.payload != full.payload
 
 
+def test_one_atom_ingredient_preserves_core_and_withholds_full():
+    case = _Case({"I1": {"objective": "do work"}})
+
+    core = extract_ingredient_payload(case, "OBJECTIVE", "CORE")
+    full = extract_ingredient_payload(case, "OBJECTIVE", "FULL")
+
+    assert core is not None
+    assert core.semantic_atoms == frozenset({"I1.objective"})
+    assert full is None
+
+
 def test_payload_lineage_identifies_public_source_and_deterministic_transform():
     case = generate_d3_cases(partition="development", seed=20260921, per_family=1)[0]
 
