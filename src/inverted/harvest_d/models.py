@@ -51,26 +51,29 @@ class OllamaChatAdapter:
         timeout: float = 300.0,
         opener: Callable[..., Any] = urlopen,
         generation_options: dict[str, Any] | None = None,
+        think: bool | str | None = None,
     ) -> None:
         self.model_id = model_id
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._opener = opener
         self.generation_options = dict(generation_options or self.DEFAULT_GENERATION_OPTIONS)
+        self.think = think
 
     def request_bytes(self, prompt: str, system: str | None = None) -> bytes:
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        return json.dumps(
-            {
-                "model": self.model_id,
-                "messages": messages,
-                "stream": False,
-                "options": self.generation_options,
-            }
-        ).encode("utf-8")
+        payload = {
+            "model": self.model_id,
+            "messages": messages,
+            "stream": False,
+            "options": self.generation_options,
+        }
+        if self.think is not None:
+            payload["think"] = self.think
+        return json.dumps(payload).encode("utf-8")
 
     def complete(self, prompt: str, system: str | None = None) -> ModelResponse:
         return self.complete_request_bytes(self.request_bytes(prompt, system))

@@ -92,7 +92,7 @@ def FakeAdapter(model_id, *, opener=None, response_mutator=None, transport_error
             response_mutators={model_id: response_mutator} if response_mutator else None,
             transport_errors={model_id: transport_error} if transport_error else None,
         )
-    adapter = OllamaChatAdapter(model_id, opener=opener, base_url=base_url)
+    adapter = OllamaChatAdapter(model_id, opener=opener, base_url=base_url, think=False)
     adapter.model_digest = "sha256:forged-mutable-adapter-digest"
     adapter.runtime_identity = "forged-mutable-adapter-runtime"
     adapter.calls = opener.chat_calls[model_id]
@@ -335,7 +335,7 @@ def test_ollama_preflight_requires_one_shared_trusted_opener_before_any_action(t
     package, authorization = _real_package(tmp_path, monkeypatch)
     openers = [FakeOllamaOpener() for _ in MODEL_IDS]
     adapters = {
-        key: OllamaChatAdapter(model_id, opener=opener)
+        key: OllamaChatAdapter(model_id, opener=opener, think=False)
         for (key, model_id), opener in zip(MODEL_IDS.items(), openers, strict=True)
     }
     budget = CombinedActionBudget()
@@ -617,3 +617,30 @@ def test_resume_rejects_ollama_provenance_drift_before_model_call(tmp_path, monk
     assert budget.model_used == 0
     assert budget.non_model_used == 2
     assert "/api/chat" not in opener.calls
+
+
+def test_canonical_a0_request_explicitly_disables_thinking():
+    case = generate_hd_next2_cases("development", seed=20260921, per_region=1)[0]
+    payload = json.loads(
+        serialize_canonical_a0_request(case, MODEL_IDS["QWEN"], "RAW").decode("utf-8")
+    )
+    assert payload["think"] is False
+
+
+def test_campaign_rejects_adapter_without_explicit_thinking_disabled_before_actions(tmp_path, monkeypatch):
+    package, authorization = _real_package(tmp_path, monkeypatch)
+    opener = FakeOllamaOpener()
+    adapters = {
+        key: OllamaChatAdapter(model_id, opener=opener, think=False)
+        for key, model_id in MODEL_IDS.items()
+    }
+    adapters["QWEN"] = OllamaChatAdapter(MODEL_IDS["QWEN"], opener=opener)
+    budget = CombinedActionBudget()
+    with pytest.raises(ValueError, match="thinking must be explicitly disabled"):
+        run_static_a0_campaign(
+            preregistration_root=package, authorization=authorization,
+            owner_secret=OWNER_SECRET, adapters=adapters,
+            evidence_root=tmp_path / "evidence", budget=budget,
+        )
+    assert budget.total_used == 0
+    assert opener.calls == []

@@ -217,4 +217,4 @@ def serialize_canonical_a0_request(
         system, user, _ = render_hd_next1_historical_seed(case)
     else:
         raise ValueError(f"unsupported canonical A0 treatment: {treatment_kind}")
-    return OllamaChatAdapter(model_id).request_bytes(user, system)
+    return OllamaChatAdapter(model_id, think=False).request_bytes(user, system)

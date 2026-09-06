@@ -355,6 +355,8 @@ def run_static_a0_campaign(
             raise ValueError(f"{model_key} must use exact OllamaChatAdapter")
         if adapter.model_id != model_id:
             raise ValueError(f"adapter model identity mismatch for {model_key}")
+        if adapter.think is not False:
+            raise ValueError(f"{model_key} thinking must be explicitly disabled for A0")
     model_digests, runtime_identity = _ollama_runtime_provenance(adapters, model_ids, budget)
     for call in committed:
         model = call["model"]

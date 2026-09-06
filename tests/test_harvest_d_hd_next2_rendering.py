@@ -249,7 +249,7 @@ def test_canonical_a0_request_bytes_are_the_bytes_ollama_adapter_sends():
 
     system, user, _ = render_hd_next1_historical_seed(case)
     OllamaChatAdapter(
-        "qwen3.5:9b-q8_0", opener=fake_opener
+        "qwen3.5:9b-q8_0", opener=fake_opener, think=False
     ).complete(user, system=system)
 
     actual = rendering.serialize_canonical_a0_request(

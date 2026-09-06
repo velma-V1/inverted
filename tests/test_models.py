@@ -80,3 +80,9 @@ def test_complete_request_bytes_rejects_noncanonical_response_json(raw):
 
     with pytest.raises(ValueError):
         adapter.complete_request_bytes(b'{}')
+
+
+def test_harvest_d_ollama_adapter_can_emit_explicit_non_thinking_request():
+    adapter = OllamaChatAdapter("m", think=False)
+    payload = json.loads(adapter.request_bytes("answer", "system").decode("utf-8"))
+    assert payload["think"] is False
