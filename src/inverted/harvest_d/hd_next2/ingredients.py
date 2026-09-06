@@ -106,11 +106,18 @@ def _visible_atoms(source: Mapping[str, Any], field_ids: tuple[str, ...]) -> lis
     return atoms
 
 
+def _field_atoms(source: Mapping[str, Any], field_id: str, keys: tuple[str, ...]) -> list[tuple[str, Any]]:
+    value = source.get(field_id)
+    if not isinstance(value, Mapping):
+        return []
+    return [(f"{field_id}.{key}", value[key]) for key in keys if key in value and value[key] is not None]
+
+
 def _select_atoms(ingredient_id: str, source: Mapping[str, Any], field_ids: tuple[str, ...]) -> list[tuple[str, Any]]:
     """Select only source content that actually satisfies the semantic contract."""
     if ingredient_id in {
         "COUNTEREXAMPLE", "POSITIVE_EXAMPLE", "NEGATIVE_EXAMPLE", "DECOMPOSITION", "PLAN",
-        "TOOL_CONSTRAINTS", "EDGE_CASES", "HISTORY_COMPRESSED_MEMORY",
+        "EDGE_CASES", "HISTORY_COMPRESSED_MEMORY",
     }:
         return []
     if ingredient_id == "STATE_DELTA":
@@ -127,9 +134,9 @@ def _select_atoms(ingredient_id: str, source: Mapping[str, Any], field_ids: tupl
         evidence = source.get("I4")
         if not isinstance(evidence, Mapping):
             return []
-        pairs = (("deterministic_verifier", "model_claim"), ("canonical_source", "untrusted_note"))
+        pairs = (("deterministic_verifier", "model_claim"),)
         for left, right in pairs:
-            if left in evidence and right in evidence:
+            if left in evidence and right in evidence and evidence[left] != evidence[right]:
                 return _atoms_for({left: evidence[left], right: evidence[right]}, prefix="I4")
         return []
     if ingredient_id == "RECOVERY_OPTIONS":
@@ -142,17 +149,51 @@ def _select_atoms(ingredient_id: str, source: Mapping[str, Any], field_ids: tupl
             return []
         return _atoms_for({key: evidence[key] for key in ("deterministic_verifier", "model_claim", "missing") if key in evidence}, prefix="I4")
     if ingredient_id == "LIKELY_FAILURE_MODE":
-        recovery = source.get("I9")
-        if not isinstance(recovery, Mapping) or not any("FAIL" in str(value) for value in recovery.values()):
-            return []
-    supported_whole_field_contracts = {
-        "OBJECTIVE", "CANONICAL_STATE", "AUTHORITY", "CONSEQUENCE", "PRESERVATION_CONSTRAINTS",
-        "INVARIANTS", "DEPENDENCIES", "CAUSAL_STRUCTURE", "ADMISSIBLE_ACTIONS", "ALTERNATIVES",
-        "ACTION_CONSEQUENCES", "PRIOR_VERIFIED_STATE", "UNCERTAINTY",
-    }
-    if ingredient_id not in supported_whole_field_contracts:
+        for field_id, keys in (("I9", ("failure_mode",)), ("I10", ("likely_failure_mode",))):
+            atoms = _field_atoms(source, field_id, keys)
+            if atoms:
+                return atoms
         return []
-    return _visible_atoms(source, field_ids)
+
+    selectors: dict[str, list[tuple[str, tuple[str, ...]]]] = {
+        "OBJECTIVE": [("I1", ("objective", "subgoal"))],
+        "SUBGOAL": [("I1", ("subgoal",))],
+        "CANONICAL_STATE": [("I2", tuple())],
+        "AUTHORITY": [("I3", tuple())],
+        "SCOPE": [("I3", ("scope", "allowed_resources", "requested_resource"))],
+        "APPROVAL_STATE": [("I3", ("lease_state",))],
+        "EVIDENCE_PROVENANCE": [("I4", ("canonical_source", "untrusted_note", "state_read"))],
+        "EVIDENCE_FRESHNESS": [("I4", ("freshness", "fresh_at", "observed_at"))],
+        "UNCERTAINTY": [("I10", tuple())],
+        "MISSING_INFORMATION": [("I4", ("missing",)), ("I10", ("missing_information",))],
+        "RISK": [("I5", ("risk",))],
+        "CONSEQUENCE": [("I5", tuple())],
+        "REVERSIBILITY": [("I5", ("reversible",))],
+        "PRESERVATION_CONSTRAINTS": [("I6", tuple())],
+        "INVARIANTS": [("I6", tuple())],
+        "PREREQUISITES": [("I8", ("requires", "prerequisites"))],
+        "DEPENDENCIES": [("I8", tuple())],
+        "CAUSAL_STRUCTURE": [("I8", tuple()), ("I6", tuple())],
+        "ADMISSIBLE_ACTIONS": [("I7", ("admissible_actions",))],
+        "FORBIDDEN_ACTIONS": [("I6", ("forbidden_actions", "prohibited_actions"))],
+        "ACTION_CONSEQUENCES": [("I5", tuple()), ("I6", ("action_consequences",))],
+        "PRIOR_VERIFIED_STATE": [("I9", ("previous_verified",))],
+        "PRIOR_FAILURES": [("I9", ("previous_failure", "failure_mode")), ("I2", ("last_action",))],
+        "RECOVERY_OPTIONS": [("I9", ("recovery_state", "recovery_options"))],
+        "ALTERNATIVES": [("I7", ("admissible_actions", "alternatives"))],
+        "SUCCESS_CRITERIA": [("I6", ("success_criteria", "postcondition"))],
+        "FAILURE_CRITERIA": [("I6", ("failure_criteria",)), ("I9", ("failure_mode",))],
+        "TOOL_CONSTRAINTS": [("I3", ("tool_constraints",)), ("I6", ("tool_use", "tool_target", "tool_constraints"))],
+    }
+    if ingredient_id not in selectors:
+        return []
+    atoms: list[tuple[str, Any]] = []
+    for field_id, keys in selectors[ingredient_id]:
+        if keys:
+            atoms.extend(_field_atoms(source, field_id, keys))
+        else:
+            atoms.extend(_visible_atoms(source, (field_id,)))
+    return atoms
 
 
 def extract_ingredient_payload(case: object, ingredient_id: str, dose_id: str) -> IngredientPayload | None:
@@ -175,11 +216,11 @@ def extract_ingredient_payload(case: object, ingredient_id: str, dose_id: str) -
 
     _, field_ids, transform = _SPECS[ingredient_id]
     atoms = _select_atoms(ingredient_id, source, field_ids)
-    if len(atoms) < 2:
+    if not atoms:
         return None
     selected = atoms[:1] if dose_id == "CORE" else atoms
     payload = {transform: {atom: value for atom, value in selected}}
-    lineage = tuple(f"metadata:d3_information:{field_id}" for field_id in field_ids) + (
+    lineage = tuple(f"metadata:d3_information:{atom}" for atom, _ in selected) + (
         f"transform:select:{transform}",
         f"dose:{dose_id}",
     )
