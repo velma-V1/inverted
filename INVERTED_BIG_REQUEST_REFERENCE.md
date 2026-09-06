@@ -84,7 +84,13 @@ For every added component, test, rule, document, or model ask:
 
 If it does not earn complexity rent, remove it.
 
-## 10. Return the Smallest Complete Answer
+## 10. Separate Discovery From Compression
+For model-uplift or information-policy work, first determine whether the capability frontier is actually mapped.
+Do not confuse “minimum sufficient support” with the discovery objective. During discovery, identify the model-specific operating surface and Pareto frontier first; only then remove support, reduce model size, or compress context while measuring what capability is preserved or lost.
+
+Before proposing new inference, read `docs/OPERATING_SURFACE_EVIDENCE_FRONTIER.md` so the request starts from the strongest existing evidence rather than restarting broad discovery.
+
+## 11. Return the Smallest Complete Answer
 Use as much reasoning as necessary internally.
 
 Return, in this order:

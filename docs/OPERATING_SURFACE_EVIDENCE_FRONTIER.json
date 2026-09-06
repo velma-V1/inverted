@@ -1,0 +1,162 @@
+{
+  "schema_version": 3,
+  "as_of": "2026-09-05",
+  "status": "CURRENT_PROJECT_EVIDENCE_STATE",
+  "objective": "Map each model's conditional operating surface against its own raw baseline before compression.",
+  "evidence_classes": [
+    "ESTABLISHED",
+    "STRONG_SIGNAL",
+    "CONDITIONAL",
+    "DIAGNOSTIC_ONLY",
+    "UNDERRESOLVED",
+    "UNMAPPED",
+    "MEASUREMENT_RISK"
+  ],
+  "global_findings": {
+    "model_specific_response_surfaces": "ESTABLISHED",
+    "task_failure_region_conditionality": "ESTABLISHED",
+    "non_monotonic_support_value": "ESTABLISHED",
+    "evidence_quality_and_trust_importance": "ESTABLISHED",
+    "rich_observable_state_routing": "STRONG_SIGNAL",
+    "temperature_zero_stochasticity": "ESTABLISHED",
+    "pareto_multi_objective_requirement": "ESTABLISHED",
+    "ceiling_saturation_invalid_for_uplift": "ESTABLISHED",
+    "architecture_value_can_reverse_by_model": "ESTABLISHED",
+    "support_value_can_reverse_by_regime": "ESTABLISHED",
+    "runtime_model_residency_effects": "ESTABLISHED_OPERATIONAL"
+  },
+  "dimensions": {
+    "ingredient_content": "BROAD_UNIVERSE_UNDERRESOLVED",
+    "quality_source_trust": "ESTABLISHED_IMPORTANCE_UNDERRESOLVED_DELIVERY",
+    "amount_dose": "UNMAPPED_TO_REQUIRED_RESOLUTION_MEASUREMENT_RISK",
+    "order_sequence": "STRONG_DIAGNOSTIC_SIGNAL_RECURRENCE_UNDERRESOLVED",
+    "timing": "STRONG_SIGNAL_UNDERRESOLVED",
+    "placement": "MOSTLY_UNMAPPED_UNDERRESOLVED",
+    "representation": "STRONG_DIAGNOSTIC_SIGNAL_UNDERRESOLVED",
+    "context_length_position": "UNMAPPED_TO_INSUFFICIENT_DEPTH",
+    "higher_order_interactions": "ESTABLISHED_IMPORTANCE_RECURRENCE_UNDERRESOLVED_MAP",
+    "task_failure_family": "ESTABLISHED_CONDITIONALITY",
+    "structural_complexity": "STRONG_SIGNAL",
+    "model_specific_data_needs": "ESTABLISHED",
+    "model_failure_routing_state": "STRONG_SIGNAL",
+    "deterministic_assistance": "CONDITIONAL_UNDERRESOLVED_FOR_MODEL_COGNITION",
+    "recovery_pipeline": "ESTABLISHED_IMPORTANCE_CONDITIONAL_MODEL_BEHAVIOR",
+    "negative_transfer": "ESTABLISHED_EXISTENCE_BOUNDARY_UNDERRESOLVED",
+    "latency_tokens_compute": "ESTABLISHED_NECESSITY",
+    "fresh_sealed_transfer": "UNDERRESOLVED",
+    "recurrent_layering": "UNMAPPED_HIGH_PRIORITY",
+    "progressive_stateful_delivery": "UNMAPPED_HIGH_PRIORITY"
+  },
+  "evidence_dispositions": {
+    "test1_decisive": "VALID_BUT_CEILING_SATURATED_FOR_UPLIFT",
+    "test2_tier_a": "DIAGNOSTIC_ONLY_NON_UNIQUE_CALL_IDENTITY",
+    "test3_s2_tier_a": "VALID_STRONG_SIGNAL_NON_DECISIVE",
+    "harvest_a_b_c": "VALID_SYSTEM_RESPONSIBILITY_AND_RECOVERABILITY_EVIDENCE",
+    "harvest_d_d2": "VALID_DEVELOPMENT_FRONTIER_EVIDENCE",
+    "harvest_d_d3": "DIAGNOSTIC_MODEL_CONTEXT_EVIDENCE_WITH_DISPOSITION_SCORING_RISK",
+    "harvest_d_d4": "VALID_PARETO_TRADEOFF_EVIDENCE",
+    "harvest_d_r1": "VALID_REPRODUCIBILITY_AND_COST_CALIBRATION",
+    "hd_next_1": "VALID_EARLY_OPERATING_SURFACE_EVIDENCE_STOPPED_AT_FRESH_GATE"
+  },
+  "highest_information_regions": [
+    "GLOBAL_INTERACTION",
+    "TRANSACTION",
+    "VERIFIER_ORACLE",
+    "policy_ordering_L3_L4",
+    "preservation",
+    "structural_dependency",
+    "observable_failure_and_routing_state"
+  ],
+  "next_design_constraint": "Treat historical ingredients as seed priors, not a closed vocabulary. Run broad semantic ingredient discovery first; then map enabling, recurrent, progressive-stateful, dose, geometry, and conditional switch points before compression or independent transfer confirmation.",
+  "raw_zip_audit": {
+    "completed": "2026-09-05",
+    "project_relevant_archives_inventoried": 12,
+    "d3_duplicate_archives_byte_identical": true,
+    "test1_6480_trials_cross_archive_exact_parsed_match": true,
+    "test2_core_raw_streams_semantically_match_repo": true,
+    "test3_s2_core_raw_streams_semantically_match_repo": true,
+    "focused_d3_archives_add_inference_observations": false
+  },
+  "raw_priors": {
+    "harvest_c": {
+      "qwen_direct_checked_inverted": [
+        0.51,
+        0.94,
+        0.55
+      ],
+      "ministral_direct_checked_inverted": [
+        0.08,
+        0.16,
+        0.52
+      ],
+      "devstral_direct_checked_inverted": [
+        0.33,
+        0.81,
+        0.68
+      ]
+    },
+    "harvest_b": {
+      "insufficient_no_valid_plausible_source_ambiguity": "DIRECT_0_CHECKED_1_INVERTED_1_ACROSS_THREE_MODELS",
+      "adversarial": "DIRECT_1_CHECKED_1_INVERTED_0_ACROSS_THREE_MODELS"
+    },
+    "test1": {
+      "checked_minus_direct_qwen_pp": 20.0,
+      "checked_minus_direct_policy_pp": 23.8888888889,
+      "third_checked_retry_success": "1/37"
+    },
+    "d3_answer_level_diagnostics": {
+      "qwen_raw_vs_i_all_matched": "RAW_ONLY_2_OF_8_BOTH_GLOBAL_INTERACTION",
+      "qwen_without_i5_rescues": "3_OF_8_MATCHED",
+      "qwen_without_i8_rescues": "3_OF_8_MATCHED",
+      "small_a_without_i1_harms": "1_MATCHED_GLOBAL_INTERACTION_CASE",
+      "qwen_jit_vs_upfront_rescues": "3_OF_4_MATCHED_STATE_CASES",
+      "qwen_admissible_action_matrix_vs_typed_fields_rescues": "2_OF_4_MATCHED_STATE_CASES",
+      "reproducibility_calibration": "NOT_RUN",
+      "disposition_scoring": "INVALID_FOR_RECIPE_PROMOTION"
+    }
+  },
+  "local_runtime_evidence": {
+    "as_of": "2026-09-05",
+    "canonical_doc": "docs/LOCAL_RUNTIME_EVIDENCE.md",
+    "hd_next_1": {
+      "calls": 467,
+      "summed_inference_minutes": 31.7,
+      "small_a_calls": 412,
+      "small_a_avg_latency_s": 0.09,
+      "qwen_calls": 55,
+      "qwen_avg_latency_s": 33.97
+    },
+    "qwen_stress": {
+      "source": "D3",
+      "calls": 383,
+      "avg_latency_s": 77.22,
+      "output_tokens_approx": 1399272
+    },
+    "devstral_24b": {
+      "calls": 904,
+      "pooled_median_latency_s": 9.21,
+      "warm_calls": 609,
+      "warm_avg_latency_s": 12.4,
+      "warm_median_latency_s": 8.75,
+      "warm_p90_latency_s": 10.84,
+      "harvest_c_median_load_s": 30.57,
+      "harvest_c_median_total_latency_s": 39.27
+    },
+    "campaign_wall_clock": {
+      "test3_s2_720_calls": "1h11m49s",
+      "harvest_a_912_calls": "1h09m59s",
+      "harvest_b_900_calls": "58m54s",
+      "harvest_c_900_calls": "6h02m44s"
+    },
+    "planning_rule": "Runtime shapes scheduling and residency strategy; it must not delete scientifically valuable coverage."
+  },
+  "next_program": {
+    "name": "HD-NEXT-2",
+    "stage_2a": "multi-campaign layered semantic ingredient discovery",
+    "reusable_operator_sequences": true,
+    "static_and_progressive_layering_distinguished": true,
+    "protected_exploration_min_fraction_later_2a": 0.2,
+    "fresh_and_sealed_reserved_until_after_discovery_freeze": true,
+    "design_spec": "docs/superpowers/specs/2026-09-05-hd-next-2-layered-ingredient-discovery-design.md"
+  }
+}

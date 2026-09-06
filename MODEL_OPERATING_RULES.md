@@ -86,7 +86,23 @@ No mechanism survives because it is elegant, novel, or theoretically appealing. 
 
 Promote only after the applicable causal, generalization, regression, safety, and evidence-depth gates are satisfied.
 
-## 6. Scope
+## 6. Model-specific operating-surface rule
+
+The project is not searching for one universal prompt or one fixed support bundle.
+
+For model-uplift work, treat support as a conditional function of model, task/failure region, difficulty/structure, observable state, context pressure, and resource target. Candidate dimensions include information identity/source, dose, sequence, repetition/recurrence, static versus progressive delivery, timing, placement, representation, assistance, interactions, and persistence. Ingredients are reusable operators: `A -> B -> A` may have a different effect from `A -> B`, `B -> A`, or `A -> A -> B`.
+
+Measure each model against its **own raw baseline**. Cross-model comparisons are useful for diagnosis and routing, but one model remaining stronger than another is never itself a failure condition.
+
+During discovery, preserve the Pareto frontier across verified correctness, silent/catastrophic failure, stability/generalization, latency, tokens, compute, model calls, recoverability, and architecture burden. A near-peak point may be preferred when it buys a material efficiency gain.
+
+Do not optimize for minimum support or smallest model until the relevant high-performance frontier is known. Compression is a later phase that must demonstrate preservation of the selected capability point.
+
+Do not retire an ingredient solely because it performs poorly alone. Before demotion, preserve evidence about whether it has enabling, synergistic, recurrent, recovery, re-anchoring, or state-triggered value. Distinguish a static repeated layer from a progressive repeated layer delivered after the model or system state has changed.
+
+Read `docs/OPERATING_SURFACE_EVIDENCE_FRONTIER.md` and its JSON companion before proposing new model-uplift inference so already-mapped regions are not broadly retested.
+
+## 7. Scope
 
 These rules apply to:
 

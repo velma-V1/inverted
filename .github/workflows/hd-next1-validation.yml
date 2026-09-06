@@ -1,0 +1,23 @@
+name: HD-NEXT-1 validation
+
+on:
+  push:
+    branches:
+      - build/hd-next-1
+  pull_request:
+    paths:
+      - 'src/inverted/harvest_d/hd_next1_*.py'
+      - 'tests/test_harvest_d_hd_next1_*.py'
+      - 'configs/harvest-d-hd-next-1.json'
+      - '.github/workflows/hd-next1-validation.yml'
+
+jobs:
+  hd-next1-model-free:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - run: python -m pytest -q tests/test_harvest_d_hd_next1_*.py

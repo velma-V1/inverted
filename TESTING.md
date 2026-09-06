@@ -150,3 +150,43 @@ When scientifically relevant, budget should preferentially expand coverage acros
 Before execution, each test must declare a preflight action budget and the classes of actions it expects to consume. Runtime accounting must use a single shared budget and fail closed before an action that would exceed the declared budget or the absolute applicable action ceiling. Evidence must report actual usage by action class and in combined total.
 
 Test design should therefore ask: **what additional distinct evidence can another action buy?** Large budgets are justified when they produce broader causal coverage, stronger discrimination among hypotheses, better variance estimates, or meaningful stress/edge-case coverage. They are not justified by repeated low-value calls that do not materially improve the answer.
+
+## Universal model operating-surface discovery rule
+
+Model-uplift experiments must optimize each tested model against its **own raw baseline**. Cross-model gaps may inform routing or capability localization, but a smaller model failing to equal a larger model is not a scientific stopping or failure condition.
+
+The experimental object is a conditional operating surface, not a static prompt. Where decision-relevant, candidate dimensions include information/ingredient identity and source, quality/trust, amount or dose, exact sequence, repetition/recurrence, static versus progressive delivery, timing, placement, representation, context position/pressure, assistance, persistence, task/failure family, structural difficulty, observable model/system state, and pairwise or higher-order interactions. Ingredients are reusable operators: a sequence such as `A -> B -> A` is valid and must not be collapsed into a unique-ingredient permutation model.
+
+Discovery must proceed from the existing evidence frontier. Before new inference, read `docs/OPERATING_SURFACE_EVIDENCE_FRONTIER.md` and the machine-readable companion. Do not broadly rescreen a dimension already established to matter; spend calls to increase resolution, localize a switch point, test an unresolved interaction, or obtain independent transfer confirmation.
+
+### Discovery before compression
+
+Do not optimize for the smallest model, minimum support, fewest tokens, or simplest bundle until a defensible high-performance reference exists for that model/region. First locate the capability frontier; then test minimum-equivalent variants against it.
+
+### Pareto reporting
+
+Never collapse the experiment to one accuracy winner when material tradeoffs exist. Preserve Pareto-optimal points across correctness, catastrophic/silent failure, stability/generalization, latency, input/output tokens, inference/runtime burden, external actions/model calls, recoverability, and architecture complexity. A treatment that is 1% below peak correctness but 12% faster must remain visible as a distinct operating point.
+
+### Surface-search discipline
+
+Future campaigns should reduce uncertainty sequentially rather than throw arbitrary bundles at models. The default discovery ladder is:
+
+`historical anchors -> matched own-baselines -> noise calibration -> broad semantic ingredient discovery -> formulation separation -> enabling/pairwise interaction mapping -> recurrent/higher-order layering -> true dose curves -> sequence confirmation -> state-triggered timing -> placement/context geometry -> conditional progressive policies -> negative-transfer boundaries -> model-specific Pareto frontier -> fresh transfer -> sealed confirmation -> compression/minimum-equivalent variants`
+
+This is a search discipline, not a requirement to spend calls in every stage. Skip or collapse stages already answered by prior evidence.
+
+### Layered and recurrent delivery
+
+Do not eliminate an information ingredient merely because it is weak alone. Where evidence supports it, test enabling, synergistic, suppressive, replacement, recurrent, re-anchoring, recovery, and state-triggered roles. Distinguish static ordered packets from progressive stateful delivery where the model responds between layers. Repeated semantic operators may be exact repeats, refreshed from current observable state, or compressed re-anchors, and these forms must be labeled separately.
+
+### Runtime-aware scheduling
+
+Use `docs/LOCAL_RUNTIME_EVIDENCE.md` to forecast local campaign duration and model-residency effects. Runtime is a planning variable, not a scientific early-stop rule. Same-model blocking may be used to preserve large-model residency when it does not change the frozen scientific comparison; treatment/case order within each model block must remain randomized or balanced, and load duration/warm-cold state must be captured so scheduler behavior cannot masquerade as treatment latency.
+
+Fine effect claims require a repeated-cell reproducibility/noise calibration appropriate to the runtime. Do not interpret a small delta as causal when it is inside observed model/runtime stochasticity.
+
+Choose non-saturated cases/regions for uplift measurement. A raw baseline at or near ceiling cannot reveal meaningful positive uplift and should be used only for regression/safety checks unless a harder valid neighboring region is unavailable.
+
+Fresh and sealed evidence must remain independent from discovery/tuning. A treatment discovered from historical or development data may use that evidence to choose where to look, but not as its independent confirmation.
+
+A model-specific surface may legitimately produce multiple conditional recipes rather than one winner. Promotion should therefore identify applicability predicates and switch conditions, not force a universal bundle.
