@@ -52,6 +52,14 @@ def _complete_call(*, treatment_kind="HISTORICAL_SEED", physical_call_id="pc-1")
         )
     }
     schedule.update(admissible_unexplored_neighbors=[], protected_exploration=False)
+    expected = case.oracle.expected["answer"]
+    raw_response = json.dumps({"answer": expected}, separators=(",", ":"))
+    normalized_answer = (
+        expected.strip().lower().replace("-", "_").replace(" ", "_")
+        if isinstance(expected, str) else expected
+    )
+    if isinstance(normalized_answer, str) and normalized_answer.startswith("queue_"):
+        normalized_answer = normalized_answer[len("queue_"):]
     return {
         "unit_id": unit.unit_id,
         "physical_call_id": physical_call_id,
@@ -63,17 +71,17 @@ def _complete_call(*, treatment_kind="HISTORICAL_SEED", physical_call_id="pc-1")
             "rendered_request_bytes": request_bytes,
             "rendered_request_sha256": hashlib.sha256(request_bytes).hexdigest(),
         },
-        "response": {"raw_response": "raw provider response"},
+        "response": {"raw_response": raw_response},
         "rendered_layers": ([] if treatment_kind == "RAW" else [{
             "layer_index": 0, "ingredient_id": "HD_NEXT_1_HISTORICAL_SEED",
             "formulation_id": "ADMISSIBLE_ACTION_MATRIX", "dose_id": "MINIMUM",
             "rendered_bytes": support, "sha256": hashlib.sha256(support).hexdigest(),
         }]),
         "normalized": {
-            "candidate": {"answer": "A"}, "normalized_answer": "A", "correctness": True,
+            "candidate": {"answer": expected}, "normalized_answer": str(normalized_answer), "correctness": True,
         },
         "verification": {
-            "oracle_result": "A", "verifier_result": "PASS", "failure_taxonomy": [],
+            "oracle_result": str(expected), "verifier_result": "PASS", "failure_taxonomy": [],
         },
         "schedule": schedule,
         "telemetry": {
@@ -110,10 +118,38 @@ def test_complete_call_preserves_full_a0_reanalysis_provenance(tmp_path):
     for key in ("model", "request", "response", "rendered_layers", "normalized", "verification", "schedule", "telemetry"):
         assert journal[key]
     assert journal["request"]["rendered_request_bytes_hex"] == call["request"]["rendered_request_bytes"].hex()
-    assert journal["normalized"]["normalized_answer"] == "A"
+    assert journal["normalized"]["normalized_answer"] == call["normalized"]["normalized_answer"]
     assert journal["normalized"]["correctness"] is True
     assert journal["verification"]["verifier_result"] == "PASS"
     assert journal["schedule"]["treatment_spec_sha256"] == call["schedule"]["treatment_spec_sha256"]
+
+
+def test_signed_writer_rejects_scoring_inconsistent_with_raw_response(tmp_path):
+    writer = EvidenceWriter(tmp_path, journal_secret=b"artifact-owner-secret")
+    call = _complete_call()
+    call["normalized"]["correctness"] = False
+    call["verification"] = {
+        "oracle_result": call["verification"]["oracle_result"],
+        "verifier_result": "FAIL",
+        "failure_taxonomy": ["ANSWER_INCORRECT"],
+    }
+
+    with pytest.raises(ValueError, match="derived answer evidence"):
+        writer.write_call(call)
+    assert not (tmp_path / "call_journal.jsonl").read_bytes()
+
+
+def test_signed_journal_alteration_without_secret_is_rejected(tmp_path):
+    secret = b"artifact-owner-secret"
+    writer = EvidenceWriter(tmp_path, journal_secret=secret)
+    writer.write_call(_complete_call())
+    path = tmp_path / "call_journal.jsonl"
+    row = _rows(path)[0]
+    row["normalized"]["correctness"] = False
+    path.write_text(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="authentication"):
+        EvidenceWriter(tmp_path, journal_secret=secret).read_committed_calls()
 
 
 @pytest.mark.parametrize("provenance_class", ["model", "request", "response", "rendered_layers", "normalized", "verification", "schedule", "telemetry"])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import math
 from numbers import Real
@@ -41,6 +42,7 @@ _CANONICAL_CASES = {
 }
 _HISTORICAL_SEED_INGREDIENT = "HD_NEXT_1_HISTORICAL_SEED"
 _CANONICAL_MODEL_IDS = canonical_a0_planner_config()["models"]
+_CALL_JOURNAL_HMAC_DOMAIN = b"INVERTED/HD-NEXT-2/A0/CALL-JOURNAL/v1\x00"
 
 
 def _reject_json_pairs(pairs):
@@ -60,11 +62,53 @@ def _historical_seed_bytes(case: object) -> bytes:
     ).encode("utf-8")
 
 
+def _normalized_answer(value: object) -> object:
+    if isinstance(value, str):
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized.startswith("queue_") and len(normalized) > len("queue_"):
+            normalized = normalized[len("queue_"):]
+        return normalized
+    return value
+
+
+def derive_answer_evidence(raw_response: str, expected: object) -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        candidate = json.loads(
+            raw_response, object_pairs_hook=_reject_json_pairs,
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return (
+            {"candidate": {"unparsed": raw_response}, "normalized_answer": "UNPARSEABLE", "correctness": False},
+            {"oracle_result": str(expected), "verifier_result": "FAIL", "failure_taxonomy": ["ANSWER_JSON_INVALID"]},
+        )
+    if not isinstance(candidate, dict) or set(candidate) != {"answer"}:
+        stored = candidate if isinstance(candidate, dict) else {"value": candidate}
+        answer = candidate.get("answer", "UNPARSEABLE") if isinstance(candidate, dict) else "UNPARSEABLE"
+        return (
+            {"candidate": stored, "normalized_answer": str(_normalized_answer(answer)), "correctness": False},
+            {"oracle_result": str(expected), "verifier_result": "FAIL", "failure_taxonomy": ["ANSWER_ONLY_SCHEMA_INVALID"]},
+        )
+    answer = candidate["answer"]
+    correct = _normalized_answer(answer) == _normalized_answer(expected)
+    return (
+        {"candidate": candidate, "normalized_answer": str(_normalized_answer(answer)), "correctness": correct},
+        {
+            "oracle_result": str(expected),
+            "verifier_result": "PASS" if correct else "FAIL",
+            "failure_taxonomy": [] if correct else ["ANSWER_INCORRECT"],
+        },
+    )
+
+
 class EvidenceWriter:
     """Commit complete calls once and deterministically maintain their projections."""
 
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, *, journal_secret: bytes | None = None):
         self.root = Path(root)
+        if journal_secret is not None and not isinstance(journal_secret, bytes):
+            raise TypeError("journal_secret must be bytes")
+        self.journal_secret = journal_secret
         self.root.mkdir(parents=True, exist_ok=True)
         for ledger in (*LEDGERS, CALL_JOURNAL):
             (self.root / f"{ledger}.jsonl").touch(exist_ok=True)
@@ -82,6 +126,34 @@ class EvidenceWriter:
     def _append_encoded(self, ledger: str, encoded: str) -> None:
         with (self.root / f"{ledger}.jsonl").open("a", encoding="utf-8", newline="") as stream:
             stream.write(encoded + "\n")
+
+    def _authenticate(self, row: Mapping[str, Any]) -> dict[str, Any]:
+        unsigned = dict(row)
+        signature = unsigned.pop("journal_hmac_sha256", None)
+        if self.journal_secret is None:
+            if signature is not None:
+                raise ValueError("signed call journal requires journal_secret")
+            return unsigned
+        if not isinstance(signature, str):
+            raise ValueError("authoritative call journal authentication is missing")
+        expected = hmac.new(
+            self.journal_secret,
+            _CALL_JOURNAL_HMAC_DOMAIN + self._encoded(unsigned).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError("authoritative call journal authentication failed")
+        return unsigned
+
+    def _signed(self, row: Mapping[str, Any]) -> dict[str, Any]:
+        result = dict(row)
+        if self.journal_secret is not None:
+            result["journal_hmac_sha256"] = hmac.new(
+                self.journal_secret,
+                _CALL_JOURNAL_HMAC_DOMAIN + self._encoded(result).encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+        return result
 
     def append(self, ledger: str, row: Mapping[str, Any]) -> None:
         if ledger not in LEDGERS:
@@ -168,6 +240,13 @@ class EvidenceWriter:
         self._exact_schema(response, {"raw_response"}, set(), "response")
         self._required_string(response, "raw_response", "response")
 
+        case = _CANONICAL_CASES.get(unit.case_id)
+        expected_answer = (
+            case.oracle.expected.get("answer")
+            if case is not None and isinstance(case.oracle.expected, dict)
+            else case.oracle.expected if case is not None else None
+        )
+
         normalized = self._mapping(call, "normalized")
         self._exact_schema(normalized, {"candidate", "normalized_answer", "correctness"}, set(), "normalized")
         if "candidate" not in normalized or normalized["candidate"] is None:
@@ -183,6 +262,11 @@ class EvidenceWriter:
         taxonomy = verification.get("failure_taxonomy")
         if not isinstance(taxonomy, list) or any(not isinstance(item, str) for item in taxonomy):
             raise ValueError("verification.failure_taxonomy must be a list of strings")
+        derived_normalized, derived_verification = derive_answer_evidence(
+            response["raw_response"], expected_answer,
+        )
+        if normalized != derived_normalized or verification != derived_verification:
+            raise ValueError("supplied fields do not match derived answer evidence")
 
         schedule = self._mapping(call, "schedule")
         self._exact_schema(
@@ -349,10 +433,13 @@ class EvidenceWriter:
             if unit_id in seen_units or physical_call_id in seen_calls:
                 raise ValueError("duplicate authoritative call journal identity")
             try:
-                prepared = self._prepare_call(self._call_from_journal(row))
+                unsigned = self._authenticate(row)
+                prepared = self._prepare_call(self._call_from_journal(unsigned))
             except (TypeError, ValueError) as exc:
+                if "authentication" in str(exc):
+                    raise
                 raise ValueError("authoritative call journal is malformed") from exc
-            if prepared != row:
+            if prepared != unsigned:
                 raise ValueError("authoritative call journal is malformed")
             seen_units.add(unit_id)
             seen_calls.add(physical_call_id)
@@ -360,7 +447,7 @@ class EvidenceWriter:
         return validated
 
     def _assert_new_identity(self, journal: Mapping[str, Any]) -> None:
-        for row in self._read_rows(CALL_JOURNAL):
+        for row in self._validated_journals():
             if row.get("unit_id") == journal["unit_id"] or row.get("physical_call_id") == journal["physical_call_id"]:
                 raise ValueError("unit_id or physical_call_id is already committed")
 
@@ -368,8 +455,12 @@ class EvidenceWriter:
         """Commit one prevalidated A0 call, then project it to secondary ledgers."""
         journal = self._prepare_call(call)
         self._assert_new_identity(journal)
-        self._append_encoded(CALL_JOURNAL, self._encoded(journal))
+        self._append_encoded(CALL_JOURNAL, self._encoded(self._signed(journal)))
         self.reconcile_projections()
+
+    def read_committed_calls(self) -> tuple[dict[str, Any], ...]:
+        """Return only fully validated authoritative committed A0 calls."""
+        return tuple(self._call_from_journal(row) for row in self._validated_journals())
 
     def reconcile_projections(self) -> int:
         """Idempotently repair missing projections and reject anything not journal-derived."""

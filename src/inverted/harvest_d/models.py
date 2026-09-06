@@ -7,6 +7,19 @@ from typing import Any, Callable, Protocol
 from urllib.request import Request, urlopen
 
 
+def _reject_duplicate_json_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_nonfinite_json(value):
+    raise ValueError(f"non-finite JSON constant: {value}")
+
+
 class ModelAdapter(Protocol):
     model_id: str
 
@@ -60,7 +73,11 @@ class OllamaChatAdapter:
         ).encode("utf-8")
 
     def complete(self, prompt: str, system: str | None = None) -> ModelResponse:
-        body = self.request_bytes(prompt, system)
+        return self.complete_request_bytes(self.request_bytes(prompt, system))
+
+    def complete_request_bytes(self, body: bytes) -> ModelResponse:
+        if not isinstance(body, bytes):
+            raise TypeError("body must be exact bytes")
         req = Request(
             self.base_url + "/api/chat",
             data=body,
@@ -69,13 +86,22 @@ class OllamaChatAdapter:
         )
         start = time.perf_counter()
         with self._opener(req, timeout=self.timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            payload = json.loads(
+                response.read().decode("utf-8"),
+                object_pairs_hook=_reject_duplicate_json_keys,
+                parse_constant=_reject_nonfinite_json,
+            )
         elapsed_ms = (time.perf_counter() - start) * 1000.0
+        if not isinstance(payload, dict):
+            raise ValueError("Ollama response payload must be a dict")
+        response_model = payload.get("model")
+        if not isinstance(response_model, str) or not response_model.strip():
+            raise ValueError("Ollama response model must be a nonempty string")
         total_duration = payload.get("total_duration")
         latency_ms = float(total_duration) / 1_000_000.0 if total_duration is not None else elapsed_ms
         return ModelResponse(
             str(payload.get("message", {}).get("content", "")),
-            str(payload.get("model", self.model_id)),
+            response_model,
             int(payload.get("prompt_eval_count", 0) or 0),
             int(payload.get("eval_count", 0) or 0),
             latency_ms,

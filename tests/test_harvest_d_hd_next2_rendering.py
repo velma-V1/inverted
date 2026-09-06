@@ -241,7 +241,7 @@ def test_canonical_a0_request_bytes_are_the_bytes_ollama_adapter_sends():
             return False
 
         def read(self):
-            return b'{"message":{"content":"ok"}}'
+            return b'{"model":"qwen3.5:9b-q8_0","message":{"content":"ok"}}'
 
     def fake_opener(request, **kwargs):
         captured["data"] = request.data
