@@ -11,6 +11,14 @@
     "QWEN": "qwen3.5:9b-q8_0",
     "DEVSTRAL_24B": "devstral-small-2:24b"
   },
+  "a0": {
+    "development_seed": 20260921,
+    "anchor_case_count": 8,
+    "replications_per_cell": 4,
+    "treatment_kinds": ["RAW", "HISTORICAL_SEED"],
+    "diagnostic_model": "DEVSTRAL_24B",
+    "non_model_action_forecast": 40
+  },
   "stages": [
     "2A-0",
     "2A-1",

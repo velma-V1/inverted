@@ -27,6 +27,14 @@ def test_hd_next2_config_freezes_program_invariants():
     }
     assert StageId.A10.value == "2A-10"
     assert DeliveryMode.PROGRESSIVE.value == "PROGRESSIVE"
+    assert cfg["a0"] == {
+        "development_seed": 20260921,
+        "anchor_case_count": 8,
+        "replications_per_cell": 4,
+        "treatment_kinds": ["RAW", "HISTORICAL_SEED"],
+        "diagnostic_model": "DEVSTRAL_24B",
+        "non_model_action_forecast": 40,
+    }
 
 
 @pytest.mark.parametrize(
@@ -79,4 +87,23 @@ def test_hd_next2_config_freezes_exact_model_ids(tmp_path):
     candidate.write_text(json.dumps(config), encoding="utf-8")
 
     with pytest.raises(HDNext2ConfigError):
+        load_hd_next2_config(candidate)
+
+
+def test_hd_next2_config_rejects_a0_forecast_below_top_level_reserve(tmp_path):
+    config = json.loads(CONFIG.read_text(encoding="utf-8"))
+    config["non_model_action_reserve"] = 41
+    candidate = tmp_path / "candidate.json"
+    candidate.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(HDNext2ConfigError, match="forecast.*reserve"):
+        load_hd_next2_config(candidate)
+
+
+def test_a0_non_model_forecast_cannot_undercut_reserved_actions(tmp_path):
+    config = json.loads(CONFIG.read_text(encoding="utf-8"))
+    config["a0"]["non_model_action_forecast"] = 39
+    candidate = tmp_path / "candidate.json"
+    candidate.write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(HDNext2ConfigError, match="forecast.*reserve"):
         load_hd_next2_config(candidate)
