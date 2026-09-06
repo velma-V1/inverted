@@ -2,7 +2,7 @@
 
 INVERTED is an evidence-driven program for making the **whole system and every model operating inside it materially more capable in practice than the same model raw**.
 
-The current model-uplift objective is not one universal prompt and not “make the small model beat Qwen.” It is to discover each model's **model-specific operating surface**: what information/support it needs, how much, in what order, when, where, in what representation, under which task/failure/state conditions, and at what correctness/latency/token/compute tradeoff.
+The current model-uplift objective is not one universal prompt and not "make the small model beat Qwen." It is to discover each model's **model-specific operating surface**: what information/support it needs, how much, in what order, whether useful operators should recur, whether delivery should be static or progressive/stateful, when, where, in what representation, under which task/failure/state conditions, and at what correctness/latency/token/compute tradeoff.
 
 The eventual policy is conditional rather than static:
 
@@ -13,6 +13,8 @@ Discovery maps the high-performance Pareto frontier first. Compression toward mi
 The repository began with a narrower falsifiable architecture benchmark asking whether a non-AI candidate executor plus AI auditor could outperform direct model execution. That benchmark and later Harvest/Test campaigns remain preserved evidence streams; they do not limit the current project objective.
 
 Before designing new model-uplift inference, read [`docs/OPERATING_SURFACE_EVIDENCE_FRONTIER.md`](docs/OPERATING_SURFACE_EVIDENCE_FRONTIER.md) and its JSON companion so work starts from the strongest existing evidence.
+
+The current next-stage design is [`HD-NEXT-2 â€” Layered Ingredient Discovery and Operating-Surface Program`](docs/superpowers/specs/2026-09-05-hd-next-2-layered-ingredient-discovery-design.md). Local hardware/runtime planning evidence is maintained in [`docs/LOCAL_RUNTIME_EVIDENCE.md`](docs/LOCAL_RUNTIME_EVIDENCE.md).
 
 ## Permanent model operating rules
 

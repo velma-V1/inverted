@@ -72,15 +72,15 @@ Historical frozen runs remain historical truth for the protocols they actually e
 
 | Dimension | Current state | Most advanced defensible starting point |
 |---|---|---|
-| Ingredient/content identity | CONDITIONAL / UNDERRESOLVED | Do not restart generic binary screening. D3 leave-one-out is useful diagnostic targeting: on matched GLOBAL_INTERACTION cases, removing I5 or I8 rescued 3/8 Qwen cases, while removing I1 harmed Small-A on one matched case. HD-NEXT-1 independently found fresh component/bundle sign changes. Deepen these model×region interactions with valid scoring and noise calibration. |
+| Ingredient/content identity | BROAD UNIVERSE UNDERRESOLVED | I1-I10 and prior A-series mechanisms are seed priors, not a closed vocabulary. Do not rerun the same old formulations broadly, but do expand the semantic ingredient universe with sparse matched discovery across models/regions before local optimization. Weak standalone performance is insufficient for retirement because enabling, recurrent, recovery, and state-triggered value may exist. |
 | Evidence quality/source/trust | ESTABLISHED importance; UNDERRESOLVED delivery | Preserve provenance, freshness, contradiction, sufficiency, and authority class. Optimize how each model receives them rather than whether they matter. |
 | Amount/dose | UNMAPPED TO REQUIRED RESOLUTION / MEASUREMENT_RISK | Do not credit D3 as a dose experiment: on five matched D3.3 model/case cells, MINIMUM, COMPRESSED, MODERATE, FULL, and OVERLOADED rendered to byte-identical information packets. HD-NEXT-1 has only coarse amount categories. True per-ingredient and total-support dose curves remain open. |
-| Order/sequence | STRONG_DIAGNOSTIC_SIGNAL / UNDERRESOLVED | D3 matched Qwen STATE cases show EVIDENCE_FIRST rescuing 2/4 and SAFETY_STATE_EVIDENCE_FIRST rescuing 1/4 versus DEFAULT, while TASK_OBJECTIVE_FIRST and shuffled control rescued none; Test 2 ordering is contaminated and D3 lacks noise calibration. Exact precedence rules and interaction with dose/timing remain open. |
+| Order/sequence | STRONG_DIAGNOSTIC_SIGNAL / UNDERRESOLVED | D3 gives useful one-pass ordering priors, but recurrence and stateful sequencing are essentially unmapped. Future work must allow reusable operators such as `A -> B -> A`, distinguish exact-repeat versus refreshed-repeat effects, and compare static packet order with progressive delivery after intermediate model/state transitions. |
 | Timing | STRONG_SIGNAL / UNDERRESOLVED | D3 used genuinely different message geometry: on four matched Qwen STATE cases, JUST_IN_TIME rescued 3/4 and PRE_DECISION 1/4 versus UPFRONT, while PROGRESSIVE rescued 0/4. HD-NEXT-1 also favored pre-decision/JIT directionally. D3's scorer/noise limitations and state-heavy coverage prevent promotion. |
 | Placement | MOSTLY UNMAPPED / UNDERRESOLVED | D3's 476 non-RAW information packets were all recorded as TASK_CONTEXT; its timing variants sometimes redistributed content between system/user messages, so timing and placement can be entangled. HD-NEXT-1 includes task/system/mixed levels but with shallow/confounded exposure. Dedicated placement remains open. |
 | Representation | STRONG_DIAGNOSTIC_SIGNAL / UNDERRESOLVED | D3 matched Qwen STATE cases: ADMISSIBLE_ACTION_MATRIX rescued 2/4 relative to TYPED_FIELDS; compressed summary, decision table, decomposition, explicit alternatives, minimal ledger, and raw prose each rescued 1/4; priority block and strict JSON rescued 0/4. Test 2 also shows model×representation differences but is contaminated. Robust model×task confirmation remains open. |
 | Context length / useful-token ratio / position | UNMAPPED TO SUFFICIENT DEPTH | D3 did create overload, redundant-history, and token-matched-irrelevant controls, but they were not matched against a same-case TARGET baseline in D3.7 and its main amount labels were often literal no-ops. Dense length, useful-token ratio, and critical-information-position curves remain open. |
-| Pairwise/higher-order interactions | ESTABLISHED importance; UNDERRESOLVED map | Pairwise coverage exists, but HD-NEXT-1 showed sign changes after fresh transfer and across families. High-order interactions must be targeted from observed contradictions, not exhaustively enumerated. |
+| Pairwise/higher-order interactions | ESTABLISHED importance; UNDERRESOLVED map | Pairwise coverage exists, but enabling, suppression, replacement, recurrence, and higher-order path structure are not mapped to required depth. High-order search should deepen from observed edges while preserving protected exploration of weak/reversed/repeated combinations. |
 | Task/failure family | ESTABLISHED conditionality | `GLOBAL_INTERACTION`, `TRANSACTION`, `VERIFIER_ORACLE`, policy ordering, preservation, and structural dependency regions are high-information non-saturated targets. |
 | Structural complexity | STRONG_SIGNAL | Existing data shows model/role behavior changes with complexity, but some older matrices are contaminated. Use objective descriptors such as dependency depth, requirement count, action-space size, irreversibility, and interaction layers rather than one coarse difficulty label. |
 | Model-specific data needs | ESTABLISHED | Optimize Small-A and Qwen independently against their own raw baselines. Additional models are transition/diagnostic probes, not templates that define another model's recipe. |
@@ -88,7 +88,7 @@ Historical frozen runs remain historical truth for the protocols they actually e
 | Deterministic assistance A1–A11 | CONDITIONAL / UNDERRESOLVED for cognition | System-level replay is cheap and useful; whether exposing/using each assistance mechanism improves each model's cognition must be measured separately. |
 | Recovery pipeline | ESTABLISHED importance; CONDITIONAL model behavior | Deterministic recovery can be extremely effective, while repeated model repair can damage preservation or leave policy-order requirements unsolved. Detection, diagnosis, candidate generation, selection, execution, and verification must remain separate. |
 | Negative transfer | ESTABLISHED existence; boundary UNDERRESOLVED | Extra support, I9, overload, and alternate bundles change sign across development/fresh/family regimes. Observable switch conditions are not yet mapped tightly. |
-| Latency/tokens/compute | ESTABLISHED necessity | Qwen is orders of magnitude slower than Small-A in current local runs; support policies must report correctness gain together with inference time, tokens, memory/compute, and model calls. |
+| Latency/tokens/compute | ESTABLISHED necessity | Local dumps now provide direct hardware priors: HD-NEXT-1 Small-A ~0.09s/call, Qwen ~33.97s/call; Qwen D3 long-output stress ~77.22s/call; Devstral 24B warm median <9s but cold/model-swap behavior can add ~30s load time. Use `docs/LOCAL_RUNTIME_EVIDENCE.md`; runtime may shape scheduling but not delete valuable scientific coverage. |
 | Fresh/sealed transfer | UNDERRESOLVED | HD-NEXT-1 reached fresh evidence but stopped before sealed confirmation; many older signals are development-only or contaminated. Future promotion needs independent fresh and sealed confirmation after discovery. |
 ## Questions that should not consume broad new-call budgets
 
@@ -116,12 +116,23 @@ The preserved ZIP archives were opened and compared at raw-record level before f
 - **Focused/zero-call D3 ZIPs add no inference observations.** They contain source/tests or zero-byte run-data streams. `INVERTED_entire_chat_condensed.zip` is design/history context, not empirical model evidence.
 - **The S2/A/B/C full dump contains unique high-value raw slices not exposed by summary tables.** Those slices are incorporated into this frontier, especially the Harvest B regime sign reversals and Harvest C model-specific support reversals.
 
+## Local runtime evidence â€” 2026-09-05
+
+Raw dump telemetry was mined to estimate this machine's actual model-call behavior. The canonical planning record is `docs/LOCAL_RUNTIME_EVIDENCE.md`.
+
+- HD-NEXT-1: 467 calls, ~31.7 minutes summed inference; Small-A 412 calls at ~0.09s average, Qwen 55 calls at ~33.97s average.
+- D4/R1 independently place Qwen near ~33s/call in their calibration regimes; D3 is the long-output stress case at ~77.22s average across 383 Qwen calls.
+- Devstral Small 2 24B has 904 measured Harvest A/B/C calls. Warm/resident median latency is 8.75s (609 calls; p90 10.84s), while Harvest C median load duration was ~30.57s and drove median total latency to 39.27s.
+- Test 3 S2 completed 720 model calls in 1h 11m 49s wall-clock; Harvest A/B/C completed 912/900/900 calls in 1h 10m / 59m / 6h 03m respectively, showing scheduling/model residency can dominate raw call count.
+
+Operational consequence: batch same-model work when scientifically safe, randomize treatments within model blocks, preserve warm/cold/load telemetry, and forecast both normal and stress regimes. **Do not narrow a valuable experiment merely to save wall-clock time.**
+
 ## Highest-value unresolved frontier
 
 The current frontier is no longer `which broad mechanism might help?`.
 
 It is:
 
-> **For each model and non-saturated operating region, what exact conditional combination of information, dose, sequence, timing, placement, representation, assistance, and state-triggering maximizes the defensible Pareto frontier—and where does that combination change or become harmful?**
+> **For each model and non-saturated operating region, what exact conditional combination of information, dose, reusable sequence/recurrence, static or progressive layering, timing, placement, representation, assistance, and state-triggering maximizes the defensible Pareto frontier—and where does that combination change or become harmful?**
 
 That question must be answered with matched own-baseline controls, explicit noise-floor calibration, model×task/state interaction measurement, and fresh/sealed confirmation. Compression/minimum-equivalent support comes only after the performance frontier is mapped.

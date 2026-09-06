@@ -155,7 +155,7 @@ Test design should therefore ask: **what additional distinct evidence can anothe
 
 Model-uplift experiments must optimize each tested model against its **own raw baseline**. Cross-model gaps may inform routing or capability localization, but a smaller model failing to equal a larger model is not a scientific stopping or failure condition.
 
-The experimental object is a conditional operating surface, not a static prompt. Where decision-relevant, candidate dimensions include information/ingredient identity and source, quality/trust, amount or dose, exact sequence, timing, placement, representation, context position/pressure, assistance, persistence, task/failure family, structural difficulty, observable model/system state, and pairwise or higher-order interactions.
+The experimental object is a conditional operating surface, not a static prompt. Where decision-relevant, candidate dimensions include information/ingredient identity and source, quality/trust, amount or dose, exact sequence, repetition/recurrence, static versus progressive delivery, timing, placement, representation, context position/pressure, assistance, persistence, task/failure family, structural difficulty, observable model/system state, and pairwise or higher-order interactions. Ingredients are reusable operators: a sequence such as `A -> B -> A` is valid and must not be collapsed into a unique-ingredient permutation model.
 
 Discovery must proceed from the existing evidence frontier. Before new inference, read `docs/OPERATING_SURFACE_EVIDENCE_FRONTIER.md` and the machine-readable companion. Do not broadly rescreen a dimension already established to matter; spend calls to increase resolution, localize a switch point, test an unresolved interaction, or obtain independent transfer confirmation.
 
@@ -171,9 +171,17 @@ Never collapse the experiment to one accuracy winner when material tradeoffs exi
 
 Future campaigns should reduce uncertainty sequentially rather than throw arbitrary bundles at models. The default discovery ladder is:
 
-`historical anchors -> matched own-baselines -> noise calibration -> local ingredient/interaction discrimination -> dense dose curves -> sequence/order -> timing -> placement -> representation/context geometry -> state-conditioned policies -> higher-order interactions -> negative-transfer boundaries -> model-specific Pareto frontier -> fresh transfer -> sealed confirmation -> compression/minimum-equivalent variants`
+`historical anchors -> matched own-baselines -> noise calibration -> broad semantic ingredient discovery -> formulation separation -> enabling/pairwise interaction mapping -> recurrent/higher-order layering -> true dose curves -> sequence confirmation -> state-triggered timing -> placement/context geometry -> conditional progressive policies -> negative-transfer boundaries -> model-specific Pareto frontier -> fresh transfer -> sealed confirmation -> compression/minimum-equivalent variants`
 
 This is a search discipline, not a requirement to spend calls in every stage. Skip or collapse stages already answered by prior evidence.
+
+### Layered and recurrent delivery
+
+Do not eliminate an information ingredient merely because it is weak alone. Where evidence supports it, test enabling, synergistic, suppressive, replacement, recurrent, re-anchoring, recovery, and state-triggered roles. Distinguish static ordered packets from progressive stateful delivery where the model responds between layers. Repeated semantic operators may be exact repeats, refreshed from current observable state, or compressed re-anchors, and these forms must be labeled separately.
+
+### Runtime-aware scheduling
+
+Use `docs/LOCAL_RUNTIME_EVIDENCE.md` to forecast local campaign duration and model-residency effects. Runtime is a planning variable, not a scientific early-stop rule. Same-model blocking may be used to preserve large-model residency when it does not change the frozen scientific comparison; treatment/case order within each model block must remain randomized or balanced, and load duration/warm-cold state must be captured so scheduler behavior cannot masquerade as treatment latency.
 
 Fine effect claims require a repeated-cell reproducibility/noise calibration appropriate to the runtime. Do not interpret a small delta as causal when it is inside observed model/runtime stochasticity.
 
