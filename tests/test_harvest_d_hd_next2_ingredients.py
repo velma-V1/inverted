@@ -1,0 +1,48 @@
+from inverted.harvest_d.d3_cases import generate_d3_cases
+from inverted.harvest_d.hd_next2.ingredients import (
+    INITIAL_IDS,
+    SemanticIngredient,
+    extract_ingredient_payload,
+    initial_ingredient_registry,
+)
+
+
+def test_initial_registry_has_exactly_40_distinct_semantic_families():
+    registry = initial_ingredient_registry()
+
+    assert len(registry) == 40
+    assert len(set(registry)) == 40
+    assert {"OBJECTIVE", "CANONICAL_STATE", "EVIDENCE_PROVENANCE", "DEPENDENCIES", "RECOVERY_OPTIONS", "EDGE_CASES"} <= set(registry)
+    assert tuple(registry) == INITIAL_IDS
+    assert all(isinstance(ingredient, SemanticIngredient) for ingredient in registry.values())
+
+
+def test_core_and_full_payloads_are_semantically_distinct():
+    case = generate_d3_cases(partition="development", seed=20260921, per_family=1)[0]
+
+    core = extract_ingredient_payload(case, "CANONICAL_STATE", "CORE")
+    full = extract_ingredient_payload(case, "CANONICAL_STATE", "FULL")
+
+    assert core is not None
+    assert full is not None
+    assert core.semantic_atoms < full.semantic_atoms
+    assert core.payload != full.payload
+
+
+def test_payload_lineage_identifies_public_source_and_deterministic_transform():
+    case = generate_d3_cases(partition="development", seed=20260921, per_family=1)[0]
+
+    payload = extract_ingredient_payload(case, "OBJECTIVE", "CORE")
+
+    assert payload is not None
+    assert payload.source_lineage == (
+        "metadata:d3_information:I1",
+        "transform:select:objective",
+        "dose:CORE",
+    )
+
+
+def test_inapplicable_ingredient_returns_none_without_fabricated_content():
+    case = generate_d3_cases(partition="development", seed=20260921, per_family=1)[0]
+
+    assert extract_ingredient_payload(case, "EDGE_CASES", "CORE") is None
