@@ -45,6 +45,13 @@ class Partition(str, Enum):
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
+_IMMUTABLE_REPLAY_DIMENSIONS = frozenset({
+    "source_model_id", "source_model_digest", "partition",
+    "parent_failure_snapshot_id", "parent_state_hash", "state_hash",
+    "failure_snapshot_id", "record_id", "record_type",
+    "source_campaign_id", "source_trial_id",
+})
+
 
 def _required(name: str, value: str) -> None:
     if not isinstance(value, str) or not value.strip():
@@ -221,17 +228,22 @@ class ReplayRequest:
         override_keys = set(self.overrides)
         same_model = (self.target_model_id == self.source_model_id and
                       self.target_model_digest == self.source_model_digest)
+        dimension_set = set(dimensions)
         if self.mode is ReplayMode.EXACT:
             if dimensions or override_keys or not same_model:
                 raise ValueError("EXACT replay forbids changes and requires source model provenance")
-        elif not override_keys.issubset(set(dimensions)):
-            raise ValueError("overrides must be limited to changed_dimensions")
+        elif dimension_set & _IMMUTABLE_REPLAY_DIMENSIONS:
+            raise ValueError("replay changed_dimensions contain immutable provenance fields")
         elif self.mode is ReplayMode.COUNTERFACTUAL:
             if not dimensions or not same_model or "target_model" in dimensions:
                 raise ValueError("COUNTERFACTUAL replay requires same source model and declared non-model changes")
+            if override_keys != dimension_set:
+                raise ValueError("COUNTERFACTUAL changed_dimensions must exactly match overrides")
         elif self.mode is ReplayMode.CROSS_MODEL:
             if "target_model" not in dimensions or same_model:
                 raise ValueError("CROSS_MODEL replay requires a different target model and target_model dimension")
+            if override_keys != (dimension_set - {"target_model"}):
+                raise ValueError("CROSS_MODEL non-model changed_dimensions must exactly match overrides")
         _sha256("record_id", self.record_id, optional=True)
         object.__setattr__(self, "changed_dimensions", dimensions)
 
@@ -296,6 +308,8 @@ class ReplayResult:
             raise ValueError("child_failure_snapshot_id is forbidden when replay succeeds")
         if self.child_failure_snapshot_id is not None:
             _required("child_failure_snapshot_id", self.child_failure_snapshot_id)
+            if self.child_failure_snapshot_id == self.parent_failure_snapshot_id:
+                raise ValueError("child_failure_snapshot_id must differ from parent_failure_snapshot_id")
         object.__setattr__(self, "failure_classes", failure_classes)
         for name in ("adapter_changes", "metrics", "metadata"):
             _freeze_mapping(self, name)

@@ -367,3 +367,40 @@ def test_schema_deep_freezes_nested_json_and_rejects_non_boolean_result_flags() 
             semantic_pass=True, contract_pass=True,
             output_asset_sha256="e" * 64, raw_call_asset_sha256="f" * 64,
         )
+
+def test_counterfactual_requires_concrete_override_for_every_declared_dimension() -> None:
+    fixture = make_fixture()
+    with pytest.raises(ValueError, match="changed_dimensions"):
+        ReplayRequest(
+            replay_request_id="request-cf-empty", parent_failure_snapshot_id=fixture.failure_snapshot_id,
+            parent_state_hash=fixture.state_hash, decision_id="D2", hypothesis_id="H2",
+            expected_causal_implication="temperature repairs failure", mode=ReplayMode.COUNTERFACTUAL,
+            source_model_id=fixture.source_model_id, source_model_digest=fixture.source_model_digest,
+            target_model_id=fixture.source_model_id, target_model_digest=fixture.source_model_digest,
+            partition=fixture.partition, changed_dimensions=("temperature",), overrides={},
+        )
+
+
+def test_counterfactual_cannot_mutate_frozen_provenance_dimensions() -> None:
+    fixture = make_fixture()
+    for dimension in ("source_model_id", "source_model_digest", "partition", "parent_state_hash", "state_hash"):
+        with pytest.raises(ValueError, match="immutable"):
+            ReplayRequest(
+                replay_request_id=f"request-{dimension}", parent_failure_snapshot_id=fixture.failure_snapshot_id,
+                parent_state_hash=fixture.state_hash, decision_id="D2", hypothesis_id="H2",
+                expected_causal_implication="invalid provenance intervention", mode=ReplayMode.COUNTERFACTUAL,
+                source_model_id=fixture.source_model_id, source_model_digest=fixture.source_model_digest,
+                target_model_id=fixture.source_model_id, target_model_digest=fixture.source_model_digest,
+                partition=fixture.partition, changed_dimensions=(dimension,), overrides={dimension: "changed"},
+            )
+
+def test_failed_replay_child_snapshot_cannot_equal_parent() -> None:
+    with pytest.raises(ValueError, match="child_failure_snapshot_id"):
+        ReplayResult(
+            replay_result_id="result-cycle", replay_request_id="request-cycle",
+            parent_failure_snapshot_id="fail-cycle", parent_state_hash="d" * 64,
+            mode=ReplayMode.EXACT, target_model_id="qwen", target_model_digest="digest",
+            partition=Partition.DEVELOPMENT, completed=True, semantic_pass=False, contract_pass=True,
+            output_asset_sha256="e" * 64, raw_call_asset_sha256="f" * 64,
+            failure_classes=("SEMANTIC_FAIL",), child_failure_snapshot_id="fail-cycle",
+        )
