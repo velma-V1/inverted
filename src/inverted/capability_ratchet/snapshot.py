@@ -139,8 +139,10 @@ def _request_envelopes(
     if not isinstance(raw_calls, list) or not raw_calls:
         raise ValueError("raw trial must contain physical raw_calls")
     physical_calls = raw_trial.get("physical_calls")
-    if physical_calls != len(raw_calls) or observation.physical_calls != len(raw_calls):
-        raise ValueError("physical call count does not match raw trial evidence")
+    if physical_calls != len(raw_calls):
+        raise ValueError("raw trial physical call count does not match raw evidence")
+    if observation.physical_calls not in {0, len(raw_calls)}:
+        raise ValueError("atomic physical-call attribution is inconsistent with raw trial evidence")
     if len(observation.raw_call_refs) != len(raw_calls):
         raise ValueError("observation raw-call references do not cover every physical call")
 
@@ -238,7 +240,8 @@ def build_failure_fixture(
         "scorer": focus_task.scorer,
         "original_response_text": failed_observation.response_text,
         "raw_call_refs": list(failed_observation.raw_call_refs),
-        "physical_calls": failed_observation.physical_calls,
+        "physical_calls": len(envelopes),
+        "attributed_physical_calls": failed_observation.physical_calls,
     }
     _scan_secrets(metadata, label="snapshot metadata")
 

@@ -243,3 +243,12 @@ def test_camelcase_sensitive_key_is_rejected(tmp_path) -> None:
     trial["raw_calls"][0]["request"]["ApiKey"] = "plaintext-value"
     with pytest.raises(ValueError, match="sensitive|secret"):
         build(tmp_path, raw_trial=trial)
+
+
+def test_v2_nonfirst_atomic_observation_may_have_zero_attributed_physical_calls(tmp_path) -> None:
+    observation = failed_observation(physical_calls=0)
+    fixture, store = build(tmp_path, failed_observation=observation)
+    visible = store.read_asset(fixture.model_visible_asset_sha256)
+    assert len(visible["request_envelopes"]) == 2
+    assert fixture.metadata["attributed_physical_calls"] == 0
+    assert fixture.metadata["physical_calls"] == 2
