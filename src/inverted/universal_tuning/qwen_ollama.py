@@ -57,6 +57,10 @@ class QwenOllamaAdapter:
             raise ValueError("Qwen tuning response model identity mismatch")
         return raw, elapsed
 
+    def post_chat_payload(self, payload: dict[str, Any]) -> tuple[dict[str, Any], float]:
+        """Post one already-constructed chat payload without changing it."""
+        return self._post(payload)
+
     @staticmethod
     def _batch_messages(tasks: tuple[AtomicTask, ...]) -> list[dict[str, str]]:
         schema = '{"answers":[{"task_id":"TASK_ID","answer":VALUE}]}'
