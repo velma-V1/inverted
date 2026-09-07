@@ -86,14 +86,15 @@ def _contains_all_batch_quality(candidate: Any, expected: Any) -> float:
 
 _ALLOWED_CALLS = {
     "max": max, "all": all, "any": any, "sum": sum, "sorted": sorted,
-    "set": set, "list": list, "reversed": reversed,
+    "set": set, "list": list, "reversed": reversed, "next": next,
 }
 _ALLOWED_NODES = (
     ast.Expression, ast.Call, ast.Name, ast.Load, ast.Store, ast.Constant,
     ast.keyword, ast.Compare, ast.Gt, ast.GtE, ast.Lt, ast.LtE, ast.Eq,
     ast.NotEq, ast.GeneratorExp, ast.comprehension, ast.Subscript, ast.Slice,
     ast.UnaryOp, ast.USub, ast.UAdd, ast.BoolOp, ast.And, ast.Or,
-    ast.BinOp, ast.Mod, ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.IfExp,
+    ast.BinOp, ast.Mod, ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.Pow, ast.IfExp,
+    ast.ListComp, ast.DictComp, ast.Tuple, ast.Is, ast.IsNot,
 )
 
 
@@ -141,6 +142,18 @@ def _behavior_scenarios(spec: Any) -> list[tuple[dict[str, Any], Any]]:
         return [({"values": []}, False), ({"values": [target-1, target, target+1]}, True), ({"values": [target+2]}, False)]
     if kind == "sum_values":
         return [({"values": []}, 0), ({"values": [1,2,3]}, 6), ({"values": [-2,5]}, 3)]
+    if kind == "v1_sorted_unique_items":
+        return [({"items": []}, []), ({"items": [3,1,3,2]}, [1,2,3]), ({"items": [-1,2,-1]}, [-1,2])]
+    if kind == "v1_sum_squares":
+        return [({"values": []}, 0), ({"values": [1,2,3]}, 14), ({"values": [-2,4]}, 20)]
+    if kind == "v1_dict_exclude_none":
+        return [({"pairs": []}, {}), ({"pairs": [("a",1),("b",None)]}, {"a":1}), ({"pairs": [("x",2),("y",3)]}, {"x":2,"y":3})]
+    if kind == "v1_first_positive":
+        return [({"items": []}, None), ({"items": [-2,0,4,5]}, 4), ({"items": [3,-1]}, 3)]
+    if kind == "v1_even_values":
+        return [({"values": []}, []), ({"values": [1,2,4,5]}, [2,4]), ({"values": [-2,-1,0]}, [-2,0])]
+    if kind == "v1_square_map":
+        return [({"values": []}, {}), ({"values": [1,2,3]}, {1:1,2:4,3:9}), ({"values": [-2,4]}, {-2:4,4:16})]
     return []
 
 
