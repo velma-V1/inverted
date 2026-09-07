@@ -404,3 +404,47 @@ def test_failed_replay_child_snapshot_cannot_equal_parent() -> None:
             output_asset_sha256="e" * 64, raw_call_asset_sha256="f" * 64,
             failure_classes=("SEMANTIC_FAIL",), child_failure_snapshot_id="fail-cycle",
         )
+
+def test_replay_request_always_has_stable_branch_identity() -> None:
+    fixture = make_fixture()
+    first = ReplayRequest.for_exact(fixture, decision_id="D1", hypothesis_id="H1")
+    second = ReplayRequest.for_exact(fixture, decision_id="D1", hypothesis_id="H1")
+    assert first.intervention_id and first.counterfactual_group_id
+    assert first.intervention_id == second.intervention_id
+    assert first.counterfactual_group_id == second.counterfactual_group_id
+    payload = to_payload(first)
+    assert payload["intervention_id"] == first.intervention_id
+    assert payload["counterfactual_group_id"] == first.counterfactual_group_id
+
+
+def test_blank_or_non_string_explicit_branch_ids_are_rejected() -> None:
+    fixture = make_fixture()
+    for field, value in (("intervention_id", ""), ("counterfactual_group_id", 7)):
+        kwargs = {field: value}
+        with pytest.raises((TypeError, ValueError), match=field):
+            ReplayRequest(
+                replay_request_id=f"request-{field}", parent_failure_snapshot_id=fixture.failure_snapshot_id,
+                parent_state_hash=fixture.state_hash, decision_id="D2", hypothesis_id="H2",
+                expected_causal_implication="temperature repairs failure", mode=ReplayMode.COUNTERFACTUAL,
+                source_model_id=fixture.source_model_id, source_model_digest=fixture.source_model_digest,
+                target_model_id=fixture.source_model_id, target_model_digest=fixture.source_model_digest,
+                partition=fixture.partition, changed_dimensions=("temperature",), overrides={"temperature": 0.2},
+                **kwargs,
+            )
+
+def test_non_cross_model_result_rejects_adapter_changes() -> None:
+    with pytest.raises(ValueError, match="adapter_changes"):
+        ReplayResult(
+            replay_result_id="result-adapter", replay_request_id="request-adapter",
+            parent_failure_snapshot_id="fail-adapter", parent_state_hash="d" * 64,
+            mode=ReplayMode.EXACT, target_model_id="qwen", target_model_digest="digest",
+            partition=Partition.DEVELOPMENT, completed=True, semantic_pass=True, contract_pass=True,
+            output_asset_sha256="e" * 64, raw_call_asset_sha256="f" * 64,
+            adapter_changes={"runtime": "translated"},
+        )
+
+
+def test_non_finite_numbers_are_rejected_from_canonical_payloads() -> None:
+    for value in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(TypeError, match="finite"):
+            make_fixture(metadata={"value": value})

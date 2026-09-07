@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -72,6 +73,8 @@ def _freeze(value: Any) -> Any:
         return MappingProxyType({key: _freeze(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
         return tuple(_freeze(item) for item in value)
+    if isinstance(value, float) and not math.isfinite(value):
+        raise TypeError("replay payload numbers must be finite")
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     raise TypeError(f"unsupported replay payload value: {type(value).__name__}")
@@ -102,6 +105,8 @@ def _json_value(value: Any) -> Any:
         return {str(key): _json_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        raise TypeError("replay payload numbers must be finite")
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     raise TypeError(f"unsupported replay payload value: {type(value).__name__}")
@@ -244,6 +249,20 @@ class ReplayRequest:
                 raise ValueError("CROSS_MODEL replay requires a different target model and target_model dimension")
             if override_keys != (dimension_set - {"target_model"}):
                 raise ValueError("CROSS_MODEL non-model changed_dimensions must exactly match overrides")
+        if self.intervention_id is None:
+            payload = {"mode": self.mode.value, "dimensions": list(dimensions),
+                       "overrides": _json_value(self.overrides),
+                       "target_model_id": self.target_model_id,
+                       "target_model_digest": self.target_model_digest}
+            digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+            object.__setattr__(self, "intervention_id", f"intervention-{digest[:20]}")
+        else:
+            _required("intervention_id", self.intervention_id)
+        if self.counterfactual_group_id is None:
+            group = hashlib.sha256(f"{self.parent_failure_snapshot_id}:{self.parent_state_hash}".encode("utf-8")).hexdigest()
+            object.__setattr__(self, "counterfactual_group_id", f"cf-group-{group[:20]}")
+        else:
+            _required("counterfactual_group_id", self.counterfactual_group_id)
         _sha256("record_id", self.record_id, optional=True)
         object.__setattr__(self, "changed_dimensions", dimensions)
 
@@ -313,6 +332,8 @@ class ReplayResult:
         object.__setattr__(self, "failure_classes", failure_classes)
         for name in ("adapter_changes", "metrics", "metadata"):
             _freeze_mapping(self, name)
+        if self.mode is not ReplayMode.CROSS_MODEL and self.adapter_changes:
+            raise ValueError("adapter_changes are only valid for CROSS_MODEL replay results")
 
 
 ReplayRecord: TypeAlias = FailureFixture | ReplayRequest | ReplayResult
