@@ -9,6 +9,8 @@ import json
 import math
 from pathlib import Path
 import statistics
+import shutil
+import sys
 import time
 from typing import Any, Callable, Iterable, Mapping
 from urllib.request import Request, urlopen
@@ -27,6 +29,85 @@ TASK_FAMILIES = (
     "CODING_GENERATION", "DEBUGGING_REVIEW", "TOOL_AGENT_DECISION",
     "AMBIGUITY_UNCERTAINTY", "SYSTEM_GOVERNANCE", "SYNTHESIS_WRITING",
 )
+
+
+def _format_duration(seconds: float | None) -> str:
+    if seconds is None or not math.isfinite(seconds) or seconds < 0:
+        return "--"
+    value = int(round(seconds))
+    hours, rem = divmod(value, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m"
+    if minutes:
+        return f"{minutes}m{secs:02d}s"
+    return f"{secs}s"
+
+
+def format_progress_line(*, done: int, total: int, elapsed_s: float, width: int) -> str:
+    total = max(1, int(total))
+    done = min(max(0, int(done)), total)
+    left = max(0, total - done)
+    pct = 100.0 * done / total
+    rate = done / elapsed_s if done > 0 and elapsed_s > 0 else 0.0
+    eta = left / rate if rate > 0 else None
+    eta_text = _format_duration(eta)
+    elapsed_text = _format_duration(elapsed_s)
+    width = max(1, int(width))
+    if eta is None:
+        eta_short = "--"
+    elif eta >= 3600:
+        eta_short = f"{int(round(eta / 3600))}h"
+    elif eta >= 60:
+        eta_short = f"{int(round(eta / 60))}m"
+    else:
+        eta_short = f"{int(round(eta))}s"
+    if width < 36:
+        return f"{pct:.0f}% {done}d {left}l ETA {eta_short}"[:width]
+    compact = f"{pct:3.0f}% {done} done {left} left ETA {eta_text}"
+    if width < 64:
+        return compact[:width]
+    suffix = f" {pct:5.1f}% | {done} done | {left} left | elapsed {elapsed_text} | ETA {eta_text}"
+    bar_width = width - len(suffix) - 2
+    if bar_width < 8:
+        return suffix.strip()[:width]
+    filled = min(bar_width, int(round(bar_width * done / total)))
+    return ("[" + "#" * filled + "-" * (bar_width - filled) + "]" + suffix)[:width]
+
+
+def projected_physical_calls(thinking_families: int) -> int:
+    count = min(max(0, int(thinking_families)), len(TASK_FAMILIES))
+    budget_per_family = 1 + 2 * (len(BUDGETS) - 1)
+    validation_per_family = 5
+    adaptive_per_thinking_family = 2 * len(COARSE_TEMPERATURES) + 4 * len(REFINEMENT_STEPS)
+    return len(TASK_FAMILIES) * (budget_per_family + validation_per_family) + count * adaptive_per_thinking_family
+
+
+class ProgressReporter:
+    def __init__(self, *, stream=None, width_provider=None, clock=None) -> None:
+        self.stream = stream or sys.stderr
+        self.width_provider = width_provider or (lambda: shutil.get_terminal_size((100, 24)).columns)
+        self.clock = clock or time.perf_counter
+        self.started_at = 0.0
+        self.elapsed_offset_s = 0.0
+
+    def start(self, *, done: int, total: int, started_at: float | None = None, elapsed_offset_s: float = 0.0) -> None:
+        self.started_at = self.clock() if started_at is None else float(started_at)
+        self.elapsed_offset_s = max(0.0, float(elapsed_offset_s))
+        self.update(done=done, total=total)
+
+    def update(self, *, done: int, total: int) -> None:
+        elapsed = self.elapsed_offset_s + max(0.0, self.clock() - self.started_at)
+        width = max(1, int(self.width_provider()))
+        line = format_progress_line(done=done, total=total, elapsed_s=elapsed, width=width)
+        clear = "\x1b[K" if getattr(self.stream, "isatty", lambda: False)() else ""
+        self.stream.write("\r" + line + clear)
+        self.stream.flush()
+
+    def finish(self, *, done: int) -> None:
+        self.update(done=done, total=max(1, done))
+        self.stream.write("\n")
+        self.stream.flush()
 
 @dataclass(frozen=True)
 class TuningCase:
@@ -501,7 +582,8 @@ def _append_observation(path: Path, observation: Observation) -> None:
 
 def _evaluate_trial(
     trial: TrialSpec, client: Any, observations: dict[str, Observation],
-    evidence_path: Path, max_calls: int,
+    evidence_path: Path, max_calls: int, progress: ProgressReporter | None = None,
+    projected_total: int | None = None,
 ) -> Observation:
     existing = observations.get(trial.trial_id)
     if existing is not None:
@@ -526,6 +608,9 @@ def _evaluate_trial(
     )
     _append_observation(evidence_path, observation)
     observations[trial.trial_id] = observation
+    if progress is not None:
+        done = sum(item.physical_calls for item in observations.values())
+        progress.update(done=done, total=max(done, int(projected_total or max_calls)))
     return observation
 
 
@@ -545,6 +630,7 @@ def _temperature_direction(values: Iterable[Observation], current: Observation) 
 def _refine_family(
     family: str, case: TuningCase, budget: int, client: Any,
     observations: dict[str, Observation], evidence_path: Path, max_calls: int,
+    progress: ProgressReporter | None = None, projected_total: int | None = None,
 ) -> Observation:
     coarse = _family_stage(observations.values(), family, "temperature")
     current = select_best(coarse)
@@ -555,7 +641,9 @@ def _refine_family(
             tested.add(candidate_temp)
             profile = TuningProfile(budget, candidate_temp)
             trial = TrialSpec(_trial_id("refine", case, profile), "refine", case, profile)
-            candidates.append(_evaluate_trial(trial, client, observations, evidence_path, max_calls))
+            candidates.append(_evaluate_trial(
+                trial, client, observations, evidence_path, max_calls, progress, projected_total
+            ))
         if candidates:
             best_step = select_best((current, *candidates))
             if best_step is not current and is_usable_gain(current, best_step):
@@ -604,6 +692,7 @@ def _best_thinking_budget(values: Iterable[Observation]) -> int:
 def run_tuning_campaign(
     run_root: str | Path, *, client: Any | None = None,
     max_physical_calls: int = MAX_PHYSICAL_CALLS,
+    progress: ProgressReporter | None = None,
 ) -> dict[str, Any]:
     root = Path(run_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -611,17 +700,31 @@ def run_tuning_campaign(
     observations = _load_observations(evidence_path)
     client = client or BoundedThinkingClient()
     cases = canonical_tuning_cases()
+    projected_total = projected_physical_calls(len(TASK_FAMILIES))
+    if progress is not None:
+        done = sum(item.physical_calls for item in observations.values())
+        prior_elapsed = sum(item.latency_s for item in observations.values())
+        progress.start(done=done, total=max(done, projected_total), elapsed_offset_s=prior_elapsed)
 
     for trial in build_budget_trials(cases):
-        _evaluate_trial(trial, client, observations, evidence_path, max_physical_calls)
+        _evaluate_trial(
+            trial, client, observations, evidence_path, max_physical_calls, progress, projected_total
+        )
 
     thinking_budget_by_family: dict[str, int] = {}
     for family in TASK_FAMILIES:
         budget_rows = _family_stage(observations.values(), family, "budget")
         thinking_budget_by_family[family] = _best_thinking_budget(budget_rows)
 
+    projected_total = projected_physical_calls(sum(value > 0 for value in thinking_budget_by_family.values()))
+    if progress is not None:
+        done = sum(item.physical_calls for item in observations.values())
+        progress.update(done=done, total=max(done, projected_total))
+
     for trial in build_coarse_temperature_trials(cases, thinking_budget_by_family):
-        _evaluate_trial(trial, client, observations, evidence_path, max_physical_calls)
+        _evaluate_trial(
+            trial, client, observations, evidence_path, max_physical_calls, progress, projected_total
+        )
 
     for family in TASK_FAMILIES:
         selected_budget = thinking_budget_by_family[family]
@@ -630,7 +733,7 @@ def run_tuning_campaign(
         temperature_case = _case_for(cases, family, "temperature")
         _refine_family(
             family, temperature_case, selected_budget, client,
-            observations, evidence_path, max_physical_calls,
+            observations, evidence_path, max_physical_calls, progress, projected_total,
         )
 
     policy: dict[str, dict[str, Any]] = {}
@@ -643,7 +746,9 @@ def run_tuning_campaign(
         rows = []
         for profile in (baseline, tuned_one, tuned_two):
             trial = TrialSpec(_trial_id("validation", case, profile), "validation", case, profile)
-            rows.append(_evaluate_trial(trial, client, observations, evidence_path, max_physical_calls))
+            rows.append(_evaluate_trial(
+                trial, client, observations, evidence_path, max_physical_calls, progress, projected_total
+            ))
         winner = select_best(rows)
         policy[family] = {
             "thinking_budget": winner.profile.thinking_budget,
@@ -654,6 +759,8 @@ def run_tuning_campaign(
         }
 
     physical_calls = sum(item.physical_calls for item in observations.values())
+    if progress is not None:
+        progress.finish(done=physical_calls)
     result = {
         "status": "COMPLETED",
         "model": MODEL_ID,
@@ -703,7 +810,9 @@ def main(argv: list[str] | None = None) -> int:
     (run_root / "runtime_provenance.json").write_text(
         json.dumps(provenance, indent=2, sort_keys=True), encoding="utf-8"
     )
-    result = run_tuning_campaign(run_root, client=client, max_physical_calls=args.max_calls)
+    result = run_tuning_campaign(
+        run_root, client=client, max_physical_calls=args.max_calls, progress=ProgressReporter()
+    )
     result["runtime_provenance"] = provenance
     (run_root / "summary.json").write_text(
         json.dumps(result, indent=2, sort_keys=True), encoding="utf-8"

@@ -315,3 +315,55 @@ def test_powershell_launcher_dry_run_executes_repo_local_module():
     payload = json.loads(completed.stdout.strip().splitlines()[-1])
     assert payload["model"] == "qwen3.5:9b-q8_0"
     assert payload["scored_components"] >= 108
+
+
+def test_progress_line_resizes_to_terminal_width_without_wrapping():
+    from inverted.qwen_thinking_tuning import format_progress_line
+    wide = format_progress_line(done=120, total=456, elapsed_s=600, width=120)
+    narrow = format_progress_line(done=120, total=456, elapsed_s=600, width=52)
+    assert len(wide) <= 120
+    assert len(narrow) <= 52
+    assert "120 done" in wide and "336 left" in wide
+    assert "ETA" in wide and "ETA" in narrow
+    assert "[" in wide and "]" in wide
+
+
+def test_progress_reporter_rechecks_width_on_every_refresh():
+    import io
+    from inverted.qwen_thinking_tuning import ProgressReporter
+    widths = iter((100, 48))
+    stream = io.StringIO()
+    reporter = ProgressReporter(stream=stream, width_provider=lambda: next(widths), clock=lambda: 10.0)
+    reporter.start(done=0, total=456, started_at=0.0)
+    reporter.update(done=100, total=456)
+    rendered = [part for part in stream.getvalue().split("\r") if part]
+    assert len(rendered[0]) <= 100
+    assert len(rendered[1]) <= 48
+    assert "100" in rendered[1] and "356" in rendered[1]
+
+
+def test_projected_call_total_accounts_for_adaptive_thinking_families():
+    from inverted.qwen_thinking_tuning import projected_physical_calls
+    assert projected_physical_calls(12) == 456
+    assert projected_physical_calls(0) == 168
+    assert projected_physical_calls(6) == 312
+
+
+def test_campaign_progress_reaches_zero_left_calls(tmp_path):
+    import io
+    from inverted.qwen_thinking_tuning import ProgressReporter, run_tuning_campaign
+    stream = io.StringIO()
+    reporter = ProgressReporter(stream=stream, width_provider=lambda: 96)
+    result = run_tuning_campaign(tmp_path, client=_SyntheticClient(), progress=reporter)
+    rendered = stream.getvalue()
+    assert result["physical_calls"] == 456
+    assert "456 done" in rendered
+    assert "0 left" in rendered
+    assert "ETA" in rendered
+
+
+def test_progress_line_has_tiny_terminal_fallback():
+    from inverted.qwen_thinking_tuning import format_progress_line
+    tiny = format_progress_line(done=120, total=456, elapsed_s=600, width=24)
+    assert len(tiny) <= 24
+    assert "120" in tiny and "336" in tiny
