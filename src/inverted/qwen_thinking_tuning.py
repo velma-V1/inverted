@@ -789,8 +789,8 @@ def _dry_run_payload() -> dict[str, Any]:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Tune Qwen3.5 9B thinking budget and temperature by task family.")
+def _main_v1(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run legacy V1 Qwen thinking tuner.")
     parser.add_argument("--run-root")
     parser.add_argument("--base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--max-calls", type=int, default=MAX_PHYSICAL_CALLS)
@@ -802,7 +802,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_calls < 1 or args.max_calls > MAX_PHYSICAL_CALLS:
         raise ValueError(f"--max-calls must be between 1 and {MAX_PHYSICAL_CALLS}")
     run_root = Path(args.run_root) if args.run_root else Path.cwd() / "runs" / (
-        "qwen-thinking-tuning-" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        "qwen-thinking-tuning-v1-" + datetime.now().strftime("%Y%m%d-%H%M%S")
     )
     run_root.mkdir(parents=True, exist_ok=True)
     client = BoundedThinkingClient(base_url=args.base_url)
@@ -819,6 +819,51 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(json.dumps(result, sort_keys=True))
     return 0
+
+
+def _v2_dry_run_payload() -> dict[str, Any]:
+    from .universal_tuning.statistics import CHECKPOINTS
+    return {
+        "protocol_version": 2,
+        "model": MODEL_ID,
+        "task_families": len(TASK_FAMILIES),
+        "tasks_per_family": 600,
+        "frozen_atomic_tasks": len(TASK_FAMILIES) * 600,
+        "atomic_batch_size": 5,
+        "checkpoints": list(CHECKPOINTS),
+        "minimum_certification_atomic": CHECKPOINTS[0],
+        "hard_call_ceiling": 5000,
+    }
+
+
+def _main_v2(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run universal V2 Qwen operating-surface tuner.")
+    parser.add_argument("--run-root")
+    parser.add_argument("--base-url", default="http://127.0.0.1:11434")
+    parser.add_argument("--max-calls", type=int, default=5000)
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+    if args.dry_run:
+        print(json.dumps(_v2_dry_run_payload(), sort_keys=True))
+        return 0
+    from .universal_tuning.campaign import run_qwen_v2_cli
+    return run_qwen_v2_cli(args)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    protocol = "v2"
+    if "--protocol" in args:
+        index = args.index("--protocol")
+        if index + 1 >= len(args):
+            raise ValueError("--protocol requires v1 or v2")
+        protocol = args[index + 1].lower()
+        del args[index:index + 2]
+    if protocol == "v1":
+        return _main_v1(args)
+    if protocol == "v2":
+        return _main_v2(args)
+    raise ValueError("--protocol must be v1 or v2")
 
 
 if __name__ == "__main__":

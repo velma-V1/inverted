@@ -295,7 +295,7 @@ def test_runtime_provenance_binds_exact_ollama_version_and_model_digest():
 
 def test_cli_dry_run_reports_scope_without_model_calls(capsys):
     from inverted.qwen_thinking_tuning import main
-    assert main(["--dry-run"]) == 0
+    assert main(["--protocol", "v1", "--dry-run"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["model"] == "qwen3.5:9b-q8_0"
     assert payload["task_families"] == 12
@@ -308,7 +308,7 @@ def test_powershell_launcher_dry_run_executes_repo_local_module():
     from pathlib import Path
     completed = subprocess.run(
         ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-         "scripts/run-qwen-thinking-tuning.ps1", "--dry-run"],
+         "scripts/run-qwen-thinking-tuning.ps1", "--protocol", "v1", "--dry-run"],
         cwd=Path.cwd(), capture_output=True, text=True, timeout=30,
     )
     assert completed.returncode == 0, completed.stderr

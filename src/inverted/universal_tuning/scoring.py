@@ -37,6 +37,8 @@ def _semantic_candidate(parsed: Any) -> Any:
         keys = list(parsed)
         if keys and all(str(key).isdigit() for key in keys):
             return [parsed[key] for key in sorted(keys, key=lambda k: int(k))]
+        if len(parsed) == 1:
+            return next(iter(parsed.values()))
     if isinstance(parsed, list) and parsed and all(isinstance(item, dict) and len(item) == 1 for item in parsed):
         return [next(iter(item.values())) for item in parsed]
     return parsed

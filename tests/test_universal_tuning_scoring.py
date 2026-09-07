@@ -60,3 +60,14 @@ def test_python_expression_batch_scores_behavior_not_exact_strings():
     result = score_atomic_task(task(expected, scorer="python_expr_batch", family="CODING_GENERATION"), text)
     assert result.semantic_pass is True
     assert result.contract_pass is True
+
+
+def test_single_value_wrong_key_preserves_semantics_but_fails_contract():
+    task = AtomicTask(
+        task_id="route-key", family="CLASSIFICATION_ROUTING", difficulty=2,
+        prompt="classify", expected="AUTHORITY", scorer="exact_value",
+    )
+    score = score_atomic_task(task, '{"result":"AUTHORITY"}')
+    assert score.semantic_pass is True
+    assert score.contract_pass is False
+    assert FailureClass.CONTRACT_FAIL in score.failure_classes
