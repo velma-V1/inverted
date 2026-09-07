@@ -570,8 +570,11 @@ Expected: repository baseline remains green except only pre-existing documented 
 ```bash
 python -m inverted.capability_ratchet.cli seed-v2 \
   --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
-  --replay-root runs/v3-v2-seed-check \
   --dry-run
+
+python -m inverted.capability_ratchet.cli seed-v2 \
+  --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+  --replay-root runs/v3-v2-seed-check
 
 python -m inverted.capability_ratchet.cli plan-replay \
   --replay-root runs/v3-v2-seed-check \
@@ -580,7 +583,7 @@ python -m inverted.capability_ratchet.cli plan-replay \
   --limit 5
 ```
 
-Expected: both commands report `MODEL_CALLS=0` and identify exact source fixtures/physical-call projections without executing them.
+Expected: preview, seed, and planning all report `MODEL_CALLS=0`. The seed writes replay fixtures/assets but performs zero inference; planning then identifies exact source fixtures/physical-call projections without executing them.
 
 - [ ] **8.6 Commit completed replay foundation.**
 

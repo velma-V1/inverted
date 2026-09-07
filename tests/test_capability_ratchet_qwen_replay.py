@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
 from inverted.capability_ratchet import FailureFixture, Partition, ReplayMode, ReplayRequest
-from inverted.capability_ratchet.qwen_replay import QwenReplayAdapter
+from inverted.capability_ratchet.qwen_replay import QwenReplayAdapter, V2ReplayScorer
+from inverted.capability_ratchet.replay_store import ReplayStore
 from inverted.universal_tuning.qwen_ollama import QwenOllamaAdapter
 
 
@@ -169,3 +171,31 @@ def test_scorer_exception_propagates_without_reclassification() -> None:
     adapter = QwenReplayAdapter(QwenOllamaAdapter(opener=opener), scorer=scorer)
     with pytest.raises(RuntimeError, match="scorer invalid"):
         adapter.execute_fixture(fixture(), direct_visible(), exact_request(fixture()))
+
+
+def test_v2_replay_scorer_uses_only_oracle_asset(tmp_path) -> None:
+    store = ReplayStore(tmp_path / "replay")
+    oracle = {
+        "focus_task_id": "t0",
+        "tasks": [
+            {"task_id": f"t{i}", "family": "ARITHMETIC", "difficulty": 1,
+             "prompt": f"task {i}", "expected": 42 if i == 0 else i,
+             "scorer": "exact_value", "contract": "answer_object", "metadata": []}
+            for i in range(5)
+        ],
+    }
+    digest = store.put_asset(oracle)
+    item = replace(fixture(), oracle_asset_sha256=digest)
+    scorer = V2ReplayScorer(store)
+    good = json.dumps({"answers": [{"task_id": f"t{i}", "answer": 42 if i == 0 else i} for i in range(5)]})
+    bad = json.dumps({"answers": [{"task_id": f"t{i}", "answer": -1 if i == 0 else i} for i in range(5)]})
+    assert scorer(item, good) == (True, True, ())
+    semantic, contract, failures = scorer(item, bad)
+    assert semantic is False and contract is True
+    assert "SEMANTIC_FAIL" in failures
+
+
+def test_v2_replay_scorer_refuses_fixture_without_oracle_asset(tmp_path) -> None:
+    scorer = V2ReplayScorer(ReplayStore(tmp_path / "replay"))
+    with pytest.raises(ValueError, match="oracle"):
+        scorer(fixture(), '{"answer":42}')

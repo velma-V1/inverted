@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -12,7 +13,18 @@ from inverted.universal_tuning.core import AtomicTask, FailureClass, Observation
 from .core import FailureFixture, Partition
 from .replay_store import ReplayStore
 
-_SENSITIVE_KEYS = frozenset({"authorization", "apikey", "token", "password", "secret"})
+_SENSITIVE_KEYS = frozenset({
+    "authorization", "apikey", "token", "accesstoken", "refreshtoken", "sessiontoken",
+    "password", "passphrase", "secret", "clientsecret", "secretkey", "privatekey",
+    "signingkey", "cookie", "setcookie",
+})
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{16,}"),
+    re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+)
 _PRIVATE_KEY_MARKERS = (
     "-----BEGIN PRIVATE KEY-----",
     "-----BEGIN ENCRYPTED PRIVATE KEY-----",
@@ -54,6 +66,8 @@ def _scan_secrets(value: Any, *, label: str) -> None:
             upper = current.upper()
             if any(marker in upper for marker in _PRIVATE_KEY_MARKERS):
                 raise ValueError(f"private key material is forbidden in {label}")
+            if not _is_redacted(current) and any(pattern.search(current) for pattern in _SECRET_PATTERNS):
+                raise ValueError(f"credential-like plaintext is forbidden in {label}")
             continue
         if isinstance(current, Mapping):
             for key, item in current.items():
@@ -181,6 +195,30 @@ def _ensure_batch_visible(envelopes: list[dict[str, Any]], atomic_tasks: tuple[A
         )
 
 
+def _task_payload(task: AtomicTask) -> dict[str, Any]:
+    return {
+        "task_id": task.task_id, "family": task.family, "difficulty": task.difficulty,
+        "prompt": task.prompt, "expected": task.expected, "scorer": task.scorer,
+        "contract": task.contract, "metadata": [list(item) for item in task.metadata],
+    }
+
+
+def _observation_payload(observation: Observation) -> dict[str, Any]:
+    return {
+        "observation_id": observation.observation_id, "batch_id": observation.batch_id,
+        "task_id": observation.task_id, "family": observation.family, "stage": observation.stage,
+        "profile": _profile_payload(observation), "inference_seed": observation.inference_seed,
+        "decision_reason": observation.decision_reason, "semantic_pass": observation.semantic_pass,
+        "contract_pass": observation.contract_pass, "completed": observation.completed,
+        "semantic_quality": observation.semantic_quality, "contract_quality": observation.contract_quality,
+        "latency_s": observation.latency_s, "output_tokens": observation.output_tokens,
+        "thinking_tokens": observation.thinking_tokens, "physical_calls": observation.physical_calls,
+        "response_text": observation.response_text,
+        "failure_classes": [item.value if isinstance(item, FailureClass) else str(item) for item in observation.failure_classes],
+        "raw_call_refs": list(observation.raw_call_refs), "metadata": [list(item) for item in observation.metadata],
+    }
+
+
 def _validate_first_request_profile(observation: Observation, envelopes: list[dict[str, Any]]) -> None:
     request = envelopes[0]
     options = request.get("options")
@@ -245,6 +283,19 @@ def build_failure_fixture(
     }
     _scan_secrets(metadata, label="snapshot metadata")
 
+    forensic = {
+        "raw_trial": _json_copy(raw_trial, name="forensic raw trial"),
+        "focus_observation": _observation_payload(failed_observation),
+    }
+    oracle = {
+        "focus_task_id": focus_task.task_id,
+        "tasks": [_task_payload(task) for task in batch],
+    }
+    _scan_secrets(forensic, label="forensic replay payload")
+    _scan_secrets(oracle, label="oracle replay payload")
+    forensic_digest = hashlib.sha256(_canonical(forensic)).hexdigest()
+    oracle_digest = hashlib.sha256(_canonical(oracle)).hexdigest()
+
     identity = {
         "source_campaign_id": source_campaign_id,
         "source_trial_id": trial_id,
@@ -275,9 +326,18 @@ def build_failure_fixture(
         oracle_ref=f"task-pool-v2:{focus_task.task_id}:expected",
         expected_contract=focus_task.contract,
         source_evidence_refs=tuple(source_evidence_refs),
+        forensic_asset_sha256=forensic_digest,
+        oracle_asset_sha256=oracle_digest,
         metadata=metadata,
     )
-    stored_digest = store.put_asset(visible)
-    if stored_digest != visible_digest:
+    stored = {
+        "model-visible": store.put_asset(visible),
+        "forensic": store.put_asset(forensic),
+        "oracle": store.put_asset(oracle),
+    }
+    expected = {
+        "model-visible": visible_digest, "forensic": forensic_digest, "oracle": oracle_digest,
+    }
+    if stored != expected:
         raise RuntimeError("replay asset digest changed during storage")
     return fixture

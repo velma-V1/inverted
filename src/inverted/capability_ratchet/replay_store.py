@@ -596,7 +596,9 @@ class ReplayStore:
     @staticmethod
     def _asset_hashes(record: ReplayRecord | SupersessionRecord) -> tuple[str, ...]:
         if isinstance(record, FailureFixture):
-            return (record.model_visible_asset_sha256,)
+            return tuple(value for value in (
+                record.model_visible_asset_sha256, record.forensic_asset_sha256, record.oracle_asset_sha256
+            ) if value is not None)
         if isinstance(record, ReplayResult):
             return (record.output_asset_sha256, record.raw_call_asset_sha256)
         return ()

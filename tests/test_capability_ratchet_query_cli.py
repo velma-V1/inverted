@@ -15,7 +15,7 @@ from inverted.capability_ratchet.replay_store import ReplayStore
 
 def fixture(store: ReplayStore, *, snapshot: str, model: str, family: str,
             failure: str, campaign: str, partition=Partition.HISTORICAL,
-            promotion=PromotionState.UNASSESSED) -> FailureFixture:
+            promotion=PromotionState.UNASSESSED, difficulty=2) -> FailureFixture:
     visible = {"request_envelopes": [{"model": model, "messages": [], "options": {}, "think": False}]}
     asset = store.put_asset(visible)
     item = FailureFixture(
@@ -28,6 +28,7 @@ def fixture(store: ReplayStore, *, snapshot: str, model: str, family: str,
         partition=partition, model_visible_asset_sha256=asset, state_hash=asset,
         oracle_ref=f"oracle:{snapshot}", expected_contract="answer_object",
         source_evidence_refs=(f"source:{snapshot}",), promotion_state=promotion,
+        metadata={"difficulty": difficulty},
     )
     store.append(item)
     return store.get_failure(snapshot)
@@ -39,9 +40,10 @@ def build_store(tmp_path):
                 failure="SEMANTIC_FAIL", campaign="c1")
     b = fixture(store, snapshot="f-b", model="qwen", family="PLANNING_DEPENDENCIES",
                 failure="REASONING_CAP_EXHAUSTION", campaign="c1",
-                promotion=PromotionState.MOVEMENT)
+                promotion=PromotionState.MOVEMENT, difficulty=3)
     c = fixture(store, snapshot="f-c", model="other", family="ARITHMETIC",
-                failure="CONTRACT_FAIL", campaign="c2", partition=Partition.DEVELOPMENT)
+                failure="CONTRACT_FAIL", campaign="c2", partition=Partition.DEVELOPMENT,
+                difficulty=1)
     request = ReplayRequest(
         replay_request_id="req-x", failure_snapshot_id=a.failure_snapshot_id,
         parent_failure_snapshot_id=a.failure_snapshot_id, parent_state_hash=a.state_hash,
@@ -145,16 +147,20 @@ def test_show_missing_snapshot_fails_cleanly(tmp_path, capsys) -> None:
     assert "missing" in captured.err.lower()
 
 
-def test_allow_gate_without_scorer_integration_still_makes_zero_calls_and_zero_writes(tmp_path, capsys) -> None:
+def test_allow_gate_enters_injected_live_executor_without_real_model_calls(tmp_path, capsys) -> None:
     store, _ = build_store(tmp_path)
     before = store.registry_path.read_bytes()
+    seen = []
+    def fake_live_executor(actual_store, args):
+        seen.append((actual_store.root, args.snapshot_id))
+        return {"replay_result_id": "fake-result", "MODEL_CALLS": 0}
     rc = main([
         "execute-replay", "--replay-root", str(store.root),
         "--snapshot-id", "f-a", "--allow-model-calls",
-    ])
-    captured = capsys.readouterr()
-    assert rc == 2
-    assert "no model call made" in captured.err.lower()
+    ], live_executor=fake_live_executor)
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert rc == 0 and payload["MODEL_CALLS"] == 0
+    assert seen == [(store.root, "f-a")]
     assert store.registry_path.read_bytes() == before
 
 
@@ -182,3 +188,13 @@ def test_unique_fixture_selection_does_not_rescan_registry_per_fixture(tmp_path,
     monkeypatch.setattr(store, "get_failure", forbidden_get_failure)
     selected = select_failures(store, ReplaySelector())
     assert [f.failure_snapshot_id for f in selected] == ["f-a", "f-b", "f-c"]
+
+
+def test_selector_filters_by_collected_difficulty(tmp_path) -> None:
+    store, _ = build_store(tmp_path)
+    assert [f.failure_snapshot_id for f in select_failures(
+        store, ReplaySelector(difficulty=3)
+    )] == ["f-b"]
+    assert [f.failure_snapshot_id for f in select_failures(
+        store, ReplaySelector(difficulty=1)
+    )] == ["f-c"]

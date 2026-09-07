@@ -144,6 +144,8 @@ class FailureFixture:
     oracle_ref: str
     expected_contract: str
     source_evidence_refs: tuple[str, ...]
+    forensic_asset_sha256: str | None = None
+    oracle_asset_sha256: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
     promotion_state: PromotionState = PromotionState.UNASSESSED
     parent_failure_snapshot_id: str | None = None
@@ -182,6 +184,8 @@ class FailureFixture:
         _sha256("model_visible_asset_sha256", self.model_visible_asset_sha256)
         _sha256("state_hash", self.state_hash)
         _sha256("parent_state_hash", self.parent_state_hash, optional=True)
+        _sha256("forensic_asset_sha256", self.forensic_asset_sha256, optional=True)
+        _sha256("oracle_asset_sha256", self.oracle_asset_sha256, optional=True)
         _sha256("record_id", self.record_id, optional=True)
         has_parent_id = self.parent_failure_snapshot_id is not None
         has_parent_hash = self.parent_state_hash is not None
@@ -370,6 +374,8 @@ def to_payload(value: ReplayRecord) -> dict[str, Any]:
             "oracle_ref": value.oracle_ref,
             "expected_contract": value.expected_contract,
             "source_evidence_refs": value.source_evidence_refs,
+            "forensic_asset_sha256": value.forensic_asset_sha256,
+            "oracle_asset_sha256": value.oracle_asset_sha256,
             "metadata": value.metadata,
             "promotion_state": value.promotion_state,
             "parent_failure_snapshot_id": value.parent_failure_snapshot_id,

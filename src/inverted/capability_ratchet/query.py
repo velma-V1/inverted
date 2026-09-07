@@ -12,6 +12,7 @@ class ReplaySelector:
     source_model: str | None = None
     target_model: str | None = None
     family: str | None = None
+    difficulty: int | None = None
     failure_class: str | None = None
     campaign: str | None = None
     partition: Partition | str | None = None
@@ -80,6 +81,8 @@ def select_failures(store: ReplayStore, selector: ReplaySelector) -> tuple[Failu
         if selector.source_model is not None and fixture.source_model_id != selector.source_model:
             continue
         if selector.family is not None and fixture.family != selector.family:
+            continue
+        if selector.difficulty is not None and fixture.metadata.get("difficulty") != selector.difficulty:
             continue
         if selector.failure_class is not None and selector.failure_class not in fixture.failure_classes:
             continue

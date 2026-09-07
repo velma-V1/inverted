@@ -42,6 +42,7 @@ def _selector(args: argparse.Namespace) -> ReplaySelector:
         source_model=getattr(args, "source_model", None),
         target_model=getattr(args, "target_model", None),
         family=getattr(args, "family", None),
+        difficulty=getattr(args, "difficulty", None),
         failure_class=getattr(args, "failure_class", None),
         campaign=getattr(args, "campaign", None),
         partition=getattr(args, "partition", None),
@@ -67,6 +68,7 @@ def _add_selector_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source-model")
     parser.add_argument("--target-model")
     parser.add_argument("--family")
+    parser.add_argument("--difficulty", type=int)
     parser.add_argument("--failure-class")
     parser.add_argument("--campaign")
     parser.add_argument("--partition", choices=[item.value for item in Partition])
@@ -124,6 +126,10 @@ def _build_parser() -> argparse.ArgumentParser:
     execute = sub.add_parser("execute-replay")
     execute.add_argument("--replay-root", required=True)
     execute.add_argument("--snapshot-id", required=True)
+    execute.add_argument("--target-model")
+    execute.add_argument("--target-digest")
+    execute.add_argument("--decision-id", default="D-REPLAY")
+    execute.add_argument("--hypothesis-id", default="H-REPRODUCIBILITY")
     execute.add_argument("--allow-model-calls", action="store_true")
     return parser
 
@@ -131,7 +137,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def _plan_rows(store: ReplayStore, args: argparse.Namespace) -> list[dict[str, Any]]:
     selector = _selector(args)
     selector = ReplaySelector(
-        source_model=selector.source_model, family=selector.family,
+        source_model=selector.source_model, family=selector.family, difficulty=selector.difficulty,
         failure_class=selector.failure_class, campaign=selector.campaign,
         partition=selector.partition, promotion_state=selector.promotion_state,
         snapshot_ids=selector.snapshot_ids,
@@ -163,7 +169,53 @@ def _plan_rows(store: ReplayStore, args: argparse.Namespace) -> list[dict[str, A
     return rows
 
 
-def main(argv: list[str] | None = None) -> int:
+
+def _execute_qwen_replay(store: ReplayStore, args: argparse.Namespace) -> dict[str, Any]:
+    """Construct live model machinery only after the explicit CLI safety gate."""
+    try:
+        fixture = store.get_failure(args.snapshot_id)
+    except KeyError as exc:
+        raise ValueError(str(exc)) from exc
+    if fixture.oracle_asset_sha256 is None:
+        raise ValueError("fixture has no self-contained oracle asset; refusing unscored replay")
+    store.read_asset(fixture.oracle_asset_sha256)
+
+    target_model = args.target_model or fixture.source_model_id
+    if target_model == fixture.source_model_id:
+        if args.target_digest is not None and args.target_digest != fixture.source_model_digest:
+            raise ValueError("same-model target digest conflicts with source digest")
+        request = ReplayRequest.for_exact(
+            fixture, decision_id=args.decision_id, hypothesis_id=args.hypothesis_id,
+        )
+    else:
+        if not args.target_digest:
+            raise ValueError("cross-model execution requires explicit target digest")
+        from .core import ReplayMode
+        request = ReplayRequest(
+            replay_request_id=f"replay-cli-{fixture.failure_snapshot_id}-{target_model}",
+            failure_snapshot_id=fixture.failure_snapshot_id,
+            parent_failure_snapshot_id=fixture.failure_snapshot_id,
+            parent_state_hash=fixture.state_hash,
+            decision_id=args.decision_id, hypothesis_id=args.hypothesis_id,
+            expected_causal_implication="compare the frozen failure state on a compatible target model",
+            mode=ReplayMode.CROSS_MODEL, source_model_id=fixture.source_model_id,
+            source_model_digest=fixture.source_model_digest, target_model_id=target_model,
+            target_model_digest=args.target_digest, partition=fixture.partition,
+            changed_dimensions=("target_model",), overrides={},
+        )
+
+    from inverted.universal_tuning.qwen_ollama import QwenOllamaAdapter
+    from .qwen_replay import QwenReplayAdapter, V2ReplayScorer
+    from .replay import ReplayExecutor
+
+    qwen = QwenOllamaAdapter(model_id=target_model)
+    adapter = QwenReplayAdapter(qwen, scorer=V2ReplayScorer(store))
+    result = ReplayExecutor(store, {target_model: adapter}).execute(request)
+    payload = to_payload(result)
+    payload["MODEL_CALLS"] = int(result.metrics.get("physical_calls", 0) or 0)
+    return payload
+
+def main(argv: list[str] | None = None, *, live_executor=None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
@@ -221,9 +273,14 @@ def main(argv: list[str] | None = None) -> int:
         _print({"plans": plans, "MODEL_CALLS": 0})
         return 0
     if args.command == "execute-replay":
-        print("live replay execution requires an explicit scorer integration; no model call made",
-              file=sys.stderr)
-        return 2
+        runner = _execute_qwen_replay if live_executor is None else live_executor
+        try:
+            payload = runner(store, args)
+        except (TypeError, ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        _print(payload)
+        return 0
     parser.error("unknown command")
     return 2
 

@@ -353,6 +353,8 @@ class ReplayExecutor:
             source_evidence_refs=tuple(parent.source_evidence_refs) + (
                 f"replay-request:{request.replay_request_id}", f"raw-call-asset:{raw_digest}",
             ),
+            forensic_asset_sha256=raw_digest,
+            oracle_asset_sha256=parent.oracle_asset_sha256,
             metadata={"originating_replay_request_id": request.replay_request_id,
                       "intervention_id": request.intervention_id,
                       "counterfactual_group_id": request.counterfactual_group_id},

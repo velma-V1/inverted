@@ -99,3 +99,48 @@ class QwenReplayAdapter:
                 "thinking_tokens": thinking_tokens,
             },
         )
+
+
+class V2ReplayScorer:
+    """Score one frozen V2 fixture using only verified replay-corpus assets."""
+
+    def __init__(self, store) -> None:
+        from .replay_store import ReplayStore
+        if not isinstance(store, ReplayStore):
+            raise TypeError("store must be ReplayStore")
+        self.store = store
+
+    def __call__(self, fixture: FailureFixture, final_text: str) -> tuple[bool, bool, tuple[str, ...]]:
+        from inverted.universal_tuning.core import AtomicTask
+        from inverted.universal_tuning.scoring import score_atomic_task
+
+        if fixture.oracle_asset_sha256 is None:
+            raise ValueError("fixture has no self-contained oracle asset")
+        payload = self.store.read_asset(fixture.oracle_asset_sha256)
+        if not isinstance(payload, dict) or not isinstance(payload.get("tasks"), list):
+            raise ValueError("fixture oracle asset is malformed")
+        tasks = []
+        for row in payload["tasks"]:
+            if not isinstance(row, dict):
+                raise ValueError("fixture oracle task row is malformed")
+            tasks.append(AtomicTask(
+                task_id=str(row["task_id"]), family=str(row["family"]),
+                difficulty=int(row["difficulty"]), prompt=str(row["prompt"]),
+                expected=row.get("expected"), scorer=str(row["scorer"]),
+                contract=str(row["contract"]),
+                metadata=tuple(tuple(item) for item in row.get("metadata", ())),
+            ))
+        batch = tuple(tasks)
+        if tuple(task.task_id for task in batch) != tuple(fixture.batch_task_ids):
+            raise ValueError("fixture oracle task order does not match replay batch")
+        try:
+            focus_index = fixture.batch_task_ids.index(fixture.focus_task_id)
+        except ValueError as exc:
+            raise ValueError("fixture focus task is absent from oracle batch") from exc
+        responses = QwenOllamaAdapter._split_batch_response(final_text, batch)
+        score = score_atomic_task(batch[focus_index], responses[focus_index])
+        classes = tuple(
+            item.value if hasattr(item, "value") else str(item)
+            for item in score.failure_classes
+        )
+        return score.semantic_pass, score.contract_pass, classes

@@ -207,7 +207,7 @@ def test_snapshot_is_deterministic_and_reuses_content_addressed_asset(tmp_path) 
         source_evidence_refs=("raw_calls.jsonl:trial-1", "atomic_observations.jsonl:obs-2"),
     )
     assert first == second
-    assert len(list(store.asset_root.glob("*.json"))) == 1
+    assert len(list(store.asset_root.glob("*.json"))) == 3
 
 
 
@@ -252,3 +252,41 @@ def test_v2_nonfirst_atomic_observation_may_have_zero_attributed_physical_calls(
     assert len(visible["request_envelopes"]) == 2
     assert fixture.metadata["attributed_physical_calls"] == 0
     assert fixture.metadata["physical_calls"] == 2
+
+
+def test_snapshot_retains_forensic_and_oracle_assets_without_model_visibility(tmp_path) -> None:
+    fixture, store = build(tmp_path)
+    assert fixture.forensic_asset_sha256 is not None
+    assert fixture.oracle_asset_sha256 is not None
+    forensic = store.read_asset(fixture.forensic_asset_sha256)
+    oracle = store.read_asset(fixture.oracle_asset_sha256)
+    visible = store.read_asset(fixture.model_visible_asset_sha256)
+    assert forensic["raw_trial"]["raw_calls"][0]["response"]["message"]["thinking"] == "private exposed runtime trace"
+    assert forensic["focus_observation"]["response_text"] == '{"answer":99}'
+    assert oracle["focus_task_id"] == "arith-2"
+    assert [row["task_id"] for row in oracle["tasks"]] == list(fixture.batch_task_ids)
+    assert "expected" not in visible
+    assert "raw_trial" not in visible
+    store.append(fixture)
+    assert store.validate().ok is True
+
+
+@pytest.mark.parametrize("sensitive_key", ["access_token", "refresh_token", "session_token", "client_secret", "private_key", "secret_key", "signing_key", "cookie", "set-cookie"])
+def test_composite_sensitive_keys_are_rejected(tmp_path, sensitive_key) -> None:
+    trial = raw_trial()
+    trial["raw_calls"][0]["request"][sensitive_key] = "plaintext-value"
+    with pytest.raises(ValueError, match="sensitive|secret|credential"):
+        build(tmp_path, raw_trial=trial)
+
+
+@pytest.mark.parametrize("credential", [
+    "Bearer abcdefghijklmnopqrstuvwxyz123456",
+    "sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+    "github_pat_abcdefghijklmnopqrstuvwxyz123456",
+    "AKIA1234567890ABCDEF",
+])
+def test_credential_like_strings_are_rejected_even_inside_message_content(tmp_path, credential) -> None:
+    trial = raw_trial()
+    trial["raw_calls"][0]["request"]["messages"][0]["content"] = credential
+    with pytest.raises(ValueError, match="credential|secret|sensitive"):
+        build(tmp_path, raw_trial=trial)
