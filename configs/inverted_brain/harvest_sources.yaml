@@ -1,0 +1,110 @@
+version: 1
+purpose: inverted-brain-vnext-harvest-source-catalog
+policy:
+  source_output_is_hypothesis: true
+  causal_replay_required_for_behavior_promotion: true
+  fresh_transfer_required_for_behavior_promotion: true
+  full_teacher_trajectory_copy_forbidden: true
+  unauthenticated_prompt_dump_is_authority: false
+
+sources:
+  - id: codex
+    kind: executable_teacher
+    target: agent_loop, planning, tool discipline, sandboxing, verification, context control
+  - id: claude-code
+    kind: executable_teacher
+    target: agent_loop, hooks, tool gating, context management, skills, subagent boundaries
+  - id: claude-agent-sdk
+    kind: instrumentation_surface
+    target: ablation and instrumentation of Claude Code mechanisms
+  - id: prime-agent
+    kind: executable_teacher
+    url: https://github.com/PrimeIntellect-ai/prime-agent
+    target: continual harness refinement, persistent state, skills, subagents, rollbackable improvement
+  - id: pi
+    kind: executable_chassis
+    url: https://github.com/earendil-works/pi
+    target: minimal agent loop, provider abstraction, skills, extensions, session trees, compaction
+  - id: oh-my-cli
+    kind: executable_teacher
+    url: https://github.com/qwen-code-dev-bot/oh-my-cli
+    target: fail-closed governance, durable sessions, evidence archives, protected autonomy plane
+  - id: mini-swe-agent
+    kind: executable_teacher
+    url: https://github.com/SWE-agent/mini-swe-agent
+    target: minimal high-performing software-agent loop and environment interface
+  - id: swe-agent
+    kind: mechanism_reference
+    url: https://github.com/SWE-agent/SWE-agent
+    target: agent-computer interface, bounded views, search shaping, edit admission
+  - id: aegisevo
+    kind: mechanism_reference
+    url: https://github.com/ETOLucy/AegisEvo
+    target: lineage, mutation, paired gates, canary promotion, rollback, immutable facts
+  - id: aider
+    kind: executable_teacher
+    url: https://github.com/Aider-AI/aider
+    target: repository maps, selective context, architect/editor separation, git-backed undo
+  - id: book-to-skill
+    kind: skill_compiler_reference
+    url: https://github.com/virgiliojr94/book-to-skill
+    target: structured knowledge distillation, progressive disclosure, decision rules, anti-patterns
+  - id: taste-skill
+    kind: skill_design_reference
+    url: https://github.com/Leonxlnx/taste-skill
+    target: parameterized skills, preflight checks, audit protocols, model-specific skill variants
+  - id: comet-mcp
+    kind: intelligent_hand
+    url: https://github.com/hanzili/comet-mcp
+    target: delegated browser cognition, high-level task handoff, asynchronous observation
+  - id: media-inference-worker
+    kind: hand_reference
+    url: https://github.com/framepipe-dev/media-inference-worker
+    target: asynchronous job lifecycle, polling, artifact retrieval
+    credential_policy: never_use_repository_credentials
+  - id: hyperspace-agi
+    kind: future_distributed_reference
+    url: https://github.com/hyperspaceai/agi
+    target: peer experiment sharing, convergent state, distributed evidence and training
+  - id: prime-verifiers
+    kind: future_training_reference
+    url: https://github.com/PrimeIntellect-ai/verifiers
+    target: reusable evaluation and training environments
+  - id: prime-rl
+    kind: future_training_reference
+    url: https://github.com/PrimeIntellect-ai/prime-rl
+    target: agentic RL, SFT, evaluation, trajectory-based post-training
+  - id: claude-fable-5.1-prompt-dump
+    kind: hypothesis_reference
+    url: https://github.com/elder-plinius/CL4R1T4S/blob/main/ANTHROPIC/Claude-Fable-5.1.md
+    target: skill routing, memory provenance, capability discovery, tool-selection hypotheses
+    trust: unauthenticated_prompt_archaeology_only
+  - id: psychology-of-computer-programming
+    kind: book_reference
+    title: The Psychology of Computer Programming
+    author: Gerald M. Weinberg
+    target: psychological set, egoless review, independent evaluation, regression, testing discipline, learning from failure
+
+excluded_for_now:
+  - id: mixture-of-kittens
+    reason: specialized large-scale MoE training kernel; not an agent-control mechanism for current Inverted vNext
+  - id: broad-framework-zoo
+    reason: add a new system only when an unresolved architectural question requires it
+
+secondary_sources:
+  - id: openhands
+    kind: runtime_reference
+    url: https://github.com/OpenHands/OpenHands
+    target: state/action/observation runtime, agent server, workspace/event boundaries
+  - id: goose
+    kind: capability_reference
+    url: https://github.com/block/goose
+    target: provider-neutral local agent, MCP extension routing, general-purpose capability composition
+  - id: who-and-when
+    kind: attribution_dataset_reference
+    url: https://github.com/ag2ai/Agents_Failure_Attribution
+    target: failure attribution and controlled injected-error trajectories
+  - id: pandaprobe
+    kind: observability_reference
+    url: https://github.com/chirpz-ai/pandaprobe
+    target: agent tracing and instrumentation hypotheses

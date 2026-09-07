@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Literal
 
 
@@ -120,3 +121,31 @@ class RetentionDecision:
     fresh_lift: int
     regressions: int
     bounded_scope: str | None = None
+
+
+class LearningDestination(str, Enum):
+    BRAIN = "BRAIN"
+    SYSTEM = "SYSTEM"
+    SKILL = "SKILL"
+    TOOL_HAND = "TOOL_HAND"
+    MEMORY = "MEMORY"
+    NEGATIVE_EVIDENCE = "NEGATIVE_EVIDENCE"
+
+
+@dataclass(frozen=True)
+class LearnedArtifact:
+    artifact_id: str
+    source_candidate_id: str
+    destination: LearningDestination
+    artifact_kind: str
+    trigger: str
+    content: str
+    evidence_ids: list[str]
+    scope: list[str]
+    boundary_conditions: list[str]
+    failure_modes: list[str]
+    counterevidence: list[str]
+    verification: list[str]
+    provenance: list[str]
+    source_status: str
+    cost: dict[str, float] = field(default_factory=dict)
