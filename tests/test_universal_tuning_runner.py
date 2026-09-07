@@ -127,3 +127,54 @@ def test_progress_reporter_rechecks_width_each_update():
     reporter.update(done=24, total=60)
     lines = stream.getvalue().split("\r")
     assert len(lines[-1]) <= 32
+
+
+def test_persistent_progress_uses_campaign_projection_and_only_newlines_at_finalize():
+    import io
+    stream = io.StringIO()
+    reporter = ProgressReporter(
+        stream=stream, width_provider=lambda: 100, clock=lambda: 10.0,
+        persistent=True,
+    )
+    reporter.set_projection(100)
+    reporter.start(done=0, total=24, started_at=0.0)
+    reporter.set_projection(80)
+    reporter.update(done=24, total=30)
+    assert "24 done" in stream.getvalue()
+    assert "56 left" in stream.getvalue()
+    before = stream.getvalue()
+    reporter.finish(done=24)
+    assert not stream.getvalue().endswith("\n")
+    reporter.finalize(done=80)
+    assert stream.getvalue().endswith("\n")
+    assert len(stream.getvalue()) > len(before)
+
+
+def test_model_completion_failure_is_recorded_and_later_trials_continue(tmp_path):
+    class FirstBatchEmptyAdapter(SyntheticAdapter):
+        def complete(self, tasks, profile, seed):
+            self.calls.append((tuple(t.task_id for t in tasks), profile, seed))
+            physical = 2 if profile.thinking else 1
+            responses = tuple("" for _ in tasks) if len(self.calls) == 1 else tuple(
+                json.dumps({"answer": task.expected}) for task in tasks
+            )
+            return AdapterCompletion(
+                responses=responses, latency_s=0.01, output_tokens=0,
+                thinking_tokens=profile.thinking_budget, physical_calls=physical,
+                raw_calls=tuple({"call": i, "empty": not bool(responses[0])} for i in range(physical)),
+            )
+
+    pool, trials, manifest = _setup(tmp_path)
+    adapter = FirstBatchEmptyAdapter()
+    result = UniversalRunner(tmp_path, pool, adapter, manifest, max_physical_calls=100).run_trials(trials[:4])
+    assert len(adapter.calls) == 4
+    assert result.physical_calls > 0
+    rows = [json.loads(line) for line in (tmp_path / "atomic_observations.jsonl").read_text().splitlines()]
+    first_batch = [row for row in rows if row["batch_id"] == trials[0].batch_id and row["profile"] == {
+        "thinking_budget": trials[0].profile.thinking_budget, "temperature": trials[0].profile.temperature,
+        "top_p": None, "top_k": None, "min_p": None, "presence_penalty": None, "repeat_penalty": None,
+    }]
+    assert len(first_batch) == 5
+    assert all(not row["completed"] for row in first_batch)
+    assert all("COMPLETION_FAIL" in row["failure_classes"] for row in first_batch)
+    assert any(row["semantic_pass"] for row in rows if row["batch_id"] != trials[0].batch_id)

@@ -6,7 +6,6 @@ from typing import Iterable, Mapping
 
 from .core import Profile
 from .statistics import (
-    NONINFERIORITY_MARGIN,
     PairedBatch,
     classify_comparison,
     paired_bootstrap_ci,
@@ -22,6 +21,7 @@ class ModelMetadata:
     general_thinking_temperature: float = 1.0
     coding_thinking_temperature: float = 0.6
     direct_temperature: float = 0.7
+    gate_thinking_budget: int = 1024
     diagnostic_budget: int = 2048
 
 
@@ -53,6 +53,8 @@ class BudgetDecision:
     selected_budget: int
     reference_budget: int
     inferior_budgets: tuple[int, ...]
+    unresolved_budgets: tuple[int, ...] = ()
+    status: str = "RESOLVED"
 
 
 @dataclass(frozen=True)
@@ -87,20 +89,35 @@ def _rate(values: Iterable[float]) -> float:
 def select_mode(
     direct: Iterable[float], thinking: Iterable[float], *,
     direct_contract_rate: float = 1.0, thinking_contract_rate: float = 1.0,
-    bootstrap_seed: int = 20260907,
+    direct_completion_rate: float = 1.0, thinking_completion_rate: float = 1.0,
+    reliability_gain_floor: float = 0.05,
+    bootstrap_seed: int = 20260907, acceptable_semantic_floor: float = 0.90,
+    minimum_useful_effect: float = 0.05, noninferiority_margin: float = -0.02,
+    final_checkpoint: int = 120,
 ) -> ModeDecision:
     direct_rows = tuple(direct)
     thinking_rows = tuple(thinking)
     direct_rate = _rate(direct_rows)
     thinking_rate = _rate(thinking_rows)
-    if max(direct_rate, thinking_rate) < 0.5:
-        return ModeDecision("unresolved", "CAPABILITY_UNRESOLVED", "capability_diagnostic")
+    if max(direct_rate, thinking_rate) < acceptable_semantic_floor:
+        if len(direct_rows) >= final_checkpoint:
+            return ModeDecision("unresolved", "CAPABILITY_UNRESOLVED", "capability_diagnostic")
+        return ModeDecision("unresolved", "EVIDENCE_CLOSE", "gate")
     comparison = paired_bootstrap_ci(
         _paired_batches(direct_rows, thinking_rows), seed=bootstrap_seed
     )
-    status = classify_comparison(comparison)
+    status = classify_comparison(
+        comparison, superiority_margin=minimum_useful_effect,
+        noninferiority_margin=noninferiority_margin,
+    )
     if status == "SUPERIOR":
         return ModeDecision("thinking", "THINKING_SUPERIOR", "budget")
+    if status in {"INSUFFICIENT", "CLOSE"}:
+        return ModeDecision("unresolved", "EVIDENCE_CLOSE", "gate")
+    contract_gain = thinking_contract_rate - direct_contract_rate
+    completion_gain = thinking_completion_rate - direct_completion_rate
+    if contract_gain >= reliability_gain_floor or completion_gain >= reliability_gain_floor:
+        return ModeDecision("thinking", "THINKING_RELIABILITY_SUPERIOR", "budget")
     if direct_contract_rate < 0.8 and thinking_contract_rate < 0.8:
         return ModeDecision("direct", "CONTRACT_LIMITED", "holdout")
     return ModeDecision("direct", "DIRECT_SUFFICIENT", "holdout")
@@ -108,6 +125,7 @@ def select_mode(
 
 def select_minimum_budget(
     outcomes: Mapping[int, Iterable[float]], *, bootstrap_seed: int = 20260907,
+    noninferiority_margin: float = -0.02,
 ) -> BudgetDecision:
     if not outcomes:
         raise ValueError("budget outcomes required")
@@ -115,21 +133,29 @@ def select_minimum_budget(
     best_rate = max(_rate(v) for v in frozen.values())
     reference = min(k for k, v in frozen.items() if _rate(v) == best_rate)
     inferior: list[int] = []
+    unresolved: list[int] = []
     noninferior: list[int] = []
+    n_atomic = len(next(iter(frozen.values())))
     for budget in sorted(frozen):
         comparison = paired_bootstrap_ci(
             _paired_batches(frozen[reference], frozen[budget]),
             seed=bootstrap_seed + budget,
         )
-        if comparison.ci_low >= NONINFERIORITY_MARGIN:
+        if comparison.ci_low >= noninferiority_margin:
             noninferior.append(budget)
-        else:
+        elif comparison.ci_high < noninferiority_margin:
             inferior.append(budget)
-    return BudgetDecision(min(noninferior), reference, tuple(inferior))
+        else:
+            unresolved.append(budget)
+    status = "EVIDENCE_CLOSE" if unresolved and n_atomic < 120 else "RESOLVED"
+    return BudgetDecision(
+        min(noninferior), reference, tuple(inferior), tuple(unresolved), status
+    )
 
 
 def discover_temperature_surface(
     outcomes: Mapping[float, Iterable[float]], *, bootstrap_seed: int = 20260907,
+    minimum_useful_effect: float = 0.05, noninferiority_margin: float = -0.02,
 ) -> TemperatureSurface:
     if len(outcomes) < 2:
         raise ValueError("at least two temperatures are required")
@@ -138,34 +164,63 @@ def discover_temperature_surface(
     rates = {temp: _rate(frozen[temp]) for temp in temps}
     best_rate = max(rates.values())
     best_temps = [temp for temp in temps if rates[temp] == best_rate]
-    reference = min(best_temps, key=lambda t: abs(t - sum(temps) / len(temps)))
-    survivors: list[float] = []
+    reference = min(best_temps, key=lambda x: abs(x - sum(temps) / len(temps)))
+    noninferior: list[float] = []
     inferior: list[float] = []
+    unresolved: list[float] = []
     for index, temp in enumerate(temps):
         comparison = paired_bootstrap_ci(
             _paired_batches(frozen[reference], frozen[temp]),
             seed=bootstrap_seed + index,
         )
-        if comparison.ci_high < NONINFERIORITY_MARGIN:
+        if comparison.ci_low >= noninferiority_margin:
+            noninferior.append(temp)
+        elif comparison.ci_high < noninferiority_margin:
             inferior.append(temp)
         else:
-            survivors.append(temp)
+            unresolved.append(temp)
     spacing = min((b - a for a, b in zip(temps, temps[1:])), default=1.0)
+    n_atomic = len(next(iter(frozen.values())))
+    if unresolved and n_atomic < 120:
+        return TemperatureSurface(
+            "EVIDENCE_CLOSE", min(temps), max(temps), reference, None, spacing, False
+        )
+    survivors = sorted(set(noninferior + (unresolved if n_atomic >= 120 else [])))
     if len(survivors) > 1:
         middle = sum(survivors) / len(survivors)
-        recommended = min(survivors, key=lambda t: (abs(t - middle), t))
+        recommended = min(survivors, key=lambda x: (abs(x - middle), x))
         return TemperatureSurface(
-            "PLATEAU", min(survivors), max(survivors), recommended,
-            None, spacing, False,
+            "PLATEAU", min(survivors), max(survivors), recommended, None, spacing, False
         )
     winner = survivors[0] if survivors else reference
+    superior_to_all = True
+    for index, temp in enumerate(temps):
+        if temp == winner:
+            continue
+        superiority = paired_bootstrap_ci(
+            _paired_batches(frozen[temp], frozen[winner]),
+            seed=bootstrap_seed + 1000 + index,
+        )
+        if classify_comparison(
+            superiority, superiority_margin=minimum_useful_effect,
+            noninferiority_margin=noninferiority_margin,
+        ) != "SUPERIOR":
+            superior_to_all = False
+            break
     if spacing <= 0.0011 and len(inferior) == len(temps) - 1:
+        if superior_to_all:
+            return TemperatureSurface(
+                "OPTIMUM", winner, winner, winner, winner, spacing, False
+            )
+        if n_atomic < 120:
+            return TemperatureSurface(
+                "EVIDENCE_CLOSE", min(temps), max(temps), winner, None, spacing, False
+            )
         return TemperatureSurface(
-            "OPTIMUM", winner, winner, winner, winner, spacing, False,
+            "UNRESOLVED_POINT", min(temps), max(temps), winner, None, spacing, False
         )
     return TemperatureSurface(
-        "UNRESOLVED_POINT", min(temps), max(temps), winner,
-        None, spacing, True,
+        "UNRESOLVED_POINT", min(temps), max(temps), winner, None, spacing, True
     )
 
 
@@ -213,7 +268,10 @@ class AdaptiveScheduler:
             batch_no = (task_offset + offset) // BATCH_SIZE
             batch_id = f"{family}:{stage}:{batch_no:03d}"
             seed = _stable_seed(self.pool.seed, family, stage, batch_no)
-            for label, profile in (("baseline", baseline), ("candidate", candidate)):
+            ordered = [("baseline", baseline), ("candidate", candidate)]
+            if batch_no % 2:
+                ordered.reverse()
+            for label, profile in ordered:
                 trials.append(ScheduledTrial(
                     trial_id=f"{batch_id}:{label}:{profile.thinking_budget}:{profile.temperature:.6f}",
                     batch_id=batch_id, family=family, stage=stage, profile=profile,
@@ -231,6 +289,11 @@ class HoldoutDecision:
     status: str
     certified: bool
     next_atomic_count: int
+    baseline_rate: float
+    candidate_rate: float
+    delta: float
+    ci_low: float
+    ci_high: float
 
 
 @dataclass(frozen=True)
@@ -250,7 +313,11 @@ def evaluate_holdout(
     )
     status = classify_comparison(comparison)
     certified = status in {"SUPERIOR", "INFERIOR", "EQUIVALENT", "TIE_OR_PLATEAU"}
-    return HoldoutDecision(status, certified, required_checkpoint(comparison))
+    return HoldoutDecision(
+        status, certified, required_checkpoint(comparison),
+        comparison.baseline_rate, comparison.candidate_rate, comparison.delta,
+        comparison.ci_low, comparison.ci_high,
+    )
 
 
 def select_interaction_profile(

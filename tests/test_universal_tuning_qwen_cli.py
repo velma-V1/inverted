@@ -138,3 +138,15 @@ def test_powershell_launcher_uses_v2_default_dry_run():
     assert completed.returncode == 0, completed.stderr
     payload = json.loads(completed.stdout.strip().splitlines()[-1])
     assert payload["protocol_version"] == 2
+
+
+def test_v2_dry_run_reports_honest_call_geometry_and_safe_default_ceiling():
+    completed = subprocess.run(
+        ["python", "-m", "inverted.qwen_thinking_tuning", "--dry-run"],
+        cwd=Path.cwd(), capture_output=True, text=True, timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout.strip().splitlines()[-1])
+    geometry = payload["call_geometry"]
+    assert geometry["minimum"] < geometry["expected"] < geometry["worst_case"]
+    assert payload["hard_call_ceiling"] >= geometry["worst_case"]

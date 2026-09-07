@@ -67,23 +67,47 @@ def format_progress_line(*, done: int, total: int, elapsed_s: float, width: int)
 
 
 class ProgressReporter:
-    def __init__(self, *, stream=None, width_provider=None, clock=None) -> None:
+    def __init__(self, *, stream=None, width_provider=None, clock=None, persistent: bool = False) -> None:
         self.stream = stream or sys.stderr
         self.width_provider = width_provider or (lambda: shutil.get_terminal_size((100, 24)).columns)
         self.clock = clock or time.perf_counter
+        self.persistent = bool(persistent)
         self.started_at = 0.0
+        self._started = False
+        self._projection: int | None = None
+
+    def set_projection(self, total: int) -> None:
+        self._projection = max(1, int(total))
+
+    def _effective_total(self, done: int, total: int) -> int:
+        if self._projection is None:
+            return max(1, int(total))
+        return max(int(done), int(total), self._projection)
 
     def start(self, *, done: int, total: int, started_at: float | None = None) -> None:
-        self.started_at = self.clock() if started_at is None else float(started_at)
+        if not self._started or not self.persistent:
+            self.started_at = self.clock() if started_at is None else float(started_at)
+            self._started = True
         self.update(done=done, total=total)
 
     def update(self, *, done: int, total: int) -> None:
         elapsed = max(0.0, self.clock() - self.started_at)
-        line = format_progress_line(done=done, total=total, elapsed_s=elapsed, width=int(self.width_provider()))
+        effective_total = self._effective_total(done, total)
+        line = format_progress_line(
+            done=done, total=effective_total, elapsed_s=elapsed,
+            width=int(self.width_provider()),
+        )
         self.stream.write("\r" + line)
         self.stream.flush()
 
     def finish(self, *, done: int) -> None:
+        self.update(done=done, total=max(1, done))
+        if not self.persistent:
+            self.stream.write("\n")
+            self.stream.flush()
+
+    def finalize(self, *, done: int) -> None:
+        self._projection = max(1, int(done))
         self.update(done=done, total=max(1, done))
         self.stream.write("\n")
         self.stream.flush()

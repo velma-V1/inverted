@@ -9,6 +9,8 @@ SUPERIORITY_MARGIN = 0.05
 NONINFERIORITY_MARGIN = -0.02
 MIN_CERTIFICATION_ATOMIC = 40
 CHECKPOINTS = (40, 60, 80, 120)
+BOOTSTRAP_ITERATIONS = 4000
+CONFIDENCE_LEVEL = 0.95
 
 
 @dataclass(frozen=True)
@@ -59,7 +61,7 @@ def _quantile(sorted_values: list[float], q: float) -> float:
 
 def paired_bootstrap_ci(
     batches: Iterable[PairedBatch], *, seed: int = 20260907,
-    iterations: int = 4000, confidence: float = 0.95,
+    iterations: int = BOOTSTRAP_ITERATIONS, confidence: float = CONFIDENCE_LEVEL,
 ) -> PairedComparison:
     rows = tuple(batches)
     if not rows or iterations < 100:

@@ -822,7 +822,9 @@ def _main_v1(argv: list[str] | None = None) -> int:
 
 
 def _v2_dry_run_payload() -> dict[str, Any]:
+    from .universal_tuning.campaign import call_geometry
     from .universal_tuning.statistics import CHECKPOINTS
+    geometry = call_geometry(len(TASK_FAMILIES))
     return {
         "protocol_version": 2,
         "model": MODEL_ID,
@@ -832,7 +834,8 @@ def _v2_dry_run_payload() -> dict[str, Any]:
         "atomic_batch_size": 5,
         "checkpoints": list(CHECKPOINTS),
         "minimum_certification_atomic": CHECKPOINTS[0],
-        "hard_call_ceiling": 5000,
+        "call_geometry": geometry,
+        "hard_call_ceiling": geometry["worst_case"],
     }
 
 
@@ -840,7 +843,8 @@ def _main_v2(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run universal V2 Qwen operating-surface tuner.")
     parser.add_argument("--run-root")
     parser.add_argument("--base-url", default="http://127.0.0.1:11434")
-    parser.add_argument("--max-calls", type=int, default=5000)
+    from .universal_tuning.campaign import call_geometry
+    parser.add_argument("--max-calls", type=int, default=call_geometry(len(TASK_FAMILIES))["worst_case"])
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     if args.dry_run:
