@@ -107,7 +107,7 @@ The following book-derived principles are explicitly retained as hypotheses/rule
 
 ## 5. Additional mandatory high-value evidence
 
-The Universal recorder must explicitly derive/preserve the following in addition to the already frozen channels:
+The Universal recorder must explicitly derive/preserve the following in addition to the already frozen channels.
 
 ### Knowledge/claim provenance graph
 
@@ -127,6 +127,23 @@ Every consequential claim or belief should link, where recoverable, to one or mo
 
 Presence in context and causal use are separate facts.
 
+### State-ownership ledger
+
+For every consequential current belief/state element, record which layer presently owns or asserts it when recoverable:
+
+- model;
+- Brain/reasoning policy;
+- System/harness;
+- memory;
+- skill;
+- tool/hand;
+- subagent;
+- verifier;
+- environment;
+- human/operator.
+
+Ownership can change over time. Preserve ownership transitions and disagreements between layers rather than collapsing them into one global truth state.
+
 ### Attention/resource-allocation proxy
 
 Do not call this neural attention unless actual model internals expose it. Record the observable allocation of scarce resources across hypotheses/files/tools/branches:
@@ -139,7 +156,19 @@ Do not call this neural attention unless actual model internals expose it. Recor
 - mutations;
 - verification effort.
 
-This proxy is used to study where the system spent cognition/compute, not to claim access to hidden attention weights.
+This proxy studies where the system spent cognition/compute, not hidden attention weights.
+
+### Optional deep local neural telemetry
+
+For open/local models, selected high-value checkpoints may additionally capture model-internal telemetry when the runtime/framework exposes it without invalidating the comparison arm, including:
+
+- selected hidden-state/activation summaries or probes;
+- attention diagnostics;
+- layer-level measurements;
+- cache/KV diagnostics;
+- token-level uncertainty distributions.
+
+These are neural telemetry, **not** a readable transcript of hidden thought. If obtaining them changes runtime behavior materially, they belong in a separately labeled instrumented arm.
 
 ### Redundancy and overlap ledger
 
@@ -147,9 +176,31 @@ Record when two mechanisms appear to perform the same function, when one adds no
 
 ### Order and interaction ledger
 
-When evidence suggests interaction, preserve the state and outcome for targeted variants such as `A`, `B`, `A+B`, `B+A`, and order-sensitive `A->B`, `B->A`, or sandwich variants such as `A->B->A`. Do not brute-force interactions without a causal reason.
+When evidence suggests interaction, preserve state/outcome for targeted variants such as `A`, `B`, `A+B`, `B+A`, and order-sensitive `A->B`, `B->A`, or sandwich variants such as `A->B->A`. Do not brute-force interactions without a causal reason.
 
-## 6. Frontier-data maximization law
+## 6. Mandatory per-task/system comparison artifact
+
+Every task/challenge and adaptive descendant must produce a normalized comparison artifact after eligible arms are available. At minimum it records:
+
+- task and parent IDs;
+- exact frozen specimen hash;
+- systems/models/tiers attempted;
+- native versus instrumented condition;
+- attempt/retry/escalation lineage;
+- pass/fail/unresolved disposition per arm;
+- frontier depth reached;
+- first meaningful divergence when comparable;
+- major context/tool/skill/memory differences;
+- verification coverage;
+- failure/recovery class;
+- queue/inference/tool/verifier/wall time;
+- resource use;
+- links to raw evidence/checkpoints;
+- candidate mechanisms/counterfactuals.
+
+This artifact is for comparison/navigation only; it never replaces raw arm evidence.
+
+## 7. Frontier-data maximization law
 
 A frontier run is an expensive research specimen. Collection must err toward preserving observable data when safe/legal rather than deciding during the run that a datum appears unimportant.
 
@@ -166,6 +217,6 @@ The recorder must therefore preserve:
 
 Filtering/compression may occur only in derived analysis layers. The immutable raw archive remains the research source of truth.
 
-## 7. Implementation gate remains closed
+## 8. Implementation gate remains closed
 
 This amendment changes documentation only. Local and Frontier/Cloud template implementation remains prohibited until the operator explicitly approves the complete frozen specification set after audit.
