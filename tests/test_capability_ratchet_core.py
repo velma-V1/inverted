@@ -77,6 +77,7 @@ def test_all_canonical_records_round_trip_with_explicit_types() -> None:
     result = ReplayResult(
         replay_result_id="result-001",
         replay_request_id=request.replay_request_id,
+        failure_snapshot_id=fixture.failure_snapshot_id,
         parent_failure_snapshot_id=fixture.failure_snapshot_id,
         parent_state_hash=fixture.state_hash,
         mode=ReplayMode.EXACT,
@@ -115,6 +116,7 @@ def test_invalid_replay_mode_dimension_combinations_are_rejected(
     with pytest.raises(ValueError):
         ReplayRequest(
             replay_request_id="request-001",
+            failure_snapshot_id="fail-001",
             parent_failure_snapshot_id="fail-001",
             parent_state_hash="d" * 64,
             decision_id="D1",
@@ -134,6 +136,7 @@ def test_counterfactual_requires_a_declared_changed_dimension() -> None:
     with pytest.raises(ValueError, match="COUNTERFACTUAL"):
         ReplayRequest(
             replay_request_id="request-001",
+            failure_snapshot_id="fail-001",
             parent_failure_snapshot_id="fail-001",
             parent_state_hash="d" * 64,
             decision_id="D4",
@@ -197,12 +200,13 @@ def test_failure_fixture_rejects_blank_required_ids(field: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "field", ["replay_request_id", "parent_failure_snapshot_id", "decision_id", "hypothesis_id",
+    "field", ["replay_request_id", "failure_snapshot_id", "parent_failure_snapshot_id", "decision_id", "hypothesis_id",
               "expected_causal_implication", "source_model_id", "source_model_digest"]
 )
 def test_replay_request_rejects_blank_required_ids(field: str) -> None:
     values = {
         "replay_request_id": "request-001",
+        "failure_snapshot_id": "fail-001",
         "parent_failure_snapshot_id": "fail-001",
         "parent_state_hash": "d" * 64,
         "decision_id": "D1",
@@ -247,6 +251,7 @@ def test_exact_request_rejects_overrides_and_target_model_change() -> None:
     with pytest.raises(ValueError, match="EXACT"):
         ReplayRequest(
             replay_request_id="request-exact-overrides",
+            failure_snapshot_id=fixture.failure_snapshot_id,
             parent_failure_snapshot_id=fixture.failure_snapshot_id,
             parent_state_hash=fixture.state_hash,
             decision_id="D1",
@@ -263,6 +268,7 @@ def test_exact_request_rejects_overrides_and_target_model_change() -> None:
     with pytest.raises(ValueError, match="EXACT"):
         ReplayRequest(
             replay_request_id="request-exact-model",
+            failure_snapshot_id=fixture.failure_snapshot_id,
             parent_failure_snapshot_id=fixture.failure_snapshot_id,
             parent_state_hash=fixture.state_hash,
             decision_id="D1", hypothesis_id="H1",
@@ -281,6 +287,7 @@ def test_counterfactual_overrides_must_match_declared_dimensions_and_source_mode
     with pytest.raises(ValueError, match="changed_dimensions"):
         ReplayRequest(
             replay_request_id="request-cf",
+            failure_snapshot_id=fixture.failure_snapshot_id,
             parent_failure_snapshot_id=fixture.failure_snapshot_id,
             parent_state_hash=fixture.state_hash,
             decision_id="D2", hypothesis_id="H2",
@@ -297,6 +304,7 @@ def test_counterfactual_overrides_must_match_declared_dimensions_and_source_mode
     with pytest.raises(ValueError, match="COUNTERFACTUAL"):
         ReplayRequest(
             replay_request_id="request-cf-model",
+            failure_snapshot_id=fixture.failure_snapshot_id,
             parent_failure_snapshot_id=fixture.failure_snapshot_id,
             parent_state_hash=fixture.state_hash,
             decision_id="D2", hypothesis_id="H2",
@@ -332,6 +340,7 @@ def test_failure_fixture_parent_id_and_state_hash_are_atomic() -> None:
 def test_replay_result_failure_requires_child_snapshot_and_success_forbids_one() -> None:
     common = dict(
         replay_result_id="result-1", replay_request_id="request-1",
+        failure_snapshot_id="fail-1",
         parent_failure_snapshot_id="fail-1", parent_state_hash="d" * 64,
         mode=ReplayMode.EXACT, target_model_id="qwen", target_model_digest="digest",
         partition=Partition.DEVELOPMENT, output_asset_sha256="e" * 64,
@@ -361,6 +370,7 @@ def test_schema_deep_freezes_nested_json_and_rejects_non_boolean_result_flags() 
     with pytest.raises(TypeError, match="completed"):
         ReplayResult(
             replay_result_id="result-bool", replay_request_id="request-bool",
+            failure_snapshot_id="fail-1",
             parent_failure_snapshot_id="fail-1", parent_state_hash="d" * 64,
             mode=ReplayMode.EXACT, target_model_id="qwen", target_model_digest="digest",
             partition=Partition.DEVELOPMENT, completed="yes",
@@ -372,7 +382,8 @@ def test_counterfactual_requires_concrete_override_for_every_declared_dimension(
     fixture = make_fixture()
     with pytest.raises(ValueError, match="changed_dimensions"):
         ReplayRequest(
-            replay_request_id="request-cf-empty", parent_failure_snapshot_id=fixture.failure_snapshot_id,
+            replay_request_id="request-cf-empty", failure_snapshot_id=fixture.failure_snapshot_id,
+            parent_failure_snapshot_id=fixture.failure_snapshot_id,
             parent_state_hash=fixture.state_hash, decision_id="D2", hypothesis_id="H2",
             expected_causal_implication="temperature repairs failure", mode=ReplayMode.COUNTERFACTUAL,
             source_model_id=fixture.source_model_id, source_model_digest=fixture.source_model_digest,
@@ -386,7 +397,8 @@ def test_counterfactual_cannot_mutate_frozen_provenance_dimensions() -> None:
     for dimension in ("source_model_id", "source_model_digest", "partition", "parent_state_hash", "state_hash"):
         with pytest.raises(ValueError, match="immutable"):
             ReplayRequest(
-                replay_request_id=f"request-{dimension}", parent_failure_snapshot_id=fixture.failure_snapshot_id,
+                replay_request_id=f"request-{dimension}", failure_snapshot_id=fixture.failure_snapshot_id,
+                parent_failure_snapshot_id=fixture.failure_snapshot_id,
                 parent_state_hash=fixture.state_hash, decision_id="D2", hypothesis_id="H2",
                 expected_causal_implication="invalid provenance intervention", mode=ReplayMode.COUNTERFACTUAL,
                 source_model_id=fixture.source_model_id, source_model_digest=fixture.source_model_digest,
@@ -398,6 +410,7 @@ def test_failed_replay_child_snapshot_cannot_equal_parent() -> None:
     with pytest.raises(ValueError, match="child_failure_snapshot_id"):
         ReplayResult(
             replay_result_id="result-cycle", replay_request_id="request-cycle",
+            failure_snapshot_id="fail-cycle",
             parent_failure_snapshot_id="fail-cycle", parent_state_hash="d" * 64,
             mode=ReplayMode.EXACT, target_model_id="qwen", target_model_digest="digest",
             partition=Partition.DEVELOPMENT, completed=True, semantic_pass=False, contract_pass=True,
@@ -423,7 +436,8 @@ def test_blank_or_non_string_explicit_branch_ids_are_rejected() -> None:
         kwargs = {field: value}
         with pytest.raises((TypeError, ValueError), match=field):
             ReplayRequest(
-                replay_request_id=f"request-{field}", parent_failure_snapshot_id=fixture.failure_snapshot_id,
+                replay_request_id=f"request-{field}", failure_snapshot_id=fixture.failure_snapshot_id,
+                parent_failure_snapshot_id=fixture.failure_snapshot_id,
                 parent_state_hash=fixture.state_hash, decision_id="D2", hypothesis_id="H2",
                 expected_causal_implication="temperature repairs failure", mode=ReplayMode.COUNTERFACTUAL,
                 source_model_id=fixture.source_model_id, source_model_digest=fixture.source_model_digest,
@@ -436,6 +450,7 @@ def test_non_cross_model_result_rejects_adapter_changes() -> None:
     with pytest.raises(ValueError, match="adapter_changes"):
         ReplayResult(
             replay_result_id="result-adapter", replay_request_id="request-adapter",
+            failure_snapshot_id="fail-adapter",
             parent_failure_snapshot_id="fail-adapter", parent_state_hash="d" * 64,
             mode=ReplayMode.EXACT, target_model_id="qwen", target_model_digest="digest",
             partition=Partition.DEVELOPMENT, completed=True, semantic_pass=True, contract_pass=True,
@@ -448,3 +463,87 @@ def test_non_finite_numbers_are_rejected_from_canonical_payloads() -> None:
     for value in (float("nan"), float("inf"), float("-inf")):
         with pytest.raises(TypeError, match="finite"):
             make_fixture(metadata={"value": value})
+
+
+@pytest.mark.parametrize("dimension", ("target_model_id", "target_model_digest"))
+def test_counterfactual_cannot_override_target_model_provenance(dimension: str) -> None:
+    fixture = make_fixture()
+    with pytest.raises(ValueError, match="immutable"):
+        ReplayRequest(
+            replay_request_id=f"request-{dimension}",
+            failure_snapshot_id=fixture.failure_snapshot_id,
+            parent_failure_snapshot_id=fixture.failure_snapshot_id,
+            parent_state_hash=fixture.state_hash,
+            decision_id="D-target-provenance",
+            hypothesis_id="H-target-provenance",
+            expected_causal_implication="target provenance cannot be an override",
+            mode=ReplayMode.COUNTERFACTUAL,
+            source_model_id=fixture.source_model_id,
+            source_model_digest=fixture.source_model_digest,
+            target_model_id=fixture.source_model_id,
+            target_model_digest=fixture.source_model_digest,
+            partition=fixture.partition,
+            changed_dimensions=(dimension,),
+            overrides={dimension: "changed"},
+        )
+
+
+def test_failure_fixture_rejects_self_parent() -> None:
+    with pytest.raises(ValueError, match="parent_failure_snapshot_id"):
+        make_fixture(
+            parent_failure_snapshot_id="fail-001",
+            parent_state_hash="d" * 64,
+        )
+
+
+def test_replay_records_retain_originating_snapshot_across_descendants() -> None:
+    fixture = make_fixture()
+    exact = ReplayRequest.for_exact(fixture, decision_id="D-root", hypothesis_id="H-root")
+    assert exact.failure_snapshot_id == fixture.failure_snapshot_id
+    assert from_payload(to_payload(exact)) == exact
+
+    descendant = ReplayRequest(
+        replay_request_id="request-descendant",
+        failure_snapshot_id=fixture.failure_snapshot_id,
+        parent_failure_snapshot_id="child-failure-001",
+        parent_state_hash="d" * 64,
+        decision_id="D-descendant",
+        hypothesis_id="H-descendant",
+        expected_causal_implication="descendant keeps the originating failure family",
+        mode=ReplayMode.EXACT,
+        source_model_id=fixture.source_model_id,
+        source_model_digest=fixture.source_model_digest,
+        target_model_id=fixture.source_model_id,
+        target_model_digest=fixture.source_model_digest,
+        partition=fixture.partition,
+    )
+    result = ReplayResult(
+        replay_result_id="result-descendant",
+        replay_request_id=descendant.replay_request_id,
+        failure_snapshot_id=fixture.failure_snapshot_id,
+        parent_failure_snapshot_id=descendant.parent_failure_snapshot_id,
+        parent_state_hash=descendant.parent_state_hash,
+        mode=descendant.mode,
+        target_model_id=descendant.target_model_id,
+        target_model_digest=descendant.target_model_digest,
+        partition=descendant.partition,
+        completed=True,
+        semantic_pass=True,
+        contract_pass=True,
+        output_asset_sha256="e" * 64,
+        raw_call_asset_sha256="f" * 64,
+    )
+
+    for record in (descendant, result):
+        payload = to_payload(record)
+        assert payload["failure_snapshot_id"] == fixture.failure_snapshot_id
+        assert payload["parent_failure_snapshot_id"] == "child-failure-001"
+        assert from_payload(payload) == record
+
+
+def test_replay_record_originating_snapshot_id_is_required() -> None:
+    request = ReplayRequest.for_exact(make_fixture(), decision_id="D-root", hypothesis_id="H-root")
+    payload = to_payload(request)
+    payload.pop("failure_snapshot_id")
+    with pytest.raises(TypeError, match="failure_snapshot_id"):
+        from_payload(payload)

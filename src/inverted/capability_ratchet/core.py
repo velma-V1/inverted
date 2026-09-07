@@ -47,7 +47,8 @@ class Partition(str, Enum):
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 _IMMUTABLE_REPLAY_DIMENSIONS = frozenset({
-    "source_model_id", "source_model_digest", "partition",
+    "source_model_id", "source_model_digest", "target_model_id",
+    "target_model_digest", "partition",
     "parent_failure_snapshot_id", "parent_state_hash", "state_hash",
     "failure_snapshot_id", "record_id", "record_type",
     "source_campaign_id", "source_trial_id",
@@ -188,6 +189,8 @@ class FailureFixture:
             raise ValueError("parent_failure_snapshot_id and parent_state_hash must be supplied together")
         if has_parent_id:
             _required("parent_failure_snapshot_id", self.parent_failure_snapshot_id)
+            if self.parent_failure_snapshot_id == self.failure_snapshot_id:
+                raise ValueError("parent_failure_snapshot_id must differ from failure_snapshot_id")
         object.__setattr__(self, "batch_task_ids", batch_task_ids)
         object.__setattr__(self, "failure_classes", failure_classes)
         object.__setattr__(self, "source_evidence_refs", source_evidence_refs)
@@ -198,6 +201,7 @@ class FailureFixture:
 @dataclass(frozen=True)
 class ReplayRequest:
     replay_request_id: str
+    failure_snapshot_id: str
     parent_failure_snapshot_id: str
     parent_state_hash: str
     decision_id: str
@@ -220,7 +224,7 @@ class ReplayRequest:
     def __post_init__(self) -> None:
         _coerce_enum(self, "mode", ReplayMode)
         _coerce_enum(self, "partition", Partition)
-        for name in ("replay_request_id", "parent_failure_snapshot_id", "decision_id",
+        for name in ("replay_request_id", "failure_snapshot_id", "parent_failure_snapshot_id", "decision_id",
                      "hypothesis_id", "expected_causal_implication", "source_model_id",
                      "source_model_digest", "target_model_id", "target_model_digest"):
             _required(name, getattr(self, name))
@@ -274,7 +278,8 @@ class ReplayRequest:
                                    "hypothesis_id": hypothesis_id, "mode": ReplayMode.EXACT.value},
                                   sort_keys=True, separators=(",", ":")).encode("utf-8")
             request_id = f"replay-request-{hashlib.sha256(identity).hexdigest()[:20]}"
-        return cls(replay_request_id=request_id, parent_failure_snapshot_id=fixture.failure_snapshot_id,
+        return cls(replay_request_id=request_id, failure_snapshot_id=fixture.failure_snapshot_id,
+                   parent_failure_snapshot_id=fixture.failure_snapshot_id,
                    parent_state_hash=fixture.state_hash, decision_id=decision_id, hypothesis_id=hypothesis_id,
                    expected_causal_implication="measure exact failure reproducibility without intervention",
                    mode=ReplayMode.EXACT, source_model_id=fixture.source_model_id,
@@ -287,6 +292,7 @@ class ReplayRequest:
 class ReplayResult:
     replay_result_id: str
     replay_request_id: str
+    failure_snapshot_id: str
     parent_failure_snapshot_id: str
     parent_state_hash: str
     mode: ReplayMode
@@ -309,7 +315,7 @@ class ReplayResult:
     def __post_init__(self) -> None:
         _coerce_enum(self, "mode", ReplayMode)
         _coerce_enum(self, "partition", Partition)
-        for name in ("replay_result_id", "replay_request_id", "parent_failure_snapshot_id",
+        for name in ("replay_result_id", "replay_request_id", "failure_snapshot_id", "parent_failure_snapshot_id",
                      "target_model_id", "target_model_digest"):
             _required(name, getattr(self, name))
         _sha256("parent_state_hash", self.parent_state_hash)
@@ -374,6 +380,7 @@ def to_payload(value: ReplayRecord) -> dict[str, Any]:
         payload = {
             "record_type": value.record_type,
             "replay_request_id": value.replay_request_id,
+            "failure_snapshot_id": value.failure_snapshot_id,
             "parent_failure_snapshot_id": value.parent_failure_snapshot_id,
             "parent_state_hash": value.parent_state_hash,
             "decision_id": value.decision_id,
@@ -397,6 +404,7 @@ def to_payload(value: ReplayRecord) -> dict[str, Any]:
             "record_type": value.record_type,
             "replay_result_id": value.replay_result_id,
             "replay_request_id": value.replay_request_id,
+            "failure_snapshot_id": value.failure_snapshot_id,
             "parent_failure_snapshot_id": value.parent_failure_snapshot_id,
             "parent_state_hash": value.parent_state_hash,
             "mode": value.mode,
