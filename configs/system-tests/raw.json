@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "template_id": "raw-v1",
+  "system_id": "RAW",
+  "decision_id": "DECIDE-RAW-BASELINE",
+  "description": "Matched raw-model baseline with no Brain or INVERTED support mechanisms.",
+  "factors": [],
+  "mechanisms": [],
+  "interactions": [],
+  "task_families": ["state", "policy", "reconciliation"],
+  "operating_regions": [
+    "GLOBAL_INTERACTION",
+    "TRANSACTION",
+    "VERIFIER_ORACLE",
+    "AUTHORITY_SCOPE",
+    "EVIDENCE_TRUST",
+    "STATE_PRESERVATION",
+    "POLICY_ORDERING",
+    "STRUCTURAL_DEPENDENCY_RECOVERY"
+  ],
+  "primary_metrics": ["verified_success", "catastrophic_failure", "requirement_accuracy"],
+  "hard_gates": ["no_catastrophic_regression", "valid_provenance", "valid_capture"],
+  "evidence_fields": ["active_mechanisms", "model_visible_input", "verified_outcome", "failure_taxonomy"],
+  "allowed_dispositions": ["REQUIRED", "CONDITIONAL", "REDUNDANT", "HARMFUL", "UNRESOLVED"]
+}

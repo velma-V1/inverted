@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "template_id": "brain-inverted-v1",
+  "system_id": "BRAIN_INVERTED",
+  "decision_id": "DECIDE-BRAIN-INVERTED-WHOLE-SYSTEM",
+  "description": "Exact composition of the Brain support layer and INVERTED execution architecture.",
+  "factors": [
+    "BRAIN",
+    "INVERTED"
+  ],
+  "mechanisms": [
+    {
+      "mechanism_id": "BRAIN_CANONICAL_CONTEXT",
+      "decision_id": "DECIDE-BRAIN-CANONICAL-CONTEXT",
+      "description": "Provide compact canonical working context and current observable state to the model.",
+      "owner": "SYSTEM",
+      "responsibilities": [
+        "WORKING_CONTEXT",
+        "OBSERVABLE_STATE_CONTEXT"
+      ],
+      "expected_role": "reduce context loss and repeated rediscovery",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "BRAIN_EVIDENCE_MEMORY",
+      "decision_id": "DECIDE-BRAIN-EVIDENCE-MEMORY",
+      "description": "Externalize prior verified evidence, contradictions, and unresolved evidence state.",
+      "owner": "SYSTEM",
+      "responsibilities": [
+        "EVIDENCE_MEMORY",
+        "CONTRADICTION_CONTEXT"
+      ],
+      "expected_role": "improve evidence-grounded reasoning without hidden model memory",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "BRAIN_DEPENDENCY_SCAFFOLD",
+      "decision_id": "DECIDE-BRAIN-DEPENDENCY-SCAFFOLD",
+      "description": "Expose decomposition, prerequisites, dependencies, success criteria, and blocked-state structure.",
+      "owner": "HYBRID",
+      "responsibilities": [
+        "DECOMPOSITION_SUPPORT",
+        "DEPENDENCY_STRUCTURE",
+        "SUCCESS_CRITERIA_CONTEXT"
+      ],
+      "expected_role": "make multi-step reasoning and dependency boundaries explicit",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "BRAIN_FAILURE_REANCHOR",
+      "decision_id": "DECIDE-BRAIN-FAILURE-REANCHOR",
+      "description": "Re-anchor the model with observable failure, uncertainty, recovery options, and preserved constraints after divergence.",
+      "owner": "RECOVERY",
+      "responsibilities": [
+        "FAILURE_CONTEXT",
+        "UNCERTAINTY_CONTEXT",
+        "RECOVERY_CONTEXT",
+        "REANCHORING"
+      ],
+      "expected_role": "recover useful reasoning after observable failure or drift",
+      "isolation_required": false,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_CANDIDATE_GENERATION",
+      "decision_id": "DECIDE-INV-CANDIDATE-GENERATION",
+      "description": "Generate grounded candidate actions outside the model's authority path.",
+      "owner": "SYSTEM",
+      "responsibilities": [
+        "CANDIDATE_GENERATION"
+      ],
+      "expected_role": "move model work from unconstrained generation toward evaluation of grounded candidates",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_ADMISSIBLE_ACTION_CONTROL",
+      "decision_id": "DECIDE-INV-ADMISSIBLE-ACTION-CONTROL",
+      "description": "Constrain candidate actions to public, authorized, mechanically admissible operations.",
+      "owner": "KERNEL",
+      "responsibilities": [
+        "ADMISSIBLE_ACTIONS",
+        "SCOPE_FENCING"
+      ],
+      "expected_role": "remove mechanically invalid or unauthorized action space before model judgment",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_STATE_INVARIANTS",
+      "decision_id": "DECIDE-INV-STATE-INVARIANTS",
+      "description": "Keep canonical state and hard invariants in deterministic system authority.",
+      "owner": "KERNEL",
+      "responsibilities": [
+        "CANONICAL_STATE",
+        "INVARIANTS"
+      ],
+      "expected_role": "prevent model cognition from becoming transaction truth",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_SEMANTIC_AUDIT",
+      "decision_id": "DECIDE-INV-SEMANTIC-AUDIT",
+      "description": "Use the model to semantically audit grounded candidates against the requested goal and evidence.",
+      "owner": "MODEL",
+      "responsibilities": [
+        "SEMANTIC_AUDIT",
+        "SEMANTIC_FAILURE_DETECTION"
+      ],
+      "expected_role": "catch semantic faults that deterministic checks cannot fully encode",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_INDEPENDENT_VERIFICATION",
+      "decision_id": "DECIDE-INV-INDEPENDENT-VERIFICATION",
+      "description": "Verify deterministic postconditions and invariants independently of the proposing/auditing model.",
+      "owner": "VERIFIER",
+      "responsibilities": [
+        "FINAL_DETERMINISTIC_VERIFICATION"
+      ],
+      "expected_role": "prevent model self-certification and silent false success",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_COMMIT_RECOVERY_FENCE",
+      "decision_id": "DECIDE-INV-COMMIT-RECOVERY-FENCE",
+      "description": "Fence irreversible commit and reconcile uncertain outcomes through system-owned recovery state.",
+      "owner": "KERNEL",
+      "responsibilities": [
+        "IRREVERSIBLE_COMMIT",
+        "TRANSACTION_TRUTH",
+        "RECOVERY_FENCING"
+      ],
+      "expected_role": "separate semantic proposals from irreversible authority and duplicate-effect risk",
+      "isolation_required": false,
+      "ablation_required": true
+    }
+  ],
+  "interactions": [
+    {
+      "probe_id": "BRAIN_EVIDENCE_X_INV_AUDIT",
+      "members": [
+        "BRAIN_EVIDENCE_MEMORY",
+        "INV_SEMANTIC_AUDIT"
+      ],
+      "decision_id": "DECIDE-BRAIN-EVIDENCE-X-INV-AUDIT",
+      "reason": "Determine whether externalized evidence memory materially improves semantic auditing of grounded candidates."
+    },
+    {
+      "probe_id": "BRAIN_DEPENDENCY_X_INV_CANDIDATE",
+      "members": [
+        "BRAIN_DEPENDENCY_SCAFFOLD",
+        "INV_CANDIDATE_GENERATION"
+      ],
+      "decision_id": "DECIDE-BRAIN-DEPENDENCY-X-INV-CANDIDATE",
+      "reason": "Determine whether dependency structure and grounded candidate generation compound beyond either mechanism alone."
+    },
+    {
+      "probe_id": "BRAIN_REANCHOR_X_INV_VERIFICATION",
+      "members": [
+        "BRAIN_FAILURE_REANCHOR",
+        "INV_INDEPENDENT_VERIFICATION"
+      ],
+      "decision_id": "DECIDE-BRAIN-REANCHOR-X-INV-VERIFICATION",
+      "reason": "Determine whether verifier-triggered re-anchoring improves recovery after a rejected candidate."
+    }
+  ],
+  "task_families": [
+    "state",
+    "policy",
+    "reconciliation"
+  ],
+  "operating_regions": [
+    "GLOBAL_INTERACTION",
+    "TRANSACTION",
+    "VERIFIER_ORACLE",
+    "AUTHORITY_SCOPE",
+    "EVIDENCE_TRUST",
+    "STATE_PRESERVATION",
+    "POLICY_ORDERING",
+    "STRUCTURAL_DEPENDENCY_RECOVERY"
+  ],
+  "primary_metrics": [
+    "verified_success",
+    "catastrophic_failure",
+    "requirement_accuracy"
+  ],
+  "hard_gates": [
+    "no_catastrophic_regression",
+    "valid_provenance",
+    "valid_capture"
+  ],
+  "evidence_fields": [
+    "active_mechanisms",
+    "candidate_state_transition",
+    "failure_taxonomy",
+    "first_meaningful_divergence",
+    "model_visible_input",
+    "parent_transcript_hash",
+    "system_known_state",
+    "trigger_eligibility",
+    "verified_outcome",
+    "verifier_results"
+  ],
+  "allowed_dispositions": [
+    "REQUIRED",
+    "CONDITIONAL",
+    "REDUNDANT",
+    "HARMFUL",
+    "UNRESOLVED"
+  ]
+}

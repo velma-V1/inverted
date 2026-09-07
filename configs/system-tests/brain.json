@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "template_id": "brain-v1",
+  "system_id": "BRAIN",
+  "decision_id": "DECIDE-BRAIN-WHOLE-SYSTEM",
+  "description": "Externalized cognition-support layer tested independently of the INVERTED execution architecture.",
+  "factors": ["BRAIN"],
+  "mechanisms": [
+    {
+      "mechanism_id": "BRAIN_CANONICAL_CONTEXT",
+      "decision_id": "DECIDE-BRAIN-CANONICAL-CONTEXT",
+      "description": "Provide compact canonical working context and current observable state to the model.",
+      "owner": "SYSTEM",
+      "responsibilities": ["WORKING_CONTEXT", "OBSERVABLE_STATE_CONTEXT"],
+      "expected_role": "reduce context loss and repeated rediscovery",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "BRAIN_EVIDENCE_MEMORY",
+      "decision_id": "DECIDE-BRAIN-EVIDENCE-MEMORY",
+      "description": "Externalize prior verified evidence, contradictions, and unresolved evidence state.",
+      "owner": "SYSTEM",
+      "responsibilities": ["EVIDENCE_MEMORY", "CONTRADICTION_CONTEXT"],
+      "expected_role": "improve evidence-grounded reasoning without hidden model memory",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "BRAIN_DEPENDENCY_SCAFFOLD",
+      "decision_id": "DECIDE-BRAIN-DEPENDENCY-SCAFFOLD",
+      "description": "Expose decomposition, prerequisites, dependencies, success criteria, and blocked-state structure.",
+      "owner": "HYBRID",
+      "responsibilities": ["DECOMPOSITION_SUPPORT", "DEPENDENCY_STRUCTURE", "SUCCESS_CRITERIA_CONTEXT"],
+      "expected_role": "make multi-step reasoning and dependency boundaries explicit",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "BRAIN_FAILURE_REANCHOR",
+      "decision_id": "DECIDE-BRAIN-FAILURE-REANCHOR",
+      "description": "Re-anchor the model with observable failure, uncertainty, recovery options, and preserved constraints after divergence.",
+      "owner": "RECOVERY",
+      "responsibilities": ["FAILURE_CONTEXT", "UNCERTAINTY_CONTEXT", "RECOVERY_CONTEXT", "REANCHORING"],
+      "expected_role": "recover useful reasoning after observable failure or drift",
+      "isolation_required": false,
+      "ablation_required": true
+    }
+  ],
+  "interactions": [
+    {
+      "probe_id": "BRAIN_CONTEXT_X_REANCHOR",
+      "members": ["BRAIN_CANONICAL_CONTEXT", "BRAIN_FAILURE_REANCHOR"],
+      "decision_id": "DECIDE-BRAIN-CONTEXT-X-REANCHOR",
+      "reason": "Determine whether failure re-anchoring adds value beyond initial canonical context or merely repeats it."
+    }
+  ],
+  "task_families": ["state", "policy", "reconciliation"],
+  "operating_regions": [
+    "GLOBAL_INTERACTION",
+    "TRANSACTION",
+    "VERIFIER_ORACLE",
+    "AUTHORITY_SCOPE",
+    "EVIDENCE_TRUST",
+    "STATE_PRESERVATION",
+    "POLICY_ORDERING",
+    "STRUCTURAL_DEPENDENCY_RECOVERY"
+  ],
+  "primary_metrics": ["verified_success", "catastrophic_failure", "requirement_accuracy"],
+  "hard_gates": ["no_catastrophic_regression", "valid_provenance", "valid_capture"],
+  "evidence_fields": [
+    "active_mechanisms",
+    "model_visible_input",
+    "verified_outcome",
+    "failure_taxonomy",
+    "first_meaningful_divergence",
+    "trigger_eligibility"
+  ],
+  "allowed_dispositions": ["REQUIRED", "CONDITIONAL", "REDUNDANT", "HARMFUL", "UNRESOLVED"]
+}

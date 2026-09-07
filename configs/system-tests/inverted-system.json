@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "template_id": "inverted-system-v1",
+  "system_id": "INVERTED_SYSTEM",
+  "decision_id": "DECIDE-INVERTED-WHOLE-SYSTEM",
+  "description": "System-owned candidate, authority, verification, audit, and recovery architecture without Brain support.",
+  "factors": ["INVERTED"],
+  "mechanisms": [
+    {
+      "mechanism_id": "INV_CANDIDATE_GENERATION",
+      "decision_id": "DECIDE-INV-CANDIDATE-GENERATION",
+      "description": "Generate grounded candidate actions outside the model's authority path.",
+      "owner": "SYSTEM",
+      "responsibilities": ["CANDIDATE_GENERATION"],
+      "expected_role": "move model work from unconstrained generation toward evaluation of grounded candidates",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_ADMISSIBLE_ACTION_CONTROL",
+      "decision_id": "DECIDE-INV-ADMISSIBLE-ACTION-CONTROL",
+      "description": "Constrain candidate actions to public, authorized, mechanically admissible operations.",
+      "owner": "KERNEL",
+      "responsibilities": ["ADMISSIBLE_ACTIONS", "SCOPE_FENCING"],
+      "expected_role": "remove mechanically invalid or unauthorized action space before model judgment",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_STATE_INVARIANTS",
+      "decision_id": "DECIDE-INV-STATE-INVARIANTS",
+      "description": "Keep canonical state and hard invariants in deterministic system authority.",
+      "owner": "KERNEL",
+      "responsibilities": ["CANONICAL_STATE", "INVARIANTS"],
+      "expected_role": "prevent model cognition from becoming transaction truth",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_SEMANTIC_AUDIT",
+      "decision_id": "DECIDE-INV-SEMANTIC-AUDIT",
+      "description": "Use the model to semantically audit grounded candidates against the requested goal and evidence.",
+      "owner": "MODEL",
+      "responsibilities": ["SEMANTIC_AUDIT", "SEMANTIC_FAILURE_DETECTION"],
+      "expected_role": "catch semantic faults that deterministic checks cannot fully encode",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_INDEPENDENT_VERIFICATION",
+      "decision_id": "DECIDE-INV-INDEPENDENT-VERIFICATION",
+      "description": "Verify deterministic postconditions and invariants independently of the proposing/auditing model.",
+      "owner": "VERIFIER",
+      "responsibilities": ["FINAL_DETERMINISTIC_VERIFICATION"],
+      "expected_role": "prevent model self-certification and silent false success",
+      "isolation_required": true,
+      "ablation_required": true
+    },
+    {
+      "mechanism_id": "INV_COMMIT_RECOVERY_FENCE",
+      "decision_id": "DECIDE-INV-COMMIT-RECOVERY-FENCE",
+      "description": "Fence irreversible commit and reconcile uncertain outcomes through system-owned recovery state.",
+      "owner": "KERNEL",
+      "responsibilities": ["IRREVERSIBLE_COMMIT", "TRANSACTION_TRUTH", "RECOVERY_FENCING"],
+      "expected_role": "separate semantic proposals from irreversible authority and duplicate-effect risk",
+      "isolation_required": false,
+      "ablation_required": true
+    }
+  ],
+  "interactions": [
+    {
+      "probe_id": "INV_CANDIDATE_X_AUDIT",
+      "members": ["INV_CANDIDATE_GENERATION", "INV_SEMANTIC_AUDIT"],
+      "decision_id": "DECIDE-INV-CANDIDATE-X-AUDIT",
+      "reason": "Determine whether semantic auditing creates value specifically when the model evaluates grounded system candidates."
+    },
+    {
+      "probe_id": "INV_AUDIT_X_VERIFICATION",
+      "members": ["INV_SEMANTIC_AUDIT", "INV_INDEPENDENT_VERIFICATION"],
+      "decision_id": "DECIDE-INV-AUDIT-X-VERIFICATION",
+      "reason": "Determine whether semantic auditing and deterministic verification are complementary or redundant."
+    }
+  ],
+  "task_families": ["state", "policy", "reconciliation"],
+  "operating_regions": [
+    "GLOBAL_INTERACTION",
+    "TRANSACTION",
+    "VERIFIER_ORACLE",
+    "AUTHORITY_SCOPE",
+    "EVIDENCE_TRUST",
+    "STATE_PRESERVATION",
+    "POLICY_ORDERING",
+    "STRUCTURAL_DEPENDENCY_RECOVERY"
+  ],
+  "primary_metrics": ["verified_success", "catastrophic_failure", "requirement_accuracy"],
+  "hard_gates": ["no_catastrophic_regression", "valid_provenance", "valid_capture"],
+  "evidence_fields": [
+    "active_mechanisms",
+    "model_visible_input",
+    "system_known_state",
+    "candidate_state_transition",
+    "verifier_results",
+    "verified_outcome",
+    "failure_taxonomy",
+    "first_meaningful_divergence"
+  ],
+  "allowed_dispositions": ["REQUIRED", "CONDITIONAL", "REDUNDANT", "HARMFUL", "UNRESOLVED"]
+}
