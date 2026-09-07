@@ -1,0 +1,33 @@
+{
+  "call_geometry": {
+    "expected": 3744,
+    "minimum": 576,
+    "worst_case": 15840
+  },
+  "families": [
+    "EXTRACTION",
+    "STRICT_TRANSFORMATION",
+    "CLASSIFICATION_ROUTING",
+    "ARITHMETIC",
+    "LOGIC_CONSTRAINTS",
+    "PLANNING_DEPENDENCIES",
+    "CODING_GENERATION",
+    "DEBUGGING_REVIEW",
+    "TOOL_AGENT_DECISION",
+    "AMBIGUITY_UNCERTAINTY",
+    "SYSTEM_GOVERNANCE",
+    "SYNTHESIS_WRITING"
+  ],
+  "hard_call_ceiling": 15840,
+  "observation_count": 3960,
+  "physical_calls": 1260,
+  "protocol_version": 2,
+  "runtime_provenance": {
+    "base_url": "http://127.0.0.1:11434",
+    "model": "qwen3.5:9b-q8_0",
+    "model_digest": "441ec31e4d2aedceb97dd834b036db104d943fbe3dbc1e5c8ac95eeaa9141c77",
+    "ollama_version": "0.32.15",
+    "provider": "ollama"
+  },
+  "status": "COMPLETED"
+}

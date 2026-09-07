@@ -1,0 +1,10 @@
+Qwen Universal Thinking Tuner V2 - Complete Real Evidence Dump
+
+Status: COMPLETE
+Privacy scan: PASS
+Physical model calls: 1260
+Atomic observations: 3960
+Frozen atomic tasks: 7200
+Source artifacts copied byte-for-byte: 8/8
+
+The original runtime evidence remains preserved under runs/ and is not modified.

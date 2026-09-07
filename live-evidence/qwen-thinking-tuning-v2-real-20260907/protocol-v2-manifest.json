@@ -1,0 +1,96 @@
+{
+  "manifest": {
+    "acceptable_semantic_floor": 0.9,
+    "bootstrap_iterations": 4000,
+    "bootstrap_seed": 20260907,
+    "budget_candidates": [
+      256,
+      512,
+      1024,
+      2048
+    ],
+    "call_geometry": {
+      "expected": 3744,
+      "minimum": 576,
+      "worst_case": 15840
+    },
+    "checkpoints": [
+      40,
+      60,
+      80,
+      120
+    ],
+    "coarse_temperatures": [
+      0.2,
+      0.4,
+      0.6,
+      0.8,
+      1.0,
+      1.2
+    ],
+    "confidence_level": 0.95,
+    "families": [
+      "EXTRACTION",
+      "STRICT_TRANSFORMATION",
+      "CLASSIFICATION_ROUTING",
+      "ARITHMETIC",
+      "LOGIC_CONSTRAINTS",
+      "PLANNING_DEPENDENCIES",
+      "CODING_GENERATION",
+      "DEBUGGING_REVIEW",
+      "TOOL_AGENT_DECISION",
+      "AMBIGUITY_UNCERTAINTY",
+      "SYSTEM_GOVERNANCE",
+      "SYNTHESIS_WRITING"
+    ],
+    "hard_call_ceiling": 15840,
+    "minimum_useful_effect": 0.05,
+    "model_metadata": {
+      "coding_thinking_temperature": 0.6,
+      "diagnostic_budget": 2048,
+      "direct_temperature": 0.7,
+      "gate_thinking_budget": 1024,
+      "general_thinking_temperature": 1.0
+    },
+    "noninferiority_margin": -0.02,
+    "protocol_version": 2,
+    "refinement_steps": [
+      0.1,
+      0.05,
+      0.02,
+      0.01,
+      0.001
+    ],
+    "runtime_provenance": {
+      "base_url": "http://127.0.0.1:11434",
+      "model": "qwen3.5:9b-q8_0",
+      "model_digest": "441ec31e4d2aedceb97dd834b036db104d943fbe3dbc1e5c8ac95eeaa9141c77",
+      "ollama_version": "0.32.15",
+      "provider": "ollama"
+    },
+    "task_manifest": {
+      "families": [
+        "EXTRACTION",
+        "STRICT_TRANSFORMATION",
+        "CLASSIFICATION_ROUTING",
+        "ARITHMETIC",
+        "LOGIC_CONSTRAINTS",
+        "PLANNING_DEPENDENCIES",
+        "CODING_GENERATION",
+        "DEBUGGING_REVIEW",
+        "TOOL_AGENT_DECISION",
+        "AMBIGUITY_UNCERTAINTY",
+        "SYSTEM_GOVERNANCE",
+        "SYNTHESIS_WRITING"
+      ],
+      "protocol_version": 2,
+      "seed": 20260907,
+      "task_count": 7200,
+      "task_pool_sha256": "cd26b2666b63260b077e200556151f40d84d52dbe7803bac31adaacac9392a9e"
+    },
+    "task_pool_sha256": "cd26b2666b63260b077e200556151f40d84d52dbe7803bac31adaacac9392a9e",
+    "task_seed": 20260907,
+    "tasks_per_family": 600
+  },
+  "manifest_sha256": "287eb89372f8df8ed6c40e5949b8821018135329ef5913c0145dfa31b27577fa"
+}

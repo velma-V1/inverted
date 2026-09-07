@@ -1,0 +1,862 @@
+{
+  "evidence_hashes": {
+    "manifest": "d2097d6ae53d5cff83bc20f2f2da357d1df6cd2af7e93e783334984da8d3cb08",
+    "observations": "297c00c57c0b4592a3d29b391b5c62e3c56b06ca97f4ffe306344dda25ad9e29",
+    "raw_calls": "bc6b8b2f76fa69468464b61c0595b3612537d25c527b304065a50def8fc104b6",
+    "task_pool": "303751c732ce80a335e9f80b6bddbee227780808d923d87effe4c24a19a7a4f7"
+  },
+  "policy": {
+    "AMBIGUITY_UNCERTAINTY": {
+      "direct_semantic": 1.0,
+      "direct_vs_thinking_delta": 0.0,
+      "gate_atomic": 40,
+      "gate_diagnostic_used": false,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {},
+        "mean_latency_s": 0.5322326175111811,
+        "mean_output_tokens": 24.875,
+        "semantic_accuracy": 1.0,
+        "semantic_ci95": [
+          0.9123783988027135,
+          1.0
+        ],
+        "semantic_quality_mean": 1.0,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {},
+        "mean_latency_s": 4.789459779980826,
+        "mean_output_tokens": 229.675,
+        "semantic_accuracy": 1.0,
+        "semantic_ci95": [
+          0.9123783988027135,
+          1.0
+        ],
+        "semantic_quality_mean": 1.0,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 204.8,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 120,
+      "holdout_comparisons": {
+        "(1024, 1.0)": {
+          "baseline_rate": 0.9166666666666666,
+          "candidate_rate": 0.8166666666666667,
+          "certified": true,
+          "ci_high": -0.008333333333333304,
+          "ci_low": -0.22499999999999998,
+          "delta": -0.09999999999999998,
+          "next_atomic_count": 120,
+          "status": "TIE_OR_PLATEAU"
+        }
+      },
+      "holdout_contract": 0.875,
+      "holdout_semantic": 0.8166666666666667,
+      "holdout_status": "TIE_OR_PLATEAU",
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "direct",
+      "selected_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.875,
+        "failure_classes": {
+          "CONTRACT_FAIL": 15,
+          "SEMANTIC_FAIL": 22
+        },
+        "mean_latency_s": 0.5332764916723439,
+        "mean_output_tokens": 24.925,
+        "semantic_accuracy": 0.8166666666666667,
+        "semantic_ci95": [
+          0.7379908648282967,
+          0.8756969964398578
+        ],
+        "semantic_quality_mean": 0.8166666666666667,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "selected_profile": {
+        "min_p": null,
+        "presence_penalty": null,
+        "repeat_penalty": null,
+        "temperature": 0.7,
+        "thinking_budget": 0,
+        "top_k": null,
+        "top_p": null
+      },
+      "status": "CAPABILITY_UNRESOLVED",
+      "temperature": null,
+      "thinking_semantic": 1.0
+    },
+    "ARITHMETIC": {
+      "diagnostic_semantic": 0.8916666666666667,
+      "direct_semantic": 0.6166666666666667,
+      "direct_vs_thinking_delta": 0.08333333333333333,
+      "gate_atomic": 120,
+      "gate_diagnostic_used": true,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.9583333333333334,
+        "failure_classes": {
+          "CONTRACT_FAIL": 5,
+          "SEMANTIC_FAIL": 46
+        },
+        "mean_latency_s": 0.4204932441740918,
+        "mean_output_tokens": 19.483333333333334,
+        "semantic_accuracy": 0.6166666666666667,
+        "semantic_ci95": [
+          0.5273408053842049,
+          0.6987547224514311
+        ],
+        "semantic_quality_mean": 0.6166666666666667,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {
+          "SEMANTIC_FAIL": 36
+        },
+        "mean_latency_s": 4.485807074167921,
+        "mean_output_tokens": 216.30833333333334,
+        "semantic_accuracy": 0.7,
+        "semantic_ci95": [
+          0.6128485756752643,
+          0.7747437577572543
+        ],
+        "semantic_quality_mean": 0.7,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 196.18333333333334,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 0,
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "unresolved",
+      "selected_profile": null,
+      "status": "CAPABILITY_UNRESOLVED",
+      "temperature": null,
+      "thinking_semantic": 0.7
+    },
+    "CLASSIFICATION_ROUTING": {
+      "direct_semantic": 0.8833333333333333,
+      "direct_vs_thinking_delta": 0.041666666666666664,
+      "gate_atomic": 120,
+      "gate_diagnostic_used": false,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {
+          "SEMANTIC_FAIL": 14
+        },
+        "mean_latency_s": 0.4333309958359071,
+        "mean_output_tokens": 20.0,
+        "semantic_accuracy": 0.8833333333333333,
+        "semantic_ci95": [
+          0.8136664838239611,
+          0.9292188219216995
+        ],
+        "semantic_quality_mean": 0.8833333333333333,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {
+          "SEMANTIC_FAIL": 9
+        },
+        "mean_latency_s": 4.690493457510214,
+        "mean_output_tokens": 224.79166666666666,
+        "semantic_accuracy": 0.925,
+        "semantic_ci95": [
+          0.8635908239400624,
+          0.9600428846040397
+        ],
+        "semantic_quality_mean": 0.925,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 204.8,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 120,
+      "holdout_comparisons": {
+        "(1024, 1.0)": {
+          "baseline_rate": 0.9333333333333333,
+          "candidate_rate": 0.9333333333333333,
+          "certified": true,
+          "ci_high": 0.025000000000000022,
+          "ci_low": -0.025000000000000022,
+          "delta": 0.0,
+          "next_atomic_count": 120,
+          "status": "TIE_OR_PLATEAU"
+        }
+      },
+      "holdout_contract": 1.0,
+      "holdout_semantic": 0.9333333333333333,
+      "holdout_status": "TIE_OR_PLATEAU",
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "direct",
+      "selected_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {
+          "SEMANTIC_FAIL": 8
+        },
+        "mean_latency_s": 0.42885450583222945,
+        "mean_output_tokens": 19.766666666666666,
+        "semantic_accuracy": 0.9333333333333333,
+        "semantic_ci95": [
+          0.8739486959646967,
+          0.9658346931390938
+        ],
+        "semantic_quality_mean": 0.9333333333333333,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "selected_profile": {
+        "min_p": null,
+        "presence_penalty": null,
+        "repeat_penalty": null,
+        "temperature": 0.7,
+        "thinking_budget": 0,
+        "top_k": null,
+        "top_p": null
+      },
+      "status": "DIRECT_SUFFICIENT",
+      "temperature": null,
+      "thinking_semantic": 0.925
+    },
+    "CODING_GENERATION": {
+      "diagnostic_semantic": 0.19166666666666668,
+      "direct_semantic": 0.14166666666666666,
+      "direct_vs_thinking_delta": 0.08333333333333333,
+      "gate_atomic": 120,
+      "gate_diagnostic_used": true,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.6833333333333333,
+        "failure_classes": {
+          "CONTRACT_FAIL": 38,
+          "SEMANTIC_FAIL": 103
+        },
+        "mean_latency_s": 0.5933157908322755,
+        "mean_output_tokens": 27.783333333333335,
+        "semantic_accuracy": 0.14166666666666666,
+        "semantic_ci95": [
+          0.09036879103483236,
+          0.21519494489857183
+        ],
+        "semantic_quality_mean": 0.14166666666666666,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.7916666666666666,
+        "failure_classes": {
+          "CONTRACT_FAIL": 25,
+          "SEMANTIC_FAIL": 93
+        },
+        "mean_latency_s": 4.738586905831471,
+        "mean_output_tokens": 232.75,
+        "semantic_accuracy": 0.225,
+        "semantic_ci95": [
+          0.1594915466838353,
+          0.30756899484645167
+        ],
+        "semantic_quality_mean": 0.225,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 204.8,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 0,
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "unresolved",
+      "selected_profile": null,
+      "status": "CAPABILITY_UNRESOLVED",
+      "temperature": null,
+      "thinking_semantic": 0.225
+    },
+    "DEBUGGING_REVIEW": {
+      "direct_semantic": 0.9916666666666667,
+      "direct_vs_thinking_delta": -0.008333333333333333,
+      "gate_atomic": 120,
+      "gate_diagnostic_used": false,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {
+          "SEMANTIC_FAIL": 1
+        },
+        "mean_latency_s": 0.41316164666592764,
+        "mean_output_tokens": 19.0,
+        "semantic_accuracy": 0.9916666666666667,
+        "semantic_ci95": [
+          0.9543037087549505,
+          0.998527444266658
+        ],
+        "semantic_quality_mean": 0.9916666666666667,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {
+          "SEMANTIC_FAIL": 2
+        },
+        "mean_latency_s": 4.495597975000662,
+        "mean_output_tokens": 220.725,
+        "semantic_accuracy": 0.9833333333333333,
+        "semantic_ci95": [
+          0.941264037027841,
+          0.9954174354340789
+        ],
+        "semantic_quality_mean": 0.9833333333333333,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 201.36666666666667,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 40,
+      "holdout_comparisons": {
+        "(1024, 0.6)": {
+          "baseline_rate": 1.0,
+          "candidate_rate": 1.0,
+          "certified": true,
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "delta": 0.0,
+          "next_atomic_count": 40,
+          "status": "EQUIVALENT"
+        }
+      },
+      "holdout_contract": 1.0,
+      "holdout_semantic": 1.0,
+      "holdout_status": "EQUIVALENT",
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "direct",
+      "selected_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {},
+        "mean_latency_s": 0.41243548499769533,
+        "mean_output_tokens": 19.0,
+        "semantic_accuracy": 1.0,
+        "semantic_ci95": [
+          0.9123783988027135,
+          1.0
+        ],
+        "semantic_quality_mean": 1.0,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "selected_profile": {
+        "min_p": null,
+        "presence_penalty": null,
+        "repeat_penalty": null,
+        "temperature": 0.7,
+        "thinking_budget": 0,
+        "top_k": null,
+        "top_p": null
+      },
+      "status": "DIRECT_SUFFICIENT",
+      "temperature": null,
+      "thinking_semantic": 0.9833333333333333
+    },
+    "EXTRACTION": {
+      "direct_semantic": 1.0,
+      "direct_vs_thinking_delta": 0.0,
+      "gate_atomic": 40,
+      "gate_diagnostic_used": false,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {},
+        "mean_latency_s": 1.196489332494093,
+        "mean_output_tokens": 18.2,
+        "semantic_accuracy": 1.0,
+        "semantic_ci95": [
+          0.9123783988027135,
+          1.0
+        ],
+        "semantic_quality_mean": 1.0,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {},
+        "mean_latency_s": 4.673465915006818,
+        "mean_output_tokens": 223.0,
+        "semantic_accuracy": 1.0,
+        "semantic_ci95": [
+          0.9123783988027135,
+          1.0
+        ],
+        "semantic_quality_mean": 1.0,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 204.8,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 40,
+      "holdout_comparisons": {
+        "(1024, 1.0)": {
+          "baseline_rate": 0.875,
+          "candidate_rate": 0.875,
+          "certified": true,
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "delta": 0.0,
+          "next_atomic_count": 40,
+          "status": "EQUIVALENT"
+        }
+      },
+      "holdout_contract": 0.875,
+      "holdout_semantic": 0.875,
+      "holdout_status": "EQUIVALENT",
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "direct",
+      "selected_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.875,
+        "failure_classes": {
+          "CONTRACT_FAIL": 5,
+          "SEMANTIC_FAIL": 5
+        },
+        "mean_latency_s": 0.4525246549921576,
+        "mean_output_tokens": 20.425,
+        "semantic_accuracy": 0.875,
+        "semantic_ci95": [
+          0.738878801611489,
+          0.945404997490546
+        ],
+        "semantic_quality_mean": 0.875,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "selected_profile": {
+        "min_p": null,
+        "presence_penalty": null,
+        "repeat_penalty": null,
+        "temperature": 0.7,
+        "thinking_budget": 0,
+        "top_k": null,
+        "top_p": null
+      },
+      "status": "CAPABILITY_UNRESOLVED",
+      "temperature": null,
+      "thinking_semantic": 1.0
+    },
+    "LOGIC_CONSTRAINTS": {
+      "direct_semantic": 1.0,
+      "direct_vs_thinking_delta": -0.375,
+      "gate_atomic": 40,
+      "gate_diagnostic_used": false,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {},
+        "mean_latency_s": 0.43059289749944585,
+        "mean_output_tokens": 20.0,
+        "semantic_accuracy": 1.0,
+        "semantic_ci95": [
+          0.9123783988027135,
+          1.0
+        ],
+        "semantic_quality_mean": 1.0,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.625,
+        "failure_classes": {
+          "CONTRACT_FAIL": 15,
+          "SEMANTIC_FAIL": 15
+        },
+        "mean_latency_s": 4.799271477485308,
+        "mean_output_tokens": 231.025,
+        "semantic_accuracy": 0.625,
+        "semantic_ci95": [
+          0.47032439137301096,
+          0.7577702083276673
+        ],
+        "semantic_quality_mean": 0.625,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 204.8,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 60,
+      "holdout_comparisons": {
+        "(1024, 1.0)": {
+          "baseline_rate": 0.25,
+          "candidate_rate": 0.6666666666666666,
+          "certified": true,
+          "ci_high": 0.6666666666666667,
+          "ci_low": 0.16666666666666666,
+          "delta": 0.41666666666666663,
+          "next_atomic_count": 60,
+          "status": "SUPERIOR"
+        }
+      },
+      "holdout_contract": 0.6666666666666666,
+      "holdout_semantic": 0.6666666666666666,
+      "holdout_status": "SUPERIOR",
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "direct",
+      "selected_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.6666666666666666,
+        "failure_classes": {
+          "CONTRACT_FAIL": 20,
+          "SEMANTIC_FAIL": 20
+        },
+        "mean_latency_s": 0.48989796167006716,
+        "mean_output_tokens": 22.933333333333334,
+        "semantic_accuracy": 0.6666666666666666,
+        "semantic_ci95": [
+          0.5405686645211968,
+          0.7727073847647731
+        ],
+        "semantic_quality_mean": 0.6666666666666666,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "selected_profile": {
+        "min_p": null,
+        "presence_penalty": null,
+        "repeat_penalty": null,
+        "temperature": 0.7,
+        "thinking_budget": 0,
+        "top_k": null,
+        "top_p": null
+      },
+      "status": "CAPABILITY_UNRESOLVED",
+      "temperature": null,
+      "thinking_semantic": 0.625
+    },
+    "PLANNING_DEPENDENCIES": {
+      "diagnostic_semantic": 0.7305555555555556,
+      "direct_semantic": 0.6097222222222223,
+      "direct_vs_thinking_delta": 0.12083333333333333,
+      "gate_atomic": 120,
+      "gate_diagnostic_used": true,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.8333333333333334,
+        "failure_classes": {
+          "CONTRACT_FAIL": 20,
+          "SEMANTIC_FAIL": 51
+        },
+        "mean_latency_s": 0.5837297258335942,
+        "mean_output_tokens": 27.316666666666666,
+        "semantic_accuracy": 0.575,
+        "semantic_ci95": [
+          0.4855775172299302,
+          0.6597696078072643
+        ],
+        "semantic_quality_mean": 0.6097222222222223,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.9166666666666666,
+        "failure_classes": {
+          "CONTRACT_FAIL": 10,
+          "SEMANTIC_FAIL": 37
+        },
+        "mean_latency_s": 4.835168454997862,
+        "mean_output_tokens": 232.51666666666668,
+        "semantic_accuracy": 0.6916666666666667,
+        "semantic_ci95": [
+          0.6041700227619933,
+          0.767272630110837
+        ],
+        "semantic_quality_mean": 0.7305555555555556,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 204.8,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 0,
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "unresolved",
+      "selected_profile": null,
+      "status": "CAPABILITY_UNRESOLVED",
+      "temperature": null,
+      "thinking_semantic": 0.7305555555555556
+    },
+    "STRICT_TRANSFORMATION": {
+      "diagnostic_semantic": 0.7847222222222222,
+      "direct_semantic": 0.5779761904761905,
+      "direct_vs_thinking_delta": 0.16507936507936508,
+      "gate_atomic": 120,
+      "gate_diagnostic_used": true,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.5833333333333334,
+        "failure_classes": {
+          "CONTRACT_FAIL": 50,
+          "SEMANTIC_FAIL": 52
+        },
+        "mean_latency_s": 0.9652440633372559,
+        "mean_output_tokens": 45.84166666666667,
+        "semantic_accuracy": 0.5666666666666667,
+        "semantic_ci95": [
+          0.47729920885539046,
+          0.6518982356221157
+        ],
+        "semantic_quality_mean": 0.5779761904761905,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.75,
+        "failure_classes": {
+          "CONTRACT_FAIL": 30,
+          "SEMANTIC_FAIL": 32
+        },
+        "mean_latency_s": 5.0594705366665345,
+        "mean_output_tokens": 243.38333333333333,
+        "semantic_accuracy": 0.7333333333333333,
+        "semantic_ci95": [
+          0.647875606138524,
+          0.8043154495327476
+        ],
+        "semantic_quality_mean": 0.7430555555555556,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 204.8,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 0,
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "unresolved",
+      "selected_profile": null,
+      "status": "CAPABILITY_UNRESOLVED",
+      "temperature": null,
+      "thinking_semantic": 0.7430555555555556
+    },
+    "SYNTHESIS_WRITING": {
+      "diagnostic_semantic": 0.125,
+      "direct_semantic": 0.425,
+      "direct_vs_thinking_delta": -0.3,
+      "gate_atomic": 120,
+      "gate_diagnostic_used": true,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.9583333333333334,
+        "failure_classes": {
+          "CONTRACT_FAIL": 5,
+          "SEMANTIC_FAIL": 69
+        },
+        "mean_latency_s": 0.7444669949996751,
+        "mean_output_tokens": 35.43333333333333,
+        "semantic_accuracy": 0.425,
+        "semantic_ci95": [
+          0.34023039219273576,
+          0.5144224827700699
+        ],
+        "semantic_quality_mean": 0.425,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {
+          "SEMANTIC_FAIL": 105
+        },
+        "mean_latency_s": 4.935236077493755,
+        "mean_output_tokens": 238.33333333333334,
+        "semantic_accuracy": 0.125,
+        "semantic_ci95": [
+          0.07723497273395374,
+          0.1960294020800739
+        ],
+        "semantic_quality_mean": 0.125,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 204.8,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 0,
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "unresolved",
+      "selected_profile": null,
+      "status": "CAPABILITY_UNRESOLVED",
+      "temperature": null,
+      "thinking_semantic": 0.125
+    },
+    "SYSTEM_GOVERNANCE": {
+      "diagnostic_semantic": 0.7166666666666667,
+      "direct_semantic": 0.8833333333333333,
+      "direct_vs_thinking_delta": -0.058333333333333334,
+      "gate_atomic": 120,
+      "gate_diagnostic_used": true,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.9583333333333334,
+        "failure_classes": {
+          "CONTRACT_FAIL": 5,
+          "SEMANTIC_FAIL": 14
+        },
+        "mean_latency_s": 0.46748095166985876,
+        "mean_output_tokens": 21.758333333333333,
+        "semantic_accuracy": 0.8833333333333333,
+        "semantic_ci95": [
+          0.8136664838239611,
+          0.9292188219216995
+        ],
+        "semantic_quality_mean": 0.8833333333333333,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.9166666666666666,
+        "failure_classes": {
+          "CONTRACT_FAIL": 10,
+          "SEMANTIC_FAIL": 21
+        },
+        "mean_latency_s": 4.732272658324413,
+        "mean_output_tokens": 227.25833333333333,
+        "semantic_accuracy": 0.825,
+        "semantic_ci95": [
+          0.7472429012735073,
+          0.8825946405543355
+        ],
+        "semantic_quality_mean": 0.825,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 204.8,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 0,
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "unresolved",
+      "selected_profile": null,
+      "status": "CAPABILITY_UNRESOLVED",
+      "temperature": null,
+      "thinking_semantic": 0.825
+    },
+    "TOOL_AGENT_DECISION": {
+      "direct_semantic": 0.9583333333333334,
+      "direct_vs_thinking_delta": 0.041666666666666664,
+      "gate_atomic": 120,
+      "gate_diagnostic_used": false,
+      "gate_direct_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 0.9583333333333334,
+        "failure_classes": {
+          "CONTRACT_FAIL": 5,
+          "SEMANTIC_FAIL": 5
+        },
+        "mean_latency_s": 0.47121284833798804,
+        "mean_output_tokens": 21.816666666666666,
+        "semantic_accuracy": 0.9583333333333334,
+        "semantic_ci95": [
+          0.9061591476629647,
+          0.9820732831198906
+        ],
+        "semantic_quality_mean": 0.9583333333333334,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "gate_thinking_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {},
+        "mean_latency_s": 4.513141155830818,
+        "mean_output_tokens": 216.35,
+        "semantic_accuracy": 1.0,
+        "semantic_ci95": [
+          0.9689808335812966,
+          1.0
+        ],
+        "semantic_quality_mean": 1.0,
+        "thinking_tokens_max": 205,
+        "thinking_tokens_mean": 194.575,
+        "thinking_tokens_p95": 205
+      },
+      "holdout_atomic": 40,
+      "holdout_comparisons": {
+        "(1024, 1.0)": {
+          "baseline_rate": 1.0,
+          "candidate_rate": 1.0,
+          "certified": true,
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "delta": 0.0,
+          "next_atomic_count": 40,
+          "status": "EQUIVALENT"
+        }
+      },
+      "holdout_contract": 1.0,
+      "holdout_semantic": 1.0,
+      "holdout_status": "EQUIVALENT",
+      "interaction": null,
+      "minimum_useful_budget": null,
+      "mode": "direct",
+      "selected_metrics": {
+        "completion_reliability": 1.0,
+        "contract_accuracy": 1.0,
+        "failure_classes": {},
+        "mean_latency_s": 0.564398507506121,
+        "mean_output_tokens": 26.375,
+        "semantic_accuracy": 1.0,
+        "semantic_ci95": [
+          0.9123783988027135,
+          1.0
+        ],
+        "semantic_quality_mean": 1.0,
+        "thinking_tokens_max": 0,
+        "thinking_tokens_mean": 0.0,
+        "thinking_tokens_p95": 0
+      },
+      "selected_profile": {
+        "min_p": null,
+        "presence_penalty": null,
+        "repeat_penalty": null,
+        "temperature": 0.7,
+        "thinking_budget": 0,
+        "top_k": null,
+        "top_p": null
+      },
+      "status": "DIRECT_SUFFICIENT",
+      "temperature": null,
+      "thinking_semantic": 1.0
+    }
+  },
+  "protocol_version": 2
+}

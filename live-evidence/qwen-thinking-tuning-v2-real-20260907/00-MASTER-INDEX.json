@@ -1,0 +1,18 @@
+{
+  "atomic_observations": 3960,
+  "byte_exact_source_copy_verified": true,
+  "evidence_status": "COMPLETE",
+  "experiment": "qwen-thinking-tuning-v2",
+  "frozen_atomic_tasks": 7200,
+  "model": "qwen3.5:9b-q8_0",
+  "model_digest": "441ec31e4d2aedceb97dd834b036db104d943fbe3dbc1e5c8ac95eeaa9141c77",
+  "ollama_version": "0.32.15",
+  "original_runtime_source_preserved": true,
+  "physical_calls": 1260,
+  "privacy_scan_status": "PASS",
+  "protocol_version": 2,
+  "run_id": "qwen-thinking-tuning-v2-20260907-033508",
+  "schema_version": 1,
+  "source_artifact_count": 8,
+  "source_bytes": 14792022
+}

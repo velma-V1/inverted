@@ -1,0 +1,20 @@
+{
+  "families": [
+    "EXTRACTION",
+    "STRICT_TRANSFORMATION",
+    "CLASSIFICATION_ROUTING",
+    "ARITHMETIC",
+    "LOGIC_CONSTRAINTS",
+    "PLANNING_DEPENDENCIES",
+    "CODING_GENERATION",
+    "DEBUGGING_REVIEW",
+    "TOOL_AGENT_DECISION",
+    "AMBIGUITY_UNCERTAINTY",
+    "SYSTEM_GOVERNANCE",
+    "SYNTHESIS_WRITING"
+  ],
+  "protocol_version": 2,
+  "seed": 20260907,
+  "task_count": 7200,
+  "task_pool_sha256": "cd26b2666b63260b077e200556151f40d84d52dbe7803bac31adaacac9392a9e"
+}

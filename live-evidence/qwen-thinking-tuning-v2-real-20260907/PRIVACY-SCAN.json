@@ -1,0 +1,37 @@
+{
+  "false_positive_review": {
+    "classification": "numeric metrics/text substrings only; no personal or payment data",
+    "luhn_numeric_candidates": 419,
+    "payment_card_context_hits": 0,
+    "standalone_username_hits": 0,
+    "username_substring_candidates": 256,
+    "validated_nonloopback_ipv6_hits": 0
+  },
+  "scanned_bytes": 14792022,
+  "scanned_files": 8,
+  "schema_version": 1,
+  "scope": "all eight completed V2 source artifacts, including raw calls and frozen task pool",
+  "status": "PASS",
+  "zero_hit_checks": [
+    "email addresses",
+    "Windows user-profile paths",
+    "Unix home paths",
+    "standalone local username",
+    "local computer name",
+    "local user-profile value",
+    "Git identity values",
+    "authorization headers",
+    "OpenAI-style API keys",
+    "GitHub tokens",
+    "AWS access keys",
+    "private-key blocks",
+    "MAC addresses",
+    "phone-like values",
+    "SSN-like values",
+    "Windows hostnames",
+    "valid non-loopback IPv4 addresses",
+    "valid non-loopback IPv6 addresses",
+    "UUIDs",
+    "structured sensitive-identity keys"
+  ]
+}
