@@ -84,12 +84,16 @@ def _contains_all_batch_quality(candidate: Any, expected: Any) -> float:
     return matches / len(expected)
 
 
-_ALLOWED_CALLS = {"max": max, "all": all, "list": list, "reversed": reversed}
+_ALLOWED_CALLS = {
+    "max": max, "all": all, "any": any, "sum": sum, "sorted": sorted,
+    "set": set, "list": list, "reversed": reversed,
+}
 _ALLOWED_NODES = (
     ast.Expression, ast.Call, ast.Name, ast.Load, ast.Store, ast.Constant,
     ast.keyword, ast.Compare, ast.Gt, ast.GtE, ast.Lt, ast.LtE, ast.Eq,
     ast.NotEq, ast.GeneratorExp, ast.comprehension, ast.Subscript, ast.Slice,
     ast.UnaryOp, ast.USub, ast.UAdd, ast.BoolOp, ast.And, ast.Or,
+    ast.BinOp, ast.Mod, ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.IfExp,
 )
 
 
@@ -106,19 +110,48 @@ def _safe_eval_expr(expr: str, env: dict[str, Any]) -> Any:
     return eval(compile(tree, "<tuning-expression>", "eval"), {"__builtins__": {}}, scope)
 
 
-def _expression_matches(expr: str, behavior: str) -> bool:
-    scenarios = {
-        "max_default": [({"values": []}, 0), ({"values": [1, 5, 2]}, 5), ({"values": [-3, -1]}, -1)],
-        "all_positive": [({"values": []}, True), ({"values": [1, 2]}, True), ({"values": [1, 0]}, False)],
-        "reverse_items": [({"items": []}, []), ({"items": [1, 2, 3]}, [3, 2, 1]), ({"items": ["a", "b"]}, ["b", "a"])],
-    }
-    if behavior not in scenarios:
+def _behavior_scenarios(spec: Any) -> list[tuple[dict[str, Any], Any]]:
+    if isinstance(spec, str):
+        spec = {"behavior": spec}
+    kind = spec.get("behavior")
+    if kind == "max_default":
+        default = spec.get("default", 0)
+        return [({"values": []}, default), ({"values": [1, 5, 2]}, 5), ({"values": [-3, -1]}, -1)]
+    if kind in {"all_positive", "all_gt"}:
+        threshold = 0 if kind == "all_positive" else spec["threshold"]
+        return [({"values": []}, True), ({"values": [threshold + 1, threshold + 3]}, True), ({"values": [threshold, threshold + 2]}, False)]
+    if kind == "reverse_items":
+        return [({"items": []}, []), ({"items": [1, 2, 3]}, [3, 2, 1]), ({"items": ["a", "b"]}, ["b", "a"])]
+    if kind == "sum_multiples":
+        d = spec["divisor"]
+        return [({"values": []}, 0), ({"values": [d, d + 1, 2*d, 3*d]}, 6*d), ({"values": [1, 2, 3]}, sum(x for x in [1,2,3] if x % d == 0))]
+    if kind == "first_default":
+        default = spec["default"]
+        return [({"items": []}, default), ({"items": [8, 3]}, 8), ({"items": ["x"]}, "x")]
+    if kind == "sorted_unique":
+        return [({"values": []}, []), ({"values": [3,1,3,2]}, [1,2,3]), ({"values": [-1,2,-1]}, [-1,2])]
+    if kind == "count_gt":
+        threshold = spec["threshold"]
+        return [({"values": []}, 0), ({"values": [threshold-1, threshold+1, threshold+2]}, 2), ({"values": [threshold]}, 0)]
+    if kind == "clamp_min":
+        minimum = spec["minimum"]
+        return [({"value": minimum-5}, minimum), ({"value": minimum}, minimum), ({"value": minimum+4}, minimum+4)]
+    if kind == "any_equal":
+        target = spec["target"]
+        return [({"values": []}, False), ({"values": [target-1, target, target+1]}, True), ({"values": [target+2]}, False)]
+    if kind == "sum_values":
+        return [({"values": []}, 0), ({"values": [1,2,3]}, 6), ({"values": [-2,5]}, 3)]
+    return []
+
+
+def _expression_matches(expr: str, behavior: Any) -> bool:
+    scenarios = _behavior_scenarios(behavior)
+    if not scenarios:
         return False
     try:
-        return all(_safe_eval_expr(expr, env) == expected for env, expected in scenarios[behavior])
-    except (SyntaxError, ValueError, TypeError, NameError, IndexError):
+        return all(_safe_eval_expr(expr, env) == expected for env, expected in scenarios)
+    except (SyntaxError, ValueError, TypeError, NameError, IndexError, KeyError):
         return False
-
 
 def _python_expr_batch_quality(candidate: Any, expected: Any) -> float:
     if not isinstance(candidate, list) or len(candidate) != len(expected) or not expected:
