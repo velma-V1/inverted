@@ -60,10 +60,32 @@ def _sha256(name: str, value: str | None, *, optional: bool = False) -> None:
 
 def _freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return MappingProxyType({str(key): _freeze(item) for key, item in value.items()})
+        if any(not isinstance(key, str) for key in value):
+            raise TypeError("replay mapping keys must be strings")
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
         return tuple(_freeze(item) for item in value)
-    return value
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise TypeError(f"unsupported replay payload value: {type(value).__name__}")
+
+
+def _freeze_mapping(instance: object, name: str) -> None:
+    value = getattr(instance, name)
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    object.__setattr__(instance, name, _freeze(value))
+
+
+def _string_tuple(name: str, value: Any, *, allow_empty: bool = False) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, (list, tuple)):
+        raise TypeError(f"{name} must be a sequence of strings")
+    items = tuple(value)
+    if not allow_empty and not items:
+        raise ValueError(f"{name} must not be empty")
+    if any(not isinstance(item, str) or not item.strip() for item in items):
+        raise TypeError(f"{name} must contain non-blank strings")
+    return items
 
 
 def _json_value(value: Any) -> Any:
@@ -105,6 +127,7 @@ class FailureFixture:
     inference_seed: int
     partition: Partition
     model_visible_asset_sha256: str
+    state_hash: str
     oracle_ref: str
     expected_contract: str
     source_evidence_refs: tuple[str, ...]
@@ -134,31 +157,43 @@ class FailureFixture:
             "expected_contract",
         ):
             _required(name, getattr(self, name))
-        if not self.batch_task_ids or self.focus_task_id not in self.batch_task_ids:
+        batch_task_ids = _string_tuple("batch_task_ids", self.batch_task_ids)
+        if self.focus_task_id not in batch_task_ids:
             raise ValueError("batch_task_ids must contain focus_task_id")
-        if len(set(self.batch_task_ids)) != len(self.batch_task_ids):
+        if len(set(batch_task_ids)) != len(batch_task_ids):
             raise ValueError("batch_task_ids must be unique")
-        if not self.failure_classes:
-            raise ValueError("failure_classes must not be empty")
+        failure_classes = _string_tuple("failure_classes", self.failure_classes)
+        source_evidence_refs = _string_tuple("source_evidence_refs", self.source_evidence_refs)
+        if not isinstance(self.inference_seed, int) or isinstance(self.inference_seed, bool):
+            raise TypeError("inference_seed must be an integer")
         _sha256("model_visible_asset_sha256", self.model_visible_asset_sha256)
+        _sha256("state_hash", self.state_hash)
         _sha256("parent_state_hash", self.parent_state_hash, optional=True)
         _sha256("record_id", self.record_id, optional=True)
-        if self.parent_failure_snapshot_id is not None:
+        has_parent_id = self.parent_failure_snapshot_id is not None
+        has_parent_hash = self.parent_state_hash is not None
+        if has_parent_id != has_parent_hash:
+            raise ValueError("parent_failure_snapshot_id and parent_state_hash must be supplied together")
+        if has_parent_id:
             _required("parent_failure_snapshot_id", self.parent_failure_snapshot_id)
-        object.__setattr__(self, "batch_task_ids", tuple(self.batch_task_ids))
-        object.__setattr__(self, "failure_classes", tuple(self.failure_classes))
-        object.__setattr__(self, "source_evidence_refs", tuple(self.source_evidence_refs))
+        object.__setattr__(self, "batch_task_ids", batch_task_ids)
+        object.__setattr__(self, "failure_classes", failure_classes)
+        object.__setattr__(self, "source_evidence_refs", source_evidence_refs)
         for name in ("source_runtime", "inference_profile", "metadata"):
-            _freeze_field(self, name)
+            _freeze_mapping(self, name)
 
 
 @dataclass(frozen=True)
 class ReplayRequest:
     replay_request_id: str
     parent_failure_snapshot_id: str
+    parent_state_hash: str
     decision_id: str
     hypothesis_id: str
+    expected_causal_implication: str
     mode: ReplayMode
+    source_model_id: str
+    source_model_digest: str
     target_model_id: str
     target_model_digest: str
     partition: Partition
@@ -168,73 +203,53 @@ class ReplayRequest:
     overrides: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
     record_id: str | None = None
-    record_type: ReplayRecordType = field(
-        default=ReplayRecordType.REPLAY_REQUEST, init=False
-    )
+    record_type: ReplayRecordType = field(default=ReplayRecordType.REPLAY_REQUEST, init=False)
 
     def __post_init__(self) -> None:
         _coerce_enum(self, "mode", ReplayMode)
         _coerce_enum(self, "partition", Partition)
-        for name in (
-            "replay_request_id",
-            "parent_failure_snapshot_id",
-            "decision_id",
-            "hypothesis_id",
-            "target_model_id",
-            "target_model_digest",
-        ):
+        for name in ("replay_request_id", "parent_failure_snapshot_id", "decision_id",
+                     "hypothesis_id", "expected_causal_implication", "source_model_id",
+                     "source_model_digest", "target_model_id", "target_model_digest"):
             _required(name, getattr(self, name))
-        dimensions = tuple(self.changed_dimensions)
-        if any(not isinstance(item, str) or not item.strip() for item in dimensions):
-            raise ValueError("changed_dimensions must contain non-blank names")
+        _sha256("parent_state_hash", self.parent_state_hash)
+        dimensions = _string_tuple("changed_dimensions", self.changed_dimensions, allow_empty=True)
         if len(set(dimensions)) != len(dimensions):
             raise ValueError("changed_dimensions must be unique")
-        if self.mode is ReplayMode.EXACT and dimensions:
-            raise ValueError("EXACT replay forbids changed dimensions")
-        if self.mode is ReplayMode.COUNTERFACTUAL and not dimensions:
-            raise ValueError("COUNTERFACTUAL replay requires changed dimensions")
-        if self.mode is ReplayMode.CROSS_MODEL and "target_model" not in dimensions:
-            raise ValueError(
-                "CROSS_MODEL replay requires target_model in changed dimensions"
-            )
+        _freeze_mapping(self, "overrides")
+        _freeze_mapping(self, "metadata")
+        override_keys = set(self.overrides)
+        same_model = (self.target_model_id == self.source_model_id and
+                      self.target_model_digest == self.source_model_digest)
+        if self.mode is ReplayMode.EXACT:
+            if dimensions or override_keys or not same_model:
+                raise ValueError("EXACT replay forbids changes and requires source model provenance")
+        elif not override_keys.issubset(set(dimensions)):
+            raise ValueError("overrides must be limited to changed_dimensions")
+        elif self.mode is ReplayMode.COUNTERFACTUAL:
+            if not dimensions or not same_model or "target_model" in dimensions:
+                raise ValueError("COUNTERFACTUAL replay requires same source model and declared non-model changes")
+        elif self.mode is ReplayMode.CROSS_MODEL:
+            if "target_model" not in dimensions or same_model:
+                raise ValueError("CROSS_MODEL replay requires a different target model and target_model dimension")
         _sha256("record_id", self.record_id, optional=True)
         object.__setattr__(self, "changed_dimensions", dimensions)
-        for name in ("overrides", "metadata"):
-            _freeze_field(self, name)
 
     @classmethod
-    def for_exact(
-        cls,
-        fixture: FailureFixture,
-        *,
-        decision_id: str,
-        hypothesis_id: str,
-        request_id: str | None = None,
-        metadata: Mapping[str, Any] | None = None,
-    ) -> ReplayRequest:
+    def for_exact(cls, fixture: FailureFixture, *, decision_id: str, hypothesis_id: str,
+                  request_id: str | None = None, metadata: Mapping[str, Any] | None = None) -> ReplayRequest:
         if request_id is None:
-            identity = json.dumps(
-                {
-                    "decision_id": decision_id,
-                    "failure_snapshot_id": fixture.failure_snapshot_id,
-                    "hypothesis_id": hypothesis_id,
-                    "mode": ReplayMode.EXACT.value,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
+            identity = json.dumps({"decision_id": decision_id, "failure_snapshot_id": fixture.failure_snapshot_id,
+                                   "hypothesis_id": hypothesis_id, "mode": ReplayMode.EXACT.value},
+                                  sort_keys=True, separators=(",", ":")).encode("utf-8")
             request_id = f"replay-request-{hashlib.sha256(identity).hexdigest()[:20]}"
-        return cls(
-            replay_request_id=request_id,
-            parent_failure_snapshot_id=fixture.failure_snapshot_id,
-            decision_id=decision_id,
-            hypothesis_id=hypothesis_id,
-            mode=ReplayMode.EXACT,
-            target_model_id=fixture.source_model_id,
-            target_model_digest=fixture.source_model_digest,
-            partition=fixture.partition,
-            metadata={} if metadata is None else metadata,
-        )
+        return cls(replay_request_id=request_id, parent_failure_snapshot_id=fixture.failure_snapshot_id,
+                   parent_state_hash=fixture.state_hash, decision_id=decision_id, hypothesis_id=hypothesis_id,
+                   expected_causal_implication="measure exact failure reproducibility without intervention",
+                   mode=ReplayMode.EXACT, source_model_id=fixture.source_model_id,
+                   source_model_digest=fixture.source_model_digest, target_model_id=fixture.source_model_id,
+                   target_model_digest=fixture.source_model_digest, partition=fixture.partition,
+                   metadata={} if metadata is None else metadata)
 
 
 @dataclass(frozen=True)
@@ -242,6 +257,7 @@ class ReplayResult:
     replay_result_id: str
     replay_request_id: str
     parent_failure_snapshot_id: str
+    parent_state_hash: str
     mode: ReplayMode
     target_model_id: str
     target_model_digest: str
@@ -257,29 +273,32 @@ class ReplayResult:
     metrics: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
     record_id: str | None = None
-    record_type: ReplayRecordType = field(
-        default=ReplayRecordType.REPLAY_RESULT, init=False
-    )
+    record_type: ReplayRecordType = field(default=ReplayRecordType.REPLAY_RESULT, init=False)
 
     def __post_init__(self) -> None:
         _coerce_enum(self, "mode", ReplayMode)
         _coerce_enum(self, "partition", Partition)
-        for name in (
-            "replay_result_id",
-            "replay_request_id",
-            "parent_failure_snapshot_id",
-            "target_model_id",
-            "target_model_digest",
-        ):
+        for name in ("replay_result_id", "replay_request_id", "parent_failure_snapshot_id",
+                     "target_model_id", "target_model_digest"):
             _required(name, getattr(self, name))
+        _sha256("parent_state_hash", self.parent_state_hash)
+        for name in ("completed", "semantic_pass", "contract_pass"):
+            if type(getattr(self, name)) is not bool:
+                raise TypeError(f"{name} must be boolean")
         _sha256("output_asset_sha256", self.output_asset_sha256)
         _sha256("raw_call_asset_sha256", self.raw_call_asset_sha256)
         _sha256("record_id", self.record_id, optional=True)
+        failure_classes = _string_tuple("failure_classes", self.failure_classes, allow_empty=True)
+        failed = (not self.completed or not self.semantic_pass or not self.contract_pass or bool(failure_classes))
+        if failed and self.child_failure_snapshot_id is None:
+            raise ValueError("child_failure_snapshot_id is required when replay fails")
+        if not failed and self.child_failure_snapshot_id is not None:
+            raise ValueError("child_failure_snapshot_id is forbidden when replay succeeds")
         if self.child_failure_snapshot_id is not None:
             _required("child_failure_snapshot_id", self.child_failure_snapshot_id)
-        object.__setattr__(self, "failure_classes", tuple(self.failure_classes))
+        object.__setattr__(self, "failure_classes", failure_classes)
         for name in ("adapter_changes", "metrics", "metadata"):
-            _freeze_field(self, name)
+            _freeze_mapping(self, name)
 
 
 ReplayRecord: TypeAlias = FailureFixture | ReplayRequest | ReplayResult
@@ -306,6 +325,7 @@ def to_payload(value: ReplayRecord) -> dict[str, Any]:
             "inference_seed": value.inference_seed,
             "partition": value.partition,
             "model_visible_asset_sha256": value.model_visible_asset_sha256,
+            "state_hash": value.state_hash,
             "oracle_ref": value.oracle_ref,
             "expected_contract": value.expected_contract,
             "source_evidence_refs": value.source_evidence_refs,
@@ -320,9 +340,13 @@ def to_payload(value: ReplayRecord) -> dict[str, Any]:
             "record_type": value.record_type,
             "replay_request_id": value.replay_request_id,
             "parent_failure_snapshot_id": value.parent_failure_snapshot_id,
+            "parent_state_hash": value.parent_state_hash,
             "decision_id": value.decision_id,
             "hypothesis_id": value.hypothesis_id,
+            "expected_causal_implication": value.expected_causal_implication,
             "mode": value.mode,
+            "source_model_id": value.source_model_id,
+            "source_model_digest": value.source_model_digest,
             "target_model_id": value.target_model_id,
             "target_model_digest": value.target_model_digest,
             "partition": value.partition,
@@ -339,6 +363,7 @@ def to_payload(value: ReplayRecord) -> dict[str, Any]:
             "replay_result_id": value.replay_result_id,
             "replay_request_id": value.replay_request_id,
             "parent_failure_snapshot_id": value.parent_failure_snapshot_id,
+            "parent_state_hash": value.parent_state_hash,
             "mode": value.mode,
             "target_model_id": value.target_model_id,
             "target_model_digest": value.target_model_digest,
