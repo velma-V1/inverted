@@ -50,7 +50,7 @@ FRONTIER RESOLUTION
 ## Retry law
 
 - Exactly **one repair retry per wrong answer, per model, per challenge**.
-- The retry must record precisely what feedback was added and what state changed between attempts.
+- The retry records precisely what feedback was added and what state changed between attempts.
 - A hard runtime/model failure, unsupported operation, verified stuck state, repeated loop, exhausted context/tool/output budget, or infrastructure condition may bypass the retry when retrying would add no valid information.
 - No repeated uncontrolled external retries.
 
@@ -64,7 +64,7 @@ Maintain distinct states:
 - `CAMPAIGN_SUSPENDED_INFRASTRUCTURE`
 - `CAMPAIGN_COMPLETE_BY_BUDGET`
 
-A failed attempt is valuable evidence and never rewritten as success because a stronger model later resolves the task.
+A failed attempt is valuable evidence and is never rewritten as success because a stronger model later resolves the task.
 
 Example:
 
@@ -79,6 +79,23 @@ Local ladder disposition: UNRESOLVED
 All local failures remain intact evidence.
 ```
 
+## Mandatory local Systems Harvest Lab
+
+Every compatible open system in the local comparison pool must run through the shared pinned/isolated Harvest Lab defined by the Universal contract.
+
+For each system arm:
+
+- create an isolated writable workspace clone from the same frozen task specimen;
+- pin system repository/version/dependencies;
+- record container/image digest;
+- deny cross-arm workspace access;
+- route all filesystem/process/tool observations through the common observer when technically possible;
+- use the same blind verifier contract;
+- normalize all events into the Universal Forensic Event schema while preserving raw native logs;
+- record any system that cannot validly run in Docker as an explicit exception with an equivalent reproducible sandbox.
+
+System-native features remain enabled in native-system arms unless intentionally ablated.
+
 ## Freeze/checkpoint requirements
 
 ### FREEZE A — micro-model handoff to Qwen
@@ -89,18 +106,22 @@ Preserve at minimum:
 - original workspace hash and current workspace snapshot;
 - every intermediate artifact and important diff;
 - model identity/configuration/seed/context limits;
-- exact prompt/context construction;
+- exact prompt/context construction and stage hashes;
+- full model-visible state where observable;
 - raw exposed reasoning/thought where available;
-- normalized reasoning state;
+- normalized reasoning state and provenance;
 - hypotheses, counterhypotheses, assumptions, contradictions;
-- memory/skill/tool state;
+- memory/skill/tool/hand state and skill lifecycle;
 - commands, reads, writes, tool outputs, errors;
+- every system intervention (`BLOCK`, `REWRITE`, `RETRY`, `ROUTE`, `SUMMARIZE`, `COMPACT`, `INJECT`, `ESCALATE`, `MUTATION_GATE`, `PERMISSION_CHANGE`, `ROLLBACK`, `CHECKPOINT`, `RESUME`);
 - expected versus actual consequences;
 - verification obligations and coverage;
 - stale verification;
 - failure signature and loop signature;
+- reasoning-instability/oscillation record where measurable;
 - first causal/detectable/recognized failure times;
-- resource telemetry;
+- queue/inference/tool/verification/wall time;
+- local-model telemetry supported by the runtime;
 - complete raw event stream;
 - hashes for checkpoint contents.
 
@@ -114,7 +135,7 @@ FREEZE B plus the complete Devstral continuation and retry history, suitable for
 
 ## Continuation versus fresh controls
 
-Continuation can help or poison the next model. Therefore selected escalations must fork into controlled comparison:
+Continuation can help or poison the next model. Therefore selected escalations fork into controlled comparison:
 
 ```text
 QWEN_CONTINUATION  <- failed 1–2B checkpoint
@@ -134,11 +155,20 @@ These controls estimate:
 
 Fresh controls are sampled where they have high information value rather than mechanically doubling every run.
 
+## Passive and instrumented local reasoning modes
+
+The Universal `NATIVE_PASSIVE` versus `INSTRUMENTED_REASONING` separation applies to all local models and systems.
+
+- Native/passive evidence is the default system-comparison evidence.
+- Instrumented reasoning may explicitly request hypothesis/evidence/uncertainty/expected-result state reports.
+- Instrumented results are never merged into native results.
+- If externalizing reasoning improves performance, that improvement becomes a candidate mechanism rather than being hidden as instrumentation noise.
+
 ## Adaptive frontier behavior
 
 Each independently verified success generates a harder descendant. The local campaign is intentionally unfinishable by capability alone.
 
-A child challenge must record:
+A child challenge records:
 
 - parent task ID;
 - capability/failure dimension being increased;
@@ -151,7 +181,7 @@ The scheduler may produce deeper, perturbed, compound, cross-domain, recovery, o
 
 ## Model-threshold evidence
 
-The ladder is not only a cost optimization. It must classify mechanism/model interactions such as:
+The ladder is not only a cost optimization. It classifies mechanism/model interactions such as:
 
 - `MICRO_COMPATIBLE`
 - `MICRO_SELF_REPAIRABLE`
@@ -171,9 +201,9 @@ The ladder is not only a cost optimization. It must classify mechanism/model int
 
 Do not conclude a system mechanism is useless merely because a 1–2B substrate is below the minimum capability needed to exploit it.
 
-## Local-system comparison
+## Local-system comparison pool
 
-The same Universal Harvest template must support the open/general systems selected for Harvest Fest, including at minimum the current pool:
+The same Universal Harvest template supports the open/general systems selected for Harvest Fest, including at minimum:
 
 - Pi;
 - Prime Agent;
@@ -184,15 +214,15 @@ The same Universal Harvest template must support the open/general systems select
 - AegisEvo;
 - OpenHands;
 - Goose;
-- other compatible open systems admitted under the source-catalog rules.
+- other compatible open systems admitted under source-catalog rules.
 
-Claude and Codex are not forced onto the local substrate; they serve separate native/frontier roles defined in the Frontier/Cloud specification.
+Together with Claude and Codex native/reference treatment, this preserves the originally selected eleven general systems without pretending all eleven share the same model substrate.
 
-System-native advantages must not be flattened away. Skills, context management, extensions, hooks, recovery policies, sandboxing, memory, verification, and other native mechanisms remain enabled in the native-system arm unless the experiment is explicitly an ablation.
+Claude and Codex are not forced onto the local substrate; they serve separate native/frontier roles defined in the Frontier/Cloud specification. ChatGPT is a separate high-value native/reference specimen.
 
 ## Specialized/non-general components
 
-The same chassis must support targeted testing of:
+The same chassis supports targeted testing of:
 
 - Book-to-Skill / knowledge-to-skill compilation;
 - Taste Skill / portable skill architecture;
@@ -210,39 +240,43 @@ The same chassis must support targeted testing of:
 
 Specialized components are not forced into a misleading full-agent leaderboard. They are evaluated for the mechanism they contribute.
 
-## Compute-aware scheduler
+## Compute-aware concurrent scheduler
 
-The template must support arbitrary worker fan-out rather than hardcoding two-way or eleven-way execution.
+The template supports arbitrary worker fan-out rather than hardcoding two-way or eleven-way execution.
 
-Typical local execution:
+Typical execution:
 
 ```text
 CPU-resident 1–2B workers -> cheap primary queue
 GPU-resident Qwen 9B      -> escalation queue
 CPU verifier/analysis      -> independent evidence/verification
 Devstral 24B               -> end-of-sweep unresolved tail
-Claude/Codex               -> remote frontier resolution queue
+Claude/Codex               -> remote frontier resolution/native queues
+cloud GPU replicas         -> optional parallel local-system arms
 ```
 
-When multiple harnesses share a GPU, record queue time separately from inference/tool/system time so resource contention does not masquerade as system latency.
+The scheduler may run Claude, Codex, local workers, verifiers, and independent system arms concurrently when resources permit. Queue time, batching, resource contention, and worker assignment are recorded separately from model/system execution time.
 
 ## Local forensic evidence standard
 
-Local runs use the full Universal Forensic Recorder. The desired operating posture is high-volume forensic collection (the previously described "7/10" level), not summary-only logging.
+Local runs use the full Universal Forensic Recorder and canonical event schema. The desired posture is high-volume forensic collection (the previously described **7/10** level), never summary-only logging.
 
 Especially preserve:
 
 - raw and translated reasoning/thought when exposed;
 - exact retry deltas;
 - memory effects;
+- prompt/context stage hashes;
 - system interventions;
-- tool/skill/hand utilization;
+- tool/skill/hand utilization and full skill lifecycle;
 - first meaningful divergence;
-- failure propagation and recovery;
+- failure propagation/recovery;
 - verification coverage;
 - complete checkpoint lineage;
-- positive and negative transfer;
-- timing/resource telemetry;
+- positive/negative transfer;
+- reasoning instability/oscillation;
+- queue/inference/tool/verification/wall timing;
+- token/logprob/top-k/entropy/stop/context/KV/repetition telemetry when supported;
 - raw malformed/failed/looping trajectories.
 
 ## Retry autopsy
