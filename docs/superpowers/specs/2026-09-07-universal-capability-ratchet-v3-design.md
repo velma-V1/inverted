@@ -62,6 +62,7 @@ V3 therefore moves from **"which setting scores better?"** to **"what causal mec
 13. **No global winner is required.** Different task/failure/state regions may require different interventions.
 14. **Data collection is cheap; retesting is not.** Capture every safe observable datum that can support future causal analysis.
 15. **The campaign does not stop because Qwen fails.** Model failure becomes evidence and the scheduler continues. Only evidence-integrity, provenance, infrastructure, or hard-ceiling violations may invalidate/stop affected execution.
+16. **Every failure enters the canonical replay registry.** From V3 onward, every model/system failure and every snapshot/replay descendant must be represented in the append-only `TEST_REPLAY.jsonl` registry so the exact failure state can be immediately replayed against the model that failed or any compatible alternate model without reconstructing the original campaign.
 
 ---
 
@@ -207,6 +208,10 @@ Every replay branch has:
 
 A failure can therefore become the root of a durable causal tree rather than a discarded bad answer.
 
+### 6.5 Immediate replay registration
+
+Snapshot creation is not complete until the failure has an append-only `FAILURE_FIXTURE` record in `TEST_REPLAY.jsonl`. The registry write must occur before optional derived analysis. If the registry cannot safely persist the fixture, the failure evidence remains incomplete and additional expensive model calls stop until replay capture is restored.
+
 ---
 
 ## 7. Failure Autopsy and hypothesis generation
@@ -302,9 +307,11 @@ A stronger model may be used as an experimental reference/mentor only when the d
 
 ### 9.1 Exact replay
 
-Purpose: measure reproducibility/stochasticity.
+Purpose: measure reproducibility/stochasticity or run the exact failure fixture against another model.
 
-Preserve task, parent state, prompt, model, inference profile, and seed where supported. Exact replay may not be interpreted as an intervention gain.
+Preserve the model-visible task/state, prompt/messages, tool schema/results, inference profile, and seed where supported. For same-model replay, exact compatible parameters are required. For cross-model replay, the fixture remains exact while unsupported model-specific parameters are translated by an explicit adapter record; this is labeled `CROSS_MODEL_REPLAY`, not same-model exact reproducibility.
+
+Exact replay may not be interpreted as an intervention gain.
 
 ### 9.2 Counterfactual replay
 
@@ -337,6 +344,8 @@ ORIGINAL FAILURE S0
 The scheduler does not exhaustively test all branches. It selects treatments capable of distinguishing the current causal hypotheses, preserves protected exploration for surprising alternatives, and eliminates branches when additional evidence cannot change a decision.
 
 When progressive state is part of the hypothesis, the system may freeze a parent transcript and fork matched child continuations from the same recorded state.
+
+Every replay request and every replay result is appended to the same canonical `TEST_REPLAY.jsonl` group under the originating `failure_snapshot_id`, allowing the full micro-experiment to be selected and rerun as one fixture family.
 
 ---
 
@@ -378,7 +387,9 @@ Every possible V3 question is classified as `ANSWERED`, `PARTIALLY_ANSWERED`, `O
 
 ### Stage 1 — Frontier Case Selection and Snapshot Seeding
 
-Seed the replay corpus from historical raw evidence where reconstruction is sufficiently complete. Select high-information non-saturated cases, especially:
+Seed the replay corpus from historical raw evidence where reconstruction is sufficiently complete. Every historical failure admitted for V3 replay must be normalized into the canonical `TEST_REPLAY.jsonl` fixture schema before it can be scheduled.
+
+Select high-information non-saturated cases, especially:
 
 - arithmetic;
 - strict transformation;
@@ -468,6 +479,8 @@ Classify successful repairs as:
 - `REGION_MECHANISM`;
 - `CROSS_REGION_MECHANISM`;
 - `PROMOTION_CANDIDATE`.
+
+Generated mutation fixtures are also appended to `TEST_REPLAY.jsonl` with lineage to the original failure and a flag distinguishing synthetic neighborhood mutation from naturally observed failure.
 
 ### Stage 7 — Tool / Skill / Verification / Recovery Tomography
 
@@ -560,6 +573,8 @@ Regression must include regions already solved by direct Qwen and regions where 
 
 No mechanism can be promoted if it expands one region by silently damaging protected existing territory beyond its preregistered regression tolerance.
 
+Fresh/sealed failures are still captured into `TEST_REPLAY.jsonl`, but their partition labels remain immutable and those entries cannot be fed back into development until the corresponding confirmation phase is formally closed.
+
 ---
 
 ## 13. Permanent Failure Snapshot Corpus
@@ -590,6 +605,38 @@ Snapshots are reusable experimental fixtures for later mechanisms. A future mech
 
 A snapshot fixture never becomes "fresh" merely because a new intervention is tested on it.
 
+### 13.1 Canonical `TEST_REPLAY.jsonl`
+
+All failure and replay fixtures are kept together in one append-only canonical replay registry: `TEST_REPLAY.jsonl`.
+
+This file exists for **fast exact retesting**. A future harness must be able to select one fixture, one failure family, one model's failures, one mechanism class, or the entire registry without reopening the original campaign evidence layout.
+
+Each logical failure group contains records such as:
+
+- `FAILURE_FIXTURE` — the immutable original failure;
+- `REPLAY_REQUEST` — a registered exact/counterfactual/cross-model replay definition;
+- `REPLAY_RESULT` — the observed replay outcome;
+- `MUTATION_FIXTURE` — a causally linked neighborhood variant;
+- `MECHANISM_LABEL` — current causal/ownership classification;
+- `PROMOTION_EVENT` — movement/generalization/promotion disposition changes.
+
+Every `FAILURE_FIXTURE` must include enough **model-visible replay material** to reproduce the request without reconstructing the parent campaign: exact messages/context, tool schemas and model-visible tool results, relevant observable state, inference parameters, seed where supported, scoring/oracle reference, expected contract, model/runtime provenance, hashes, and partition/contamination labels.
+
+Large non-model-visible forensic payloads may remain content-addressed in the raw evidence store and be referenced by immutable hash/path. Any payload that was actually visible to the model and is required for exact replay must either be embedded in the fixture or referenced through a content-addressed replay asset whose hash is verified before launch.
+
+The registry must support:
+
+- **same-model exact replay** — reproduce the failure as closely as the runtime permits;
+- **same-model intervention replay** — alter only registered dimensions;
+- **cross-model replay** — give another compatible model the same model-visible failure fixture, with adapter changes explicitly recorded;
+- **batch replay** — select all failures by source model, family, failure class, mechanism, difficulty, date/campaign, or promotion state;
+- **replay diffing** — compare outputs, tool behavior, reasoning usage, latency/tokens, and verifier outcomes across models/interventions;
+- **zero-rerun research** — inspect prior replay trees and outcomes without inference when the stored evidence already answers the question.
+
+`TEST_REPLAY.jsonl` is the canonical replay registry. Separate snapshot/branch files may be generated as indexes or analysis views, but they may not become independent competing sources of truth.
+
+No registry row is deleted or rewritten after commitment. Corrections are appended as versioned superseding records with lineage to the original record.
+
 ---
 
 ## 14. Evidence schema additions
@@ -615,6 +662,13 @@ Every material observation/replay should carry, where applicable:
 - `expected_information_value`;
 - `protected_exploration`;
 - `admissible_unexplored_neighbors`;
+- `replay_record_type`;
+- `source_model_id`;
+- `target_model_id`;
+- `replay_mode`;
+- `replay_compatibility_adapter`;
+- `fixture_hash`;
+- `replay_asset_hashes`;
 - full raw lineage to request/response/tool/state evidence.
 
 Derived conclusions may never replace raw events.
@@ -657,6 +711,9 @@ Previously verified territory lost after mechanism/controller/tuning changes.
 
 ### Failure Corpus Reuse Value
 How many later decisions can be answered from preserved snapshots without rerunning the original expensive failure acquisition.
+
+### Replay Portability
+How many registered failures can be replayed faithfully across compatible models/runtimes, with incompatibilities explicitly classified rather than silently altered.
 
 ---
 
@@ -755,33 +812,34 @@ Wall-clock inconvenience may change scheduling order/residency strategy, but it 
 
 ## 20. Completion and failure behavior
 
-A model-level failure never aborts the V3 campaign. It is snapshotted, classified, and execution advances.
+A model-level failure never aborts the V3 campaign. It is snapshotted, registered in `TEST_REPLAY.jsonl`, classified, and execution advances.
 
-A replay failure also becomes a child snapshot; it does not trigger unlimited retry.
+A replay failure also becomes a child snapshot and a new replay-registry record; it does not trigger unlimited retry.
 
 Affected inference may stop only for validity-threatening conditions such as:
 
 - runtime/provider unavailable beyond the frozen infrastructure policy;
 - model identity/digest/provenance mismatch;
 - task/manifest/hash corruption;
-- evidence-store write failure that threatens raw capture;
+- evidence-store or `TEST_REPLAY.jsonl` write failure that threatens raw/replay capture;
 - scorer/oracle integrity failure for the affected decision;
 - hard call ceiling violation.
 
-Resume must preserve campaign, case, snapshot, branch, attempt, and intervention identity.
+Resume must preserve campaign, case, snapshot, replay-record, branch, attempt, and intervention identity.
 
 V3 is complete only when:
 
 1. every selected high-value historical/fresh failure has a terminal evidence state;
-2. every scheduled physical call has raw evidence and a decision reason;
-3. every material successful repair has either causal localization/generalization or is explicitly classified `INSTANCE_PATCH`;
-4. every negative result changes an ownership/boundary/routing/training decision or is recorded as a falsified hypothesis;
-5. every promoted mechanism has fresh evidence and regression results appropriate to its consequence;
-6. sealed evidence, if entered, was not used for tuning;
-7. all evidence manifests/hashes verify;
-8. the failure corpus and replay lineage verify;
-9. no architecture claim depends on a hidden oracle label or inaccessible private chain-of-thought;
-10. the final capability map states what Qwen can solve direct, with reasoning, with context, with tools, with skills, with verification/recovery, after tuning, only by escalation, or not safely/reliably at all.
+2. every failure and replay branch is represented in the canonical `TEST_REPLAY.jsonl` registry;
+3. every scheduled physical call has raw evidence and a decision reason;
+4. every material successful repair has either causal localization/generalization or is explicitly classified `INSTANCE_PATCH`;
+5. every negative result changes an ownership/boundary/routing/training decision or is recorded as a falsified hypothesis;
+6. every promoted mechanism has fresh evidence and regression results appropriate to its consequence;
+7. sealed evidence, if entered, was not used for tuning;
+8. all evidence and replay manifests/hashes verify;
+9. the failure corpus and replay lineage verify;
+10. no architecture claim depends on a hidden oracle label or inaccessible private chain-of-thought;
+11. the final capability map states what Qwen can solve direct, with reasoning, with context, with tools, with skills, with verification/recovery, after tuning, only by escalation, or not safely/reliably at all.
 
 ---
 
@@ -791,11 +849,10 @@ At minimum V3 must emit:
 
 - `protocol-v3-manifest.json`;
 - `historical-evidence-atlas.json`;
-- `failure-snapshots.jsonl` or content-addressed equivalent;
-- `replay-branches.jsonl`;
-- `causal-hypotheses.jsonl`;
+- **`TEST_REPLAY.jsonl` — canonical append-only source for all failure fixtures, replay definitions/results, mutation fixtures, and replay lineage**;
 - `raw-calls.jsonl`;
 - `atomic-observations.jsonl`;
+- `causal-hypotheses.jsonl`;
 - `intervention-registry.json`;
 - `mechanism-graph.json`;
 - `negative-transfer-map.json`;
@@ -806,10 +863,12 @@ At minimum V3 must emit:
 - `compiled-capabilities.json`;
 - `fresh-transfer-report.json`;
 - `sealed-verdict.json` when sealed confirmation is entered;
-- SHA-256 manifests for immutable evidence;
+- SHA-256 manifests for immutable evidence and replay assets;
 - concise human-readable report describing discoveries, causal mechanisms, rejected mechanisms, capability movement, ownership decisions, and next architecture state.
 
-The exact physical storage layout may be adapted during implementation, but all logical data and lineage above are mandatory.
+`failure-snapshots.jsonl`, `replay-branches.jsonl`, or other specialized replay tables may be generated as derived/query-optimized views, but `TEST_REPLAY.jsonl` is the replay source of truth and derived views must carry its source hashes/record IDs.
+
+The exact surrounding physical storage layout may be adapted during implementation, but all logical data and lineage above are mandatory.
 
 ---
 
@@ -817,7 +876,7 @@ The exact physical storage layout may be adapted during implementation, but all 
 
 No real V3 inference may launch until tests prove at least:
 
-1. a failed model response creates an immutable snapshot and the campaign continues;
+1. a failed model response creates an immutable snapshot, appends a valid `FAILURE_FIXTURE` to `TEST_REPLAY.jsonl`, and the campaign continues;
 2. successful replay cannot overwrite the original failure;
 3. exact replay and counterfactual replay are analytically distinct;
 4. child replays retain exact parent/state lineage;
@@ -843,7 +902,13 @@ No real V3 inference may launch until tests prove at least:
 24. a planted instance-only patch fails neighborhood generalization and is not promoted;
 25. a planted negative-transfer mechanism is routed conditionally rather than globally promoted;
 26. a deterministic substitute beats unnecessary model reasoning and is assigned system/tool ownership;
-27. a genuine model-internal residual is correctly qualified for fine-tuning/escalation rather than falsely assigned to prompt/context.
+27. a genuine model-internal residual is correctly qualified for fine-tuning/escalation rather than falsely assigned to prompt/context;
+28. one `TEST_REPLAY.jsonl` fixture can reproduce the same-model request without reading the original campaign directory;
+29. the same fixture can be run against another compatible model with all adapter substitutions explicitly recorded;
+30. batch selection by source model, failure class, task family, mechanism, and promotion state is deterministic;
+31. every replay result links back to exactly one replay request and one originating failure family;
+32. replay-registry append/correction semantics never mutate prior committed rows;
+33. a replay asset hash mismatch blocks the affected replay before inference.
 
 Template/preflight validation must launch **zero real model calls**.
 
@@ -859,6 +924,7 @@ V3 must not:
 - promote a mechanism because it is sophisticated or intuitive;
 - use generic retries to inflate success;
 - collapse failure, repair, and successful outcome into one record;
+- maintain competing independent replay stores that can drift from `TEST_REPLAY.jsonl`;
 - call a representation change a semantic ingredient change or vice versa;
 - infer private chain-of-thought that is not exposed by the runtime;
 - assume a stronger model's solution is automatically the correct architecture;
@@ -878,6 +944,7 @@ V3 should leave INVERTED with something materially more valuable than another be
 ```text
 REAL FAILURE
   -> IMMUTABLE SNAPSHOT
+  -> APPEND TO TEST_REPLAY
   -> FIRST DIVERGENCE
   -> CAUSAL HYPOTHESES
   -> MATCHED REPLAY FORKS
@@ -889,12 +956,12 @@ REAL FAILURE
   -> CHEAPEST DURABLE OWNER
   -> COMPILED CAPABILITY
   -> ROUTING / TRAINING / ESCALATION POLICY
-  -> PERMANENT REPLAY FIXTURE
+  -> PERMANENT CROSS-MODEL REPLAY FIXTURE
   -> MOVED CAPABILITY FRONTIER
 ```
 
 The defining V3 principle is:
 
-> **A failure is not the end of a test. It is the beginning of a miniature causal research program whose successful result must become reusable capability or a sharper boundary.**
+> **A failure is not the end of a test. It is the beginning of a miniature causal research program whose successful result must become reusable capability or a sharper boundary. Every failure is also permanently retained as a fast replay test for the model that failed and for compatible future models.**
 
-V3 succeeds when the project can point to newly solved territory and say not only **that** Qwen/Inverted improved, but **why**, **under what observable conditions**, **which mechanism owns the improvement**, **what it costs**, **where it fails**, and **how the project can reuse the discovery without paying to rediscover it.**
+V3 succeeds when the project can point to newly solved territory and say not only **that** Qwen/Inverted improved, but **why**, **under what observable conditions**, **which mechanism owns the improvement**, **what it costs**, **where it fails**, **how it can be replayed exactly**, and **how the project can reuse the discovery without paying to rediscover it.**
