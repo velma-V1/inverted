@@ -218,3 +218,17 @@ def test_idempotent_reseed_does_not_rescan_registry_per_fixture(tmp_path, monkey
     result = seed_v2_failures(source, store)
     assert result.fixtures_added == 0
     assert result.duplicate_fixtures == 2
+
+
+def test_preview_reports_seed_geometry_without_writing_replay_store(tmp_path) -> None:
+    from inverted.capability_ratchet.historical import preview_v2_failures
+
+    source = V2EvidenceSource(write_mini_v2(tmp_path / "source", failed=(1, 3), cap=False))
+    preview = preview_v2_failures(source)
+    assert preview.total_observations == 5
+    assert preview.material_failures == 2
+    assert preview.skipped_nonfailures == 3
+    assert preview.invalid_rows == 0
+    assert preview.fixtures_added == 0
+    assert preview.duplicate_fixtures == 0
+    assert not (tmp_path / "replay").exists()

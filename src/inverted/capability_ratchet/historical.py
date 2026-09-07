@@ -245,6 +245,43 @@ def _with_cap_failure(observation: Observation) -> Observation:
     return replace(observation, failure_classes=classes + ("REASONING_CAP_EXHAUSTION",))
 
 
+def preview_v2_failures(source: V2EvidenceSource) -> HistoricalSeedResult:
+    """Validate a V2 source and report predicted replay geometry without writes."""
+    if not isinstance(source, V2EvidenceSource):
+        raise TypeError("source must be V2EvidenceSource")
+    loaded = source.load()
+    grouped: dict[str, list[tuple[Observation, dict[str, Any]]]] = defaultdict(list)
+    for observation, row in zip(loaded.observations, loaded.observation_rows, strict=True):
+        grouped[_trial_id(observation, row)].append((observation, row))
+
+    material = skipped = invalid = 0
+    for trial_id, members in grouped.items():
+        raw_trial = loaded.raw_trials.get(trial_id)
+        if raw_trial is None or len(members) != 5:
+            invalid += len(members)
+            continue
+        task_ids = [observation.task_id for observation, _ in members]
+        if len(set(task_ids)) != 5 or any(task_id not in loaded.tasks for task_id in task_ids):
+            invalid += len(members)
+            continue
+        raw_calls = raw_trial.get("raw_calls")
+        if (not isinstance(raw_calls, list) or not raw_calls
+                or raw_trial.get("physical_calls") != len(raw_calls)):
+            invalid += len(members)
+            continue
+        cap_exhausted = _reasoning_cap_exhausted(raw_trial)
+        for observation, _ in members:
+            if _is_material(observation, cap_exhausted=cap_exhausted):
+                material += 1
+            else:
+                skipped += 1
+    return HistoricalSeedResult(
+        total_observations=len(loaded.observations), material_failures=material,
+        fixtures_added=0, duplicate_fixtures=0,
+        skipped_nonfailures=skipped, invalid_rows=invalid,
+    )
+
+
 def seed_v2_failures(source: V2EvidenceSource, replay_store: ReplayStore) -> HistoricalSeedResult:
     """Import material V2 failures without executing a model or network call."""
     if not isinstance(source, V2EvidenceSource):
