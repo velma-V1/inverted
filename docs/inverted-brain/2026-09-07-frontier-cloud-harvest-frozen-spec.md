@@ -6,7 +6,7 @@ This specification is subordinate to `2026-09-07-universal-harvest-frozen-contra
 
 ## Purpose
 
-Frontier runs are expensive and unusually information-rich. They are not treated as ordinary benchmark calls. Each run is a reusable experimental specimen designed to reveal as much as possible about:
+Frontier runs are expensive and unusually information-rich. They are not ordinary benchmark calls. Each run is a reusable experimental specimen designed to reveal as much as possible about:
 
 - model behavior;
 - system architecture;
@@ -20,9 +20,10 @@ Frontier runs are expensive and unusually information-rich. They are not treated
 - search and information efficiency;
 - system-versus-model contribution;
 - transferable mechanisms;
-- negative evidence and failure precursors.
+- negative evidence and failure/success precursors;
+- decision boundaries, path dependence, and counterfactual opportunity.
 
-The required evidence posture is the previously defined **11/10 collection level**: lower run volume than local tests, but substantially deeper, redundant, and replay-oriented observation.
+The required evidence posture is the previously defined **11/10 collection level**: lower run volume than local tests, but substantially deeper, redundant, checkpoint-rich, and replay-oriented observation.
 
 ## Two distinct frontier roles
 
@@ -52,47 +53,75 @@ FREEZE C
   -> blind verifier
 ```
 
-Continuation and native-harvest evidence must never be mixed as if they were the same condition.
+Continuation and native-harvest evidence are separate conditions and are never mixed.
 
 ChatGPT may also be used as a high-value reference/resolution specimen when the operator explicitly runs the case through the ChatGPT environment and connected tools.
+
+## Frontier fairness and concurrency
+
+For direct native comparisons, Claude/Codex/ChatGPT receive the same frozen task objective, starting specimen where technically possible, success contract, and blind verifier. Native product/system capabilities remain enabled and are recorded rather than artificially removed.
+
+Claude, Codex, ChatGPT-reference work, local-system workers, and verifiers may execute concurrently when resources permit. Concurrent scheduling must record:
+
+- worker assignment;
+- queue/start/end timestamps;
+- local/cloud resource contention;
+- batching;
+- network/tool wait time;
+- inference/tool/verifier/wall time separately.
+
+Concurrency may reduce wall clock but may not change the experimental contract or expose one arm's trajectory to another.
 
 ## Native-system individuality
 
 Do not disable a frontier system's distinctive native mechanisms merely to make it look like another system. Preserve and observe, when applicable:
 
-- context-management and compaction;
+- context management/compaction;
 - memory;
 - skills;
 - hooks;
 - subagents;
 - tool discovery;
-- sandboxing and permission gates;
+- sandboxing/permission gates;
 - planning/state machinery;
 - retries/recovery;
 - verification;
 - session persistence;
 - capability discovery;
-- system-generated prompts and state visible through supported interfaces.
+- system-generated prompts/state visible through supported interfaces.
 
 Separate ablation arms may disable one mechanism at a time after the native trajectory identifies a causal question.
 
+## Passive native observation versus instrumented reasoning
+
+Every frontier system must preserve two explicitly different modes when both are used:
+
+### `NATIVE_PASSIVE`
+
+Observe only what the native product/runtime exposes without asking extra introspective questions. This is the primary native-system evidence.
+
+### `INSTRUMENTED_REASONING`
+
+Explicitly request structured state such as current hypothesis, evidence, uncertainty, expected consequence, remaining verification, or alternative plan.
+
+These arms are never merged. If the extra reasoning window improves performance, that effect is measured as a candidate mechanism rather than hidden as part of the native system.
+
 ## 11/10 evidence standard
 
-Frontier collection uses the full Universal Forensic Recorder plus redundant observation and derivative-experiment requirements.
+Frontier collection uses the full Universal Forensic Recorder and canonical event schema plus redundant observation and derivative-experiment requirements.
 
 ### Observation layer 1 — native telemetry
 
 Capture everything the supported interface exposes, including where available:
 
-- structured event streams;
-- messages and intermediate messages;
+- raw structured event streams;
+- messages/intermediate messages;
 - visible/exposed reasoning or reasoning summaries;
-- tool calls and arguments;
-- tool results;
+- tool calls/arguments/results;
 - subagents;
 - skills;
 - hooks;
-- permissions and approvals;
+- permissions/approvals;
 - sandbox decisions;
 - memory/context events;
 - compaction;
@@ -100,7 +129,7 @@ Capture everything the supported interface exposes, including where available:
 - errors and stop/completion events;
 - timing/token information.
 
-For Claude Code, Codex CLI, and other systems with machine-readable streams, prefer raw structured events over terminal-only summaries.
+For Claude Code, Codex CLI, and systems with machine-readable streams, prefer raw structured events over terminal-only summaries.
 
 For ChatGPT, preserve all observable conversation/tool activity available through the product and connected tools. Do not claim access to hidden internal reasoning or server-side instructions that are not exposed.
 
@@ -112,14 +141,14 @@ Corroborate native claims with outside evidence where possible:
 - every mutation and important intermediate diff;
 - commands/processes;
 - stdout/stderr/exit status;
-- workspace snapshots and hashes;
+- workspace snapshots/hashes;
 - git state;
-- tests and verifier execution;
+- tests/verifier execution;
 - environment changes;
 - timing;
-- network metadata where useful and safe.
+- network metadata where useful/safe.
 
-Example: an agent claiming success is not sufficient. The blind verifier and final workspace state independently establish disposition.
+An agent claiming success is not sufficient. Blind verification and final state establish disposition.
 
 ### Observation layer 3 — reasoning/cognitive reconstruction
 
@@ -127,53 +156,82 @@ Build a normalized state graph from directly exposed reasoning and observable be
 
 `problem representation -> hypothesis -> evidence search -> action/tool -> observation -> belief change -> contradiction -> repair -> verification -> completion`
 
-Every node must carry provenance such as `EXPOSED_MODEL_REASONING`, `SYSTEM_EVENT`, `OBSERVED_TOOL_BEHAVIOR`, or `INFERRED_ANALYSIS`.
+Every node carries provenance such as `EXPOSED_MODEL_REASONING`, `SYSTEM_EVENT`, `OBSERVED_TOOL_BEHAVIOR`, or `INFERRED_ANALYSIS`.
 
 ## Memory / thought / reasoning capture
 
 Capture when technically exposed or instrumentable:
 
 - memory creation, retrieval, mutation, persistence, conflicts, forgetting/deprecation;
-- memory provenance and age;
-- whether a memory changed a hypothesis, action, search path, tool choice, or completion decision;
+- memory provenance/age;
+- whether memory changed a hypothesis, action, search path, tool choice, or completion decision;
 - lost state and stale/false memory;
 - raw exposed thought/reasoning streams;
 - reasoning summaries;
 - reflection/replanning;
 - confidence/uncertainty shifts;
 - hypothesis changes;
-- meta-reasoning and frame resets;
-- reasoning persistence across tools, compaction, failures, and long trajectories.
+- meta-reasoning/frame resets;
+- reasoning persistence across tools, compaction, failures, and long trajectories;
+- hypothesis oscillation;
+- recommendation/answer reversals;
+- confidence swings;
+- route/tool-plan changes;
+- repeated frame switching/self-contradiction;
+- reasoning-instability/entropy proxies when measurable.
 
 When internal chain-of-thought is not exposed, record observable decision traces and explicitly label reconstruction as inferred. Never invent hidden reasoning.
 
-## Complete model-visible state snapshots
+## Complete model-visible state and prompt lineage
 
 At each meaningful frontier decision checkpoint, preserve as much as the interface allows of exactly what the system/model could see:
 
 - active instruction hierarchy;
 - complete active context;
-- context item order and position;
-- memory and skills injected;
+- context item order/position;
+- memory/skills injected;
 - tool schemas/capabilities;
 - prior observations;
 - summaries/compactions;
 - workspace/system state;
 - remaining budgets when visible.
 
-The purpose is to separate **better model cognition** from **better information/system presentation**.
+Hash each visible prompt/context transformation stage where technically possible:
+
+`original task -> wrapper -> instructions -> memory -> skills -> retrieval -> tools -> compaction/summary -> final model-visible request`
+
+The purpose is to separate **better model cognition** from **better system information presentation**.
+
+## System intervention ledger
+
+Every observable system/harness intervention is a first-class event with actor, before/after state, and consequence, including when applicable:
+
+- block;
+- rewrite;
+- retry;
+- route;
+- summarize;
+- compact;
+- inject;
+- escalate;
+- mutation gate;
+- permission change;
+- rollback;
+- checkpoint/resume.
+
+This ledger is required for separating model behavior from surrounding-system behavior.
 
 ## High-value checkpointing and replay
 
-Every meaningful decision point should become a potential replay checkpoint. Preserve enough state to later test cheaper counterfactuals without rerunning the whole frontier trajectory.
+Every meaningful decision point becomes a potential replay checkpoint. Preserve enough state to later test cheaper counterfactuals without rerunning the whole frontier trajectory.
 
-For selected checkpoints derive or schedule:
+For selected checkpoints derive/schedule:
 
 - observed action versus alternate action;
 - continuation versus fresh start;
 - same checkpoint without one memory item;
-- same checkpoint without one skill;
-- same checkpoint without one evidence item;
+- without one skill;
+- without one evidence item;
 - changed context order;
 - changed tool description/permission;
 - local-model replay from frontier checkpoint;
@@ -193,15 +251,15 @@ At selected high-information checkpoints, measure whether small changes alter th
 - permission;
 - misleading observation.
 
-Where the platform permits repeated comparable calls, selected checkpoint repeats may estimate decision distributions and rare catastrophic branches. Do not mechanically repeat entire expensive tests when checkpoint replay answers the question.
+Where the platform permits repeated comparable calls, selected checkpoint repeats estimate decision distributions and rare catastrophic branches. Do not mechanically repeat entire expensive tests when checkpoint replay answers the question.
 
 ## Self-assessment calibration
 
-When exposed or explicitly instrumented without contaminating the native arm, record:
+When exposed or explicitly instrumented without contaminating the passive native arm, record:
 
 - whether the system believes it succeeded;
 - confidence/uncertainty;
-- what it believes remains unverified;
+- what remains unverified;
 - what could still be wrong.
 
 Compare against blind verification to measure false confidence, appropriate uncertainty, and failure-awareness quality.
@@ -214,11 +272,11 @@ Track separately:
 - time error becomes externally detectable;
 - time model/system recognizes it.
 
-Measure detection and recognition latency. A system's ability to know it is wrong is a first-class capability.
+Measure detection/recognition latency. Knowing that it is wrong is a first-class capability.
 
 ## Recovery quality
 
-A repaired task is not simply labeled recovered. Classify whether recovery was:
+A repaired task is not simply labeled recovered. Classify:
 
 - root-cause repair;
 - symptom patch;
@@ -243,15 +301,20 @@ For every frontier trajectory reconstruct when possible:
 - information gain per read/search/tool action;
 - context/evidence actually used versus merely present.
 
-This is intended to expose differences in search strategy and evidence efficiency, not only final correctness.
+This measures search/evidence efficiency, not just final correctness.
 
-## Tool / skill / hand / capability value
+## Tool / skill / hand / capability lifecycle and value
 
 Maintain empirical ledgers for frontier systems:
 
 - available;
 - discovered;
 - selected;
+- loaded;
+- partially used;
+- completed;
+- verified;
+- updated/deprecated;
 - useful;
 - unnecessary;
 - harmful;
@@ -259,7 +322,7 @@ Maintain empirical ledgers for frontier systems:
 - misunderstood;
 - information gain;
 - association with success/failure;
-- cases where the capability existed but the system failed to use it.
+- capability existed but was never discovered/used.
 
 Capability possession and capability utilization are separate measurements.
 
@@ -285,16 +348,16 @@ For open or inspectable frontier harnesses, map observed events to implementatio
 
 `repo commit -> source file -> class/function -> rule/threshold -> runtime event`
 
-Compare system documentation/self-description against actual runtime behavior. Marketing/documentation claims are hypotheses until observed.
+Compare documentation/self-description against actual runtime behavior. Marketing/documentation claims are hypotheses until observed.
 
 ## Failure and success precursor mining
 
-For every difficult failure and recovery, preserve windows before the outcome so offline analysis can search for recurring precursors such as:
+For every difficult failure/recovery, preserve windows before the outcome so offline analysis can search for recurring precursors such as:
 
 - context saturation;
 - repeated low-information search;
 - assumption accumulation;
-- confidence rising without new evidence;
+- confidence rising without evidence;
 - narrowing hypotheses too early;
 - repeated tool errors;
 - verification disappearing;
@@ -303,7 +366,7 @@ For every difficult failure and recovery, preserve windows before the outcome so
 - targeted discriminating search;
 - minimal repair followed by complete verification.
 
-The objective is to discover predictors that Inverted can use before failure occurs.
+The objective is to discover predictors Inverted can use before failure occurs.
 
 ## Shadow/offline analysis
 
@@ -312,69 +375,83 @@ Do not waste frontier calls on analysis that can be done later.
 ```text
 frontier run
   -> immutable forensic archive
+  -> automatic autopsy package
   -> freeze
   -> local/deterministic shadow analysis
   -> candidate checkpoints/mechanisms/counterfactuals
 ```
 
-Local models and deterministic analysis may later extract graphs, classify trajectories, identify first divergence, generate replay candidates, and measure tool/context value. Derived output never replaces the raw frontier evidence.
+Local models/deterministic analysis may later extract graphs, classify trajectories, identify first divergence, generate replay candidates, and measure tool/context value. Derived output never replaces raw frontier evidence.
 
-## Mandatory trajectory-autopsy package
+## Mandatory automatic trajectory-autopsy package
 
-Each expensive frontier run must be capable of yielding:
+Each expensive frontier run **automatically emits** the research asset required by the Universal contract:
 
-- raw event archive;
-- checkpoint archive;
-- prompt/context lineage;
-- memory record;
-- exposed reasoning archive where available;
-- normalized reasoning graph;
-- decision graph;
-- evidence graph;
-- assumption ledger;
-- contradiction ledger;
-- context graph;
-- filesystem/process history;
-- verification graph;
-- failure propagation graph;
-- tool/skill/hand value ledger;
-- memory-effect record;
-- first meaningful divergence record;
-- near misses;
-- success/failure precursor candidates;
-- counterfactual candidates;
-- replay points;
-- immutable manifest/hashes.
+```text
+RUN/
+  raw/
+  checkpoints/
+  prompts/
+  context/
+  reasoning/
+  tools/
+  skills/
+  memory/
+  filesystem/
+  processes/
+  verification/
+  metrics/
+  source-map/
+  decision_graph.json
+  evidence_graph.json
+  hypothesis_graph.json
+  assumption_ledger.json
+  contradiction_ledger.json
+  failure_graph.json
+  verification_graph.json
+  context_graph.json
+  tool_skill_hand_value.json
+  memory_effect.json
+  first_divergence.json
+  near_misses.json
+  precursor_signatures.json
+  counterfactual_candidates.json
+  replay_points.json
+  checkpoint_lineage.json
+  manifest.sha256
+```
+
+If a platform cannot expose a category, the corresponding artifact records `unavailable` and why. Missing evidence may not be silently omitted.
 
 ## First meaningful divergence is mandatory
 
 For useful cross-system comparisons, align trajectories and identify the first meaningful point where they differ.
 
-The target statement is not:
+The target is not:
 
 > Claude passed and Qwen failed.
 
-The target statement is closer to:
+The target is closer to:
 
-> At decision event N, both systems possessed evidence A/B. System X inspected dependency C before mutation; System Y edited immediately. C exposed constraint D, changing the hypothesis and preventing the downstream failure.
+> At decision event N, both systems possessed evidence A/B. System X inspected dependency C before mutation; System Y edited immediately. C exposed constraint D, changing the hypothesis and preventing downstream failure.
 
 That divergence becomes a mechanism hypothesis for local causal replay.
 
 ## Seven mandatory frontier edge-case families
 
-Every frontier model/system native test receives **seven edge-case families** in addition to the normal adaptive frontier. Five families are common across systems for direct comparison; two may be tailored to the system's claimed/native strengths.
+Every frontier model/system native test receives **seven edge-case families** in addition to the normal adaptive frontier. Five are common across systems; two may target native strengths.
 
 ### 1. Extreme compositional absurdity
 
-Canonical family marker:
+Canonical marker:
 
 > **A purple unicorn riding an orange hippo swimming in pudding while playing medieval-style chess.**
 
-The absurd surface must hide a rigorous, objectively verifiable problem containing interacting constraints, causal dependencies, tool requirements, or contradictions. The purpose is to test preservation of real problem structure under bizarre composition, not creative-writing ability.
+The absurd surface hides a rigorous, objectively verifiable problem containing interacting constraints, causal dependencies, tool requirements, or contradictions. It tests preservation of real problem structure under bizarre composition, not creative-writing ability.
 
 ### 2. Contradiction minefield
 
-Multiple plausible/authoritative-looking sources conflict. The system must detect the contradiction, avoid premature closure, seek discriminating evidence, revise state, and verify.
+Multiple plausible/authoritative-looking sources conflict. The system must detect contradiction, avoid premature closure, seek discriminating evidence, revise state, and verify.
 
 ### 3. Success-that-is-actually-failure
 
@@ -390,7 +467,7 @@ The same causal structure appears under a substantially different surface domain
 
 ### 6. System-specific capability trap
 
-Tailored to a distinctive claimed/native capability such as skills, hooks, subagents, compaction, persistence, repository search, connected-tool orchestration, recovery, or sandboxing. The task should reveal whether the capability is actually discovered and used correctly.
+Tailored to a distinctive claimed/native capability such as skills, hooks, subagents, compaction, persistence, repository search, connected-tool orchestration, recovery, or sandboxing. Tests whether the capability is actually discovered and used correctly.
 
 ### 7. Meta-edge / reasoning-procedure failure
 
@@ -400,7 +477,7 @@ The current reasoning procedure itself becomes the problem: evidence contradicts
 
 The seven edge cases are **families, not seven static questions**. A verified success creates a harder descendant by adding controlled difficulty such as hidden dependency, misleading evidence, tool failure, stale verification, delayed state, or compound interactions.
 
-No frontier system should be able to "pass all edge cases" and finish the benchmark; the family continues until the predeclared experimental budget or a verified frontier boundary is reached.
+No frontier system should be able to "pass all edge cases" and finish the benchmark; the family continues until the predeclared experimental budget or verified frontier boundary is reached.
 
 ## Frontier native comparison pool
 
@@ -410,9 +487,9 @@ At minimum maintain separate native/reference treatment for:
 - Codex CLI/system behavior;
 - ChatGPT with its available connected tools and observable product behavior.
 
-Additional systems may be admitted only when they introduce a unique mechanism class or resolve a specific architectural question.
+Additional systems are admitted only when they introduce a unique mechanism class or resolve a specific architectural question.
 
-Do not treat Claude Agent SDK as an independent model architecture from Claude Code when the underlying system is substantially the same; use it where it improves instrumentation/ablation.
+Do not treat Claude Agent SDK as an independent model architecture from Claude Code when the underlying system is substantially the same; use it when it improves instrumentation/ablation.
 
 ## Relationship to the local ladder
 
@@ -427,9 +504,9 @@ Candidate frontier mechanisms flow back into cheap causal work:
 
 ## Maximum derivative-value law
 
-A frontier call is considered under-instrumented if its archived state cannot support later questions beyond the original scoring decision.
+A frontier call is under-instrumented if its archived state cannot support later questions beyond the original scoring decision.
 
-Design every expensive run so that months later it can still support new questions through archived checkpoints, raw events, source/context provenance, and local replay.
+Design every expensive run so months later it can still support new questions through archived checkpoints, raw events, context/source provenance, and local replay.
 
 **Data collection is cheap; retesting is not.**
 
