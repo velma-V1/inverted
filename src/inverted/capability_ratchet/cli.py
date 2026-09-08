@@ -16,8 +16,14 @@ from .historical import V2EvidenceSource, preview_v2_failures, seed_v2_failures
 from .interventions import InterventionGenerator
 from .lab import FailureLab, FailureResearchProgram
 from .mechanisms import MechanismLocalizer
-from .query import ReplaySelector, select_failures
+from .query import ReplaySelector, select_failures, select_surface_study
 from .replay_store import ReplayStore
+from .surface_analysis import SurfaceAnalyzer
+from .surface_evidence import SurfaceEvidenceCompiler
+from .surface_interventions import SurfaceInterventionCompiler
+from .surface_lab import OperatingSurfaceLab
+from .surface_planner import SurfacePlanner
+from .surface_store import SurfaceEvidenceStore
 from .tournament import TournamentPlanner
 
 _SENSITIVE_DISPLAY_KEYS = {"authorization", "api_key", "apikey", "token", "password", "secret"}
@@ -92,6 +98,17 @@ def _add_lab_args(parser: argparse.ArgumentParser, *, executable: bool = False) 
         parser.add_argument("--allow-model-calls", action="store_true")
 
 
+def _add_surface_args(parser: argparse.ArgumentParser, *, executable: bool = False) -> None:
+    parser.add_argument("--replay-root", required=True)
+    parser.add_argument("--causal-root", required=True)
+    parser.add_argument("--surface-root", required=True)
+    selector = parser.add_mutually_exclusive_group(required=True)
+    selector.add_argument("--study-id")
+    selector.add_argument("--mechanism-id")
+    if executable:
+        parser.add_argument("--allow-model-calls", action="store_true")
+
+
 def _replay_counts(store: ReplayStore) -> dict[str, int]:
     counts: dict[str, int] = {}
     for record in store.records():
@@ -159,6 +176,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run_lab = sub.add_parser("run-lab")
     _add_lab_args(run_lab, executable=True)
+
+    plan_surface = sub.add_parser("plan-surface")
+    _add_surface_args(plan_surface)
+
+    show_surface = sub.add_parser("show-surface")
+    _add_surface_args(show_surface)
+
+    run_surface = sub.add_parser("run-surface")
+    _add_surface_args(run_surface, executable=True)
     return parser
 
 
@@ -206,6 +232,21 @@ def _build_lab(store: ReplayStore, causal_root: Path) -> FailureLab:
         InterventionGenerator(store, causal),
         TournamentPlanner(causal),
         MechanismLocalizer(store, causal),
+    )
+
+
+def _build_surface_lab(store: ReplayStore, causal_root: Path, surface_root: Path) -> OperatingSurfaceLab:
+    causal = CausalEvidenceStore(causal_root, replay_store=store)
+    surface = SurfaceEvidenceStore(surface_root, replay_store=store, causal_store=causal)
+    evidence = SurfaceEvidenceCompiler(store, causal, surface)
+    return OperatingSurfaceLab(
+        store,
+        causal,
+        surface,
+        evidence,
+        SurfacePlanner(surface, evidence),
+        SurfaceInterventionCompiler(store, causal),
+        SurfaceAnalyzer(surface),
     )
 
 
@@ -291,6 +332,81 @@ def _program_payload(program: FailureResearchProgram) -> dict[str, Any]:
     }
 
 
+def _surface_study_payload(study) -> dict[str, Any]:
+    return {
+        "study_id": study.study_id,
+        "failure_snapshot_id": study.failure_snapshot_id,
+        "mechanism_id": study.mechanism_id,
+        "parent_state_hash": study.parent_state_hash,
+        "partition": study.partition.value,
+        "promotion_state": study.promotion_state.value,
+        "decision_id": study.decision_id,
+        "axes": [item.value for item in study.axes],
+        "axis_values": {key: list(values) for key, values in study.axis_values.items()},
+        "decision_critical_reason": study.decision_critical_reason,
+    }
+
+
+def _surface_plan_payload(study, plan) -> dict[str, Any]:
+    return {
+        "study_id": study.study_id,
+        "failure_snapshot_id": study.failure_snapshot_id,
+        "mechanism_id": study.mechanism_id,
+        "points": [{
+            "surface_point_id": point.surface_point_id,
+            "axis": point.axis.value,
+            "value": point.value,
+            "decision_id": point.decision_id,
+            "protected_exploration": point.protected_exploration,
+        } for point in plan.points],
+        "decision_reason": plan.decision_reason,
+        "stop_reason": plan.stop_reason,
+        "call_geometry": {
+            "minimum": plan.minimum_physical_calls,
+            "expected": plan.expected_physical_calls,
+            "worst_case": plan.worst_case_physical_calls,
+            "protected_exploration": plan.protected_exploration_calls,
+        },
+        "MODEL_CALLS": 0,
+    }
+
+
+def _surface_observation_payload(row) -> dict[str, Any]:
+    return {
+        "observation_id": row.observation_id,
+        "surface_point_id": row.surface_point_id,
+        "axis": row.axis.value,
+        "value": row.value,
+        "evidence_kind": row.evidence_kind.value,
+        "replay_result_ids": list(row.replay_result_ids),
+        "source_evidence_refs": list(row.source_evidence_refs),
+        "metrics": dict(row.metrics),
+    }
+
+
+def _surface_profile_payload(profile) -> dict[str, Any]:
+    return {
+        "profile_id": profile.profile_id,
+        "axis": profile.axis.value,
+        "disposition": profile.disposition.value,
+        "lower_useful": profile.lower_useful,
+        "upper_useful": profile.upper_useful,
+        "recommended_region": list(profile.recommended_region),
+        "harm_onset": profile.harm_onset,
+        "evidence_refs": list(profile.evidence_refs),
+        "unresolved_edges": list(profile.unresolved_edges),
+        "promotion_ceiling": profile.promotion_ceiling.value,
+    }
+
+
+def _surface_study(lab: OperatingSurfaceLab, args: argparse.Namespace):
+    return select_surface_study(
+        lab.surface_store,
+        study_id=getattr(args, "study_id", None),
+        mechanism_id=getattr(args, "mechanism_id", None),
+    )
+
+
 def _execute_qwen_replay(store: ReplayStore, args: argparse.Namespace) -> dict[str, Any]:
     """Construct live model machinery only after the explicit CLI safety gate."""
     try:
@@ -369,7 +485,48 @@ def _execute_qwen_lab(
     }
 
 
-def main(argv: list[str] | None = None, *, live_executor=None, live_lab_executor=None) -> int:
+def _execute_qwen_surface(
+    store: ReplayStore,
+    causal_root: Path,
+    surface_root: Path,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Construct live surface adapter only after ``run-surface`` passes its gate."""
+    lab = _build_surface_lab(store, causal_root, surface_root)
+    study = _surface_study(lab, args)
+    plan = lab.prepare(study.study_id)
+    if not plan.points:
+        return _surface_plan_payload(study, plan)
+    fixture = store.get_failure(study.failure_snapshot_id)
+    if fixture.oracle_asset_sha256 is None:
+        raise ValueError("fixture has no self-contained oracle asset; refusing unscored surface execution")
+    store.read_asset(fixture.oracle_asset_sha256)
+
+    from inverted.universal_tuning.qwen_ollama import QwenOllamaAdapter
+    from .qwen_replay import QwenReplayAdapter, V2ReplayScorer
+
+    qwen = QwenOllamaAdapter(model_id=fixture.source_model_id)
+    adapter = QwenReplayAdapter(qwen, scorer=V2ReplayScorer(store))
+    result = lab.execute(plan, adapters={fixture.source_model_id: adapter})
+    physical_calls = sum(int(item.metrics.get("physical_calls", 0) or 0) for item in result.replay_results)
+    return {
+        "study_id": study.study_id,
+        "mechanism_id": study.mechanism_id,
+        "replay_result_ids": [item.replay_result_id for item in result.replay_results],
+        "child_failure_snapshot_ids": list(result.child_failure_snapshot_ids),
+        "profile": _surface_profile_payload(result.profile),
+        "next_plan": _surface_plan_payload(study, result.next_plan),
+        "MODEL_CALLS": physical_calls,
+    }
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    live_executor=None,
+    live_lab_executor=None,
+    live_surface_executor=None,
+) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
@@ -378,6 +535,9 @@ def main(argv: list[str] | None = None, *, live_executor=None, live_lab_executor
         return 2
     if args.command == "run-lab" and not args.allow_model_calls:
         print("run-lab requires explicit --allow-model-calls", file=sys.stderr)
+        return 2
+    if args.command == "run-surface" and not args.allow_model_calls:
+        print("run-surface requires explicit --allow-model-calls", file=sys.stderr)
         return 2
 
     if args.command == "validate":
@@ -464,6 +624,47 @@ def main(argv: list[str] | None = None, *, live_executor=None, live_lab_executor
         runner = _execute_qwen_lab if live_lab_executor is None else live_lab_executor
         try:
             payload = runner(store, causal_root, args)
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        _print(payload)
+        return 0
+    if args.command in {"plan-surface", "show-surface"}:
+        causal_root = Path(args.causal_root)
+        surface_root = Path(args.surface_root)
+        try:
+            lab = _build_surface_lab(store, causal_root, surface_root)
+            study = _surface_study(lab, args)
+            if args.command == "plan-surface":
+                payload = _surface_plan_payload(study, lab.prepare(study.study_id))
+            else:
+                payload = {
+                    "study": _surface_study_payload(study),
+                    "observations": [
+                        _surface_observation_payload(row)
+                        for row in lab.surface_store.observations(study.study_id)
+                    ],
+                    "profiles": [
+                        _surface_profile_payload(row)
+                        for row in lab.surface_store.profiles(study.mechanism_id)
+                        if row.study_id == study.study_id
+                    ],
+                    "replay_store_valid": store.validate().ok,
+                    "causal_store_valid": lab.causal_store.validate().ok,
+                    "surface_store_valid": lab.surface_store.validate().ok,
+                    "MODEL_CALLS": 0,
+                }
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        _print(payload)
+        return 0
+    if args.command == "run-surface":
+        causal_root = Path(args.causal_root)
+        surface_root = Path(args.surface_root)
+        runner = _execute_qwen_surface if live_surface_executor is None else live_surface_executor
+        try:
+            payload = runner(store, causal_root, surface_root, args)
         except (KeyError, TypeError, ValueError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
