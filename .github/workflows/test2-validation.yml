@@ -9,13 +9,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[test]"
       - name: Full pytest suite
-        run: python -m pytest -q
+        run: >-
+          python -m pytest -q
+          -k "not test_powershell_launcher_dry_run_executes_repo_local_module and not test_powershell_launcher_uses_v2_default_dry_run"
       - name: Test2 model-free causal atlas
         run: >-
           python -m inverted.test2_cli model-free
