@@ -33,6 +33,8 @@ SCREEN_CONFIRM_FAMILIES = tuple(
     family for family in TASK_FAMILIES if family not in SCREEN_SCOUT_FAMILIES
 )
 SCREEN_CONFIRM_CHECKPOINTS = (40, 80, 120)
+SCREEN_PANEL_KEY = "parameter-screen-v1"
+SCREEN_PARTITION_ATOMIC = 120
 
 
 @dataclass(frozen=True)
@@ -116,6 +118,49 @@ def _axis_values(axis_name: str) -> tuple[Any, ...]:
     return axis.candidates
 
 
+def _screen_batch_offsets(
+    scheduler: AdaptiveScheduler,
+    family: str,
+    tasks_per_family: int,
+) -> tuple[int, ...]:
+    if tasks_per_family < 5 or tasks_per_family % 5:
+        raise ValueError("screen tasks_per_family must be a positive multiple of five")
+    batch_count = tasks_per_family // 5
+    available = list(range(0, SCREEN_PARTITION_ATOMIC, 5))
+    if batch_count > len(available):
+        raise ValueError("screen task request exceeds partition")
+    available.sort(
+        key=lambda offset: (
+            _stable_seed(
+                scheduler.pool.seed,
+                family,
+                "screen",
+                SCREEN_PANEL_KEY,
+                offset,
+            ),
+            offset,
+        )
+    )
+    return tuple(available[:batch_count])
+
+
+def _screen_task_ids(
+    scheduler: AdaptiveScheduler,
+    family: str,
+    tasks_per_family: int,
+) -> tuple[str, ...]:
+    partition = scheduler.partition_task_ids(
+        family, "screen", SCREEN_PARTITION_ATOMIC
+    )
+    return tuple(
+        task_id
+        for offset in _screen_batch_offsets(
+            scheduler, family, tasks_per_family
+        )
+        for task_id in partition[offset:offset + 5]
+    )
+
+
 def _pending_physical_calls(runner: UniversalRunner, trials: Iterable[Any]) -> int:
     completed = runner.store.completed_trial_ids()
     pending = tuple(trial for trial in trials if trial.trial_id not in completed)
@@ -137,13 +182,16 @@ def _run_block(
     trials = tuple(
         trial
         for family in families
+        for task_offset in _screen_batch_offsets(
+            scheduler, family, tasks_per_family
+        )
         for trial in scheduler.paired_trials(
             family=family,
             stage="screen",
             baseline=baseline,
             candidate=candidate,
-            atomic_count=tasks_per_family,
-            task_offset=0,
+            atomic_count=5,
+            task_offset=task_offset,
             decision_reason=decision_reason,
         )
     )
@@ -162,7 +210,7 @@ def _profile_rows(
     profile: Profile,
     tasks_per_family: int,
 ) -> tuple[dict[str, Any], ...]:
-    selected = scheduler.partition_task_ids(family, "screen", 120)[:tasks_per_family]
+    selected = _screen_task_ids(scheduler, family, tasks_per_family)
     wanted = set(selected)
     fingerprint = profile_fingerprint(profile)
     rows = [
