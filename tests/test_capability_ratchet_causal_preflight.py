@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
+import runpy
 
 import pytest
 
+import inverted.capability_ratchet as cr
 from inverted.capability_ratchet.autopsy import FailureAutopsy
 from inverted.capability_ratchet.causal_core import (
     DivergenceClass,
@@ -222,3 +225,34 @@ def test_compound_geometry_is_leave_one_out_not_power_set(tmp_path):
     assert {item.ablates for item in ablations} == {("A",), ("B",)}
     assert len(shams) == 1
     assert shams[0].composition == ("A", "B", "A")
+
+
+def test_plan2_public_exports_are_stable():
+    required = {
+        "ArchitectureOwner", "AutopsyReport", "CausalEvidenceStore", "CausalHypothesis",
+        "DivergenceClass", "FailureAutopsy", "FailureLab", "FailureResearchProgram",
+        "FailureResearchResult", "FirstDivergence", "HypothesisStatus",
+        "InterventionDefinition", "InterventionGenerator", "InterventionKind",
+        "MechanismAssessment", "MechanismLocalizer", "MechanismRole",
+        "TailoredInterventionGenerator", "TournamentBranch", "TournamentPlan",
+        "TournamentPlanner", "build_ablations",
+    }
+    assert required <= set(cr.__all__)
+    assert all(hasattr(cr, name) for name in required)
+
+
+def test_replay_foundation_audit_requires_plan2_scientific_surface():
+    audit = runpy.run_path(str(Path("scripts/audit-v3-replay-foundation.py")))
+    required_exports = set(audit["REQUIRED_EXPORTS"])
+    required_files = set(audit["REQUIRED_FILES"])
+    assert {"FailureLab", "MechanismLocalizer", "InterventionGenerator", "CausalEvidenceStore"} <= required_exports
+    assert {
+        "src/inverted/capability_ratchet/causal_core.py",
+        "src/inverted/capability_ratchet/causal_store.py",
+        "src/inverted/capability_ratchet/autopsy.py",
+        "src/inverted/capability_ratchet/interventions.py",
+        "src/inverted/capability_ratchet/tournament.py",
+        "src/inverted/capability_ratchet/mechanisms.py",
+        "src/inverted/capability_ratchet/lab.py",
+        "tests/test_capability_ratchet_causal_preflight.py",
+    } <= required_files
