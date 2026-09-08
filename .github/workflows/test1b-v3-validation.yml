@@ -9,6 +9,10 @@ on:
       - "src/inverted/capability_ratchet/**"
       - "src/inverted/universal_tuning/core.py"
       - "tests/test_test1b_v3_*.py"
+      - "tests/test_capability_ratchet_snapshot.py"
+      - "tests/test_capability_ratchet_replay.py"
+      - "tests/test_capability_ratchet_replay_store.py"
+      - "tests/test_capability_ratchet_qwen_replay.py"
       - ".github/workflows/test1b-v3-validation.yml"
 
 jobs:
@@ -21,4 +25,11 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[test]"
-      - run: python -m pytest -q tests/test_test1b_v3_*.py
+      - name: Test Test1B-v3 plus TEST_REPLAY regressions
+        run: >-
+          python -m pytest -q
+          tests/test_test1b_v3_*.py
+          tests/test_capability_ratchet_snapshot.py
+          tests/test_capability_ratchet_replay.py
+          tests/test_capability_ratchet_replay_store.py
+          tests/test_capability_ratchet_qwen_replay.py
