@@ -110,6 +110,24 @@ class DeterministicHypothesisGenerator:
                 falsifier="decomposition leaves the same completion failure unchanged",
             ))
 
+        elif kind is DivergenceClass.MISSING_DEPENDENCY:
+            hypotheses.append(_hypothesis(
+                fixture,
+                divergence,
+                owner=ArchitectureOwner.SYSTEM,
+                claim="the observed failure is caused by an absent explicit dependency-state representation",
+                expected="an explicit prerequisite and dependency-order representation repairs the same parent state while its matched sham does not",
+                falsifier="the dependency representation fails to beat its matched same-state sham",
+            ))
+            hypotheses.append(_hypothesis(
+                fixture,
+                divergence,
+                owner=ArchitectureOwner.MODEL,
+                claim="the model failed to preserve or infer the visible prerequisite ordering without an explicit dependency representation",
+                expected="making the dependency order explicit repairs the same parent state",
+                falsifier="the explicit dependency order does not repair the same state or an equally shaped sham repairs it too",
+            ))
+
         elif kind is DivergenceClass.AUTHORITY_SCOPE:
             hypotheses.append(_hypothesis(
                 fixture,
@@ -235,6 +253,27 @@ class FailureAutopsy:
                 observable_path="focus_observation.metadata.authority_scope_error",
                 event_index=0,
                 evidence_refs=(self._evidence_ref(fixture, "focus_observation.metadata"),),
+                confidence=0.95,
+            )
+
+        dependency_flag = bool(fixture.metadata.get("dependency_state_missing"))
+        if "MISSING_DEPENDENCY" in failures or dependency_flag:
+            return FirstDivergence(
+                divergence_class=DivergenceClass.MISSING_DEPENDENCY,
+                observable_path=(
+                    "focus_observation.metadata.dependency_state_missing"
+                    if dependency_flag
+                    else "focus_observation.failure_classes"
+                ),
+                event_index=0,
+                evidence_refs=(
+                    self._evidence_ref(
+                        fixture,
+                        "focus_observation.metadata.dependency_state_missing"
+                        if dependency_flag
+                        else "focus_observation.failure_classes",
+                    ),
+                ),
                 confidence=0.95,
             )
 
