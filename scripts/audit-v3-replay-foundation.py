@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +12,9 @@ from inverted.capability_ratchet.core import FailureFixture, Partition, ReplayRe
 from inverted.capability_ratchet.historical import V2EvidenceSource, preview_v2_failures
 from inverted.capability_ratchet.replay_store import ReplayStore
 from inverted.capability_ratchet.snapshot import _scan_secrets
+from inverted.capability_ratchet.surface_core import SurfaceAxis
+from inverted.capability_ratchet.surface_evidence import SurfaceEvidenceCompiler
+from inverted.capability_ratchet.surface_interventions import SUPPORTED_SURFACE_AXES
 
 
 REQUIRED_EXPORTS = {
@@ -37,6 +39,21 @@ REQUIRED_EXPORTS = {
     "SurfaceStepResult", "SurfaceStoreValidation", "SurfaceStudy", "select_surface_study",
     "semantic_contract_hash",
 }
+
+EXPECTED_SURFACE_AXES = {
+    SurfaceAxis.REASONING_BUDGET,
+    SurfaceAxis.TEMPERATURE,
+    SurfaceAxis.CONTEXT_DOSE,
+    SurfaceAxis.REPRESENTATION,
+    SurfaceAxis.ORDER,
+    SurfaceAxis.RECURRENCE,
+    SurfaceAxis.TIMING,
+    SurfaceAxis.PLACEMENT,
+    SurfaceAxis.CONTEXT_POSITION,
+    SurfaceAxis.DELIVERY_MODE,
+    SurfaceAxis.TRIGGER_MODE,
+}
+
 REQUIRED_FILES = (
     "src/inverted/capability_ratchet/core.py",
     "src/inverted/capability_ratchet/replay_store.py",
@@ -84,6 +101,7 @@ REQUIRED_FILES = (
     "tests/test_capability_ratchet_surface_lab.py",
     "tests/test_capability_ratchet_surface_cli.py",
     "tests/test_capability_ratchet_surface_preflight.py",
+    "tests/test_capability_ratchet_surface_omission_audit.py",
 )
 
 
@@ -103,10 +121,19 @@ def _material_observation_ids(source) -> tuple[set[str], int]:
         if raw_calls and isinstance(raw_calls[0], dict):
             request = raw_calls[0].get("request", {})
             response = raw_calls[0].get("response", {})
-            cap = bool(isinstance(request, dict) and request.get("think") is True
-                       and isinstance(response, dict) and response.get("done_reason") == "length")
-        material = (cap or not observation.completed or not observation.semantic_pass
-                    or not observation.contract_pass or bool(observation.failure_classes))
+            cap = bool(
+                isinstance(request, dict)
+                and request.get("think") is True
+                and isinstance(response, dict)
+                and response.get("done_reason") == "length"
+            )
+        material = (
+            cap
+            or not observation.completed
+            or not observation.semantic_pass
+            or not observation.contract_pass
+            or bool(observation.failure_classes)
+        )
         if material:
             expected.add(observation.observation_id)
             if cap:
@@ -124,7 +151,10 @@ def _cli_commands() -> set[str]:
 
 def _staged_run_paths() -> list[str]:
     completed = subprocess.run(
-        ["git", "diff", "--cached", "--name-only"], capture_output=True, text=True, check=True,
+        ["git", "diff", "--cached", "--name-only"],
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return [line for line in completed.stdout.splitlines() if line.startswith("runs/")]
 
@@ -144,6 +174,84 @@ def _placeholder_hits(repo: Path) -> list[str]:
     return hits
 
 
+def _stage5_semantic_checks(repo: Path, findings: list[str]) -> None:
+    _add(
+        findings,
+        set(SurfaceAxis) != EXPECTED_SURFACE_AXES,
+        "Stage-5 axis contract mismatch: "
+        + repr(sorted(item.value for item in set(SurfaceAxis) ^ EXPECTED_SURFACE_AXES)),
+    )
+    _add(
+        findings,
+        set(SUPPORTED_SURFACE_AXES) != EXPECTED_SURFACE_AXES,
+        "Stage-5 compiler axis coverage mismatch: "
+        + repr(sorted(item.value for item in set(SUPPORTED_SURFACE_AXES) ^ EXPECTED_SURFACE_AXES)),
+    )
+    _add(
+        findings,
+        not hasattr(SurfaceEvidenceCompiler, "point_physical_calls"),
+        "Stage-5 planner lacks exact frozen-fixture call estimator",
+    )
+
+    evidence_source = (
+        repo / "src/inverted/capability_ratchet/surface_evidence.py"
+    ).read_text(encoding="utf-8")
+    compiler_source = (
+        repo / "src/inverted/capability_ratchet/surface_interventions.py"
+    ).read_text(encoding="utf-8")
+    store_source = (
+        repo / "src/inverted/capability_ratchet/surface_store.py"
+    ).read_text(encoding="utf-8")
+    planner_source = (
+        repo / "src/inverted/capability_ratchet/surface_planner.py"
+    ).read_text(encoding="utf-8")
+
+    _add(
+        findings,
+        "surface-replay-{candidate.surface_point_id}" not in evidence_source,
+        "Stage-5 replay observations cannot recover generic surface-point identity",
+    )
+    _add(
+        findings,
+        "_mechanism_intervention_ids" not in evidence_source
+        or "_registered_baseline" not in evidence_source,
+        "Stage-5 cannot reuse the proven Plan-2 mechanism replay as a surface baseline",
+    )
+    _add(
+        findings,
+        "point_physical_calls" not in planner_source,
+        "Stage-5 planner does not consume the frozen-fixture physical-call estimator",
+    )
+    _add(
+        findings,
+        "registered originating intervention" not in store_source,
+        "Stage-5 studies are not gated by their originating causal intervention",
+    )
+    _add(
+        findings,
+        "requires a registered mechanism baseline value" not in store_source,
+        "Stage-5 non-cognition studies can omit their matched mechanism baseline",
+    )
+    _add(
+        findings,
+        "surface_delivery_events" not in store_source,
+        "Stage-5 progressive/trigger studies are not gated by observable delivery events",
+    )
+    incomplete = [
+        marker
+        for marker in (
+            "not implemented",
+            "does not support this surface axis yet",
+        )
+        if marker in compiler_source.lower()
+    ]
+    _add(
+        findings,
+        bool(incomplete),
+        f"incomplete Stage-5 execution markers remain: {incomplete}",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True)
@@ -152,8 +260,11 @@ def main(argv: list[str] | None = None) -> int:
     repo = Path.cwd()
     findings: list[str] = []
 
-    _add(findings, not REQUIRED_EXPORTS.issubset(set(cr.__all__)),
-         f"missing public exports: {sorted(REQUIRED_EXPORTS - set(cr.__all__))}")
+    _add(
+        findings,
+        not REQUIRED_EXPORTS.issubset(set(cr.__all__)),
+        f"missing public exports: {sorted(REQUIRED_EXPORTS - set(cr.__all__))}",
+    )
     missing_files = [path for path in REQUIRED_FILES if not (repo / path).is_file()]
     _add(findings, bool(missing_files), f"missing required replay files: {missing_files}")
     required_commands = {
@@ -161,10 +272,18 @@ def main(argv: list[str] | None = None) -> int:
         "autopsy", "plan-lab", "show-lab", "run-lab",
         "plan-surface", "show-surface", "run-surface",
     }
-    _add(findings, _cli_commands() != required_commands,
-         f"CLI command surface mismatch: {sorted(_cli_commands())}")
+    _add(
+        findings,
+        _cli_commands() != required_commands,
+        f"CLI command surface mismatch: {sorted(_cli_commands())}",
+    )
+    _stage5_semantic_checks(repo, findings)
     placeholder_hits = _placeholder_hits(repo)
-    _add(findings, bool(placeholder_hits), f"placeholder markers remain: {placeholder_hits[:10]}")
+    _add(
+        findings,
+        bool(placeholder_hits),
+        f"placeholder markers remain: {placeholder_hits[:10]}",
+    )
     staged_runs = _staged_run_paths()
     _add(findings, bool(staged_runs), f"generated runs are staged: {staged_runs}")
 
@@ -172,27 +291,51 @@ def main(argv: list[str] | None = None) -> int:
     preview = preview_v2_failures(source)
     loaded = source.load()
     expected_ids, expected_capped = _material_observation_ids(loaded)
-    _add(findings, preview.invalid_rows != 0,
-         f"historical preview has invalid rows: {preview.invalid_rows}")
-    _add(findings, preview.material_failures != len(expected_ids),
-         f"preview/material-set mismatch: preview={preview.material_failures} expected={len(expected_ids)}")
+    _add(
+        findings,
+        preview.invalid_rows != 0,
+        f"historical preview has invalid rows: {preview.invalid_rows}",
+    )
+    _add(
+        findings,
+        preview.material_failures != len(expected_ids),
+        f"preview/material-set mismatch: preview={preview.material_failures} expected={len(expected_ids)}",
+    )
 
     store = ReplayStore(Path(args.replay_root))
     validation = store.validate()
-    _add(findings, not validation.ok,
-         f"replay store validation failed: missing={validation.missing_assets} hash={validation.hash_mismatches} lineage={validation.broken_lineage}")
+    _add(
+        findings,
+        not validation.ok,
+        "replay store validation failed: "
+        f"missing={validation.missing_assets} hash={validation.hash_mismatches} "
+        f"lineage={validation.broken_lineage}",
+    )
     records = store.records() if validation.ok else ()
     fixtures = [record for record in records if isinstance(record, FailureFixture)]
     results = [record for record in records if isinstance(record, ReplayResult)]
-    actual_ids = {fixture.focus_observation_id for fixture in fixtures if fixture.parent_failure_snapshot_id is None}
-    _add(findings, actual_ids != expected_ids,
-         f"historical fixture coverage mismatch: missing={len(expected_ids-actual_ids)} extra={len(actual_ids-expected_ids)}")
-    capped_actual = sum(
-        1 for fixture in fixtures
-        if fixture.parent_failure_snapshot_id is None and "REASONING_CAP_EXHAUSTION" in fixture.failure_classes
+    actual_ids = {
+        fixture.focus_observation_id
+        for fixture in fixtures
+        if fixture.parent_failure_snapshot_id is None
+    }
+    _add(
+        findings,
+        actual_ids != expected_ids,
+        "historical fixture coverage mismatch: "
+        f"missing={len(expected_ids - actual_ids)} extra={len(actual_ids - expected_ids)}",
     )
-    _add(findings, capped_actual != expected_capped,
-         f"reasoning-cap fixture coverage mismatch: actual={capped_actual} expected={expected_capped}")
+    capped_actual = sum(
+        1
+        for fixture in fixtures
+        if fixture.parent_failure_snapshot_id is None
+        and "REASONING_CAP_EXHAUSTION" in fixture.failure_classes
+    )
+    _add(
+        findings,
+        capped_actual != expected_capped,
+        f"reasoning-cap fixture coverage mismatch: actual={capped_actual} expected={expected_capped}",
+    )
 
     referenced_assets: set[str] = set()
     malformed_fixture_count = 0
@@ -245,15 +388,26 @@ def main(argv: list[str] | None = None) -> int:
         except (KeyError, TypeError, ValueError, IndexError):
             malformed_fixture_count += 1
 
-    _add(findings, malformed_fixture_count != 0,
-         f"malformed/incomplete historical fixtures: {malformed_fixture_count}")
+    _add(
+        findings,
+        malformed_fixture_count != 0,
+        f"malformed/incomplete historical fixtures: {malformed_fixture_count}",
+    )
     for result in results:
         referenced_assets.add(result.output_asset_sha256)
         referenced_assets.add(result.raw_call_asset_sha256)
     asset_root = store.asset_root
-    asset_files = {path.stem for path in asset_root.glob("*.json")} if asset_root.exists() else set()
+    asset_files = (
+        {path.stem for path in asset_root.glob("*.json")}
+        if asset_root.exists()
+        else set()
+    )
     orphan_assets = sorted(asset_files - referenced_assets)
-    _add(findings, bool(orphan_assets), f"orphan replay assets: count={len(orphan_assets)} sample={orphan_assets[:5]}")
+    _add(
+        findings,
+        bool(orphan_assets),
+        f"orphan replay assets: count={len(orphan_assets)} sample={orphan_assets[:5]}",
+    )
 
     payload = {
         "forgotten_count": len(findings),
@@ -268,6 +422,8 @@ def main(argv: list[str] | None = None) -> int:
         "orphan_asset_count": len(orphan_assets),
         "registry_rows": validation.row_count,
         "registry_ok": validation.ok,
+        "stage5_axis_count": len(EXPECTED_SURFACE_AXES),
+        "stage5_compiler_axis_count": len(SUPPORTED_SURFACE_AXES),
     }
     print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
     return 0 if not findings else 1
