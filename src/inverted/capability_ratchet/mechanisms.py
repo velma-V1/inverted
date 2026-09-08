@@ -485,11 +485,15 @@ class MechanismLocalizer:
                     f"collect a matched target/sham result for hypothesis {hypothesis_id}"
                 )
 
+        promotion_by_id = {
+            event.promotion_event_id: event
+            for event in promotions
+        }
         return MechanismAssessment(
             labels=tuple(labels),
             supported_hypotheses=_unique(supported),
             falsified_hypotheses=_unique(falsified),
-            promotion_events=tuple(dict.fromkeys(promotions)),
+            promotion_events=tuple(promotion_by_id.values()),
             next_decisions=_unique(next_decisions),
         )
 
