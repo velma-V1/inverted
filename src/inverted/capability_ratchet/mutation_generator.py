@@ -237,6 +237,14 @@ class MutationGenerator:
         oracle_sha = self.replay_store.put_asset(oracle)
         root = self._root(source)
         mechanism_id = str(template.operator_state["mechanism_id"])
+        metadata = _plain(template.metadata)
+        if not isinstance(metadata, dict):
+            raise TypeError("mutation template metadata must materialize as a mapping")
+        metadata.update({
+            "mutation_spec_id": spec.spec_id,
+            "decision_id": spec.decision_id,
+            "protected": spec.protected,
+        })
         fixture = MutationFixture.create(
             failure_snapshot_id=root.failure_snapshot_id,
             source_failure_snapshot_id=source.failure_snapshot_id,
@@ -251,11 +259,7 @@ class MutationGenerator:
             semantic_contract_hash=semantic_contract_hash(template.semantic_contract),
             partition=source.partition,
             origin=MutationOrigin.SYNTHETIC_NEIGHBORHOOD,
-            metadata={
-                "mutation_spec_id": spec.spec_id,
-                "decision_id": spec.decision_id,
-                "protected": spec.protected,
-            },
+            metadata=metadata,
         )
         record_id = self.replay_store.append(fixture)
         return replace(fixture, record_id=record_id)
