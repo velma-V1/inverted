@@ -1,0 +1,199 @@
+name: v3-stage6-completion
+
+on:
+  push:
+    branches:
+      - build/qwen-thinking-tuning
+    paths:
+      - .gitignore
+      - .github/workflows/v3-stage6-completion.yml
+      - docs/superpowers/plans/2026-09-08-v3-failure-mutation-neighborhood-generalization.md
+      - src/inverted/capability_ratchet/**
+      - scripts/audit-v3-replay-foundation.py
+      - tests/test_capability_ratchet_*.py
+      - tests/test_universal_tuning_*.py
+      - tests/test_qwen_thinking_tuning.py
+      - live-evidence/qwen-thinking-tuning-v2-real-20260907/**
+      - src/inverted/evidence_privacy.py
+      - evidence/PRIVACY-TRACKED-SCAN.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage6-zero-call-completion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+
+      - name: Verify tracked evidence privacy
+        run: >-
+          python -m inverted.evidence_privacy check
+          --root evidence
+          --scan-out /tmp/stage6-privacy.json
+
+      - name: Run Stage-6 mutation suite
+        run: python -m pytest tests/test_capability_ratchet_mutation_*.py -q
+
+      - name: Run full capability-ratchet suite
+        run: python -m pytest tests/test_capability_ratchet_*.py -q
+
+      - name: Run explicit V2 regression suite
+        run: >-
+          python -m pytest
+          tests/test_universal_tuning_end_to_end.py
+          tests/test_universal_tuning_qwen_cli.py
+          tests/test_universal_tuning_runner.py
+          tests/test_universal_tuning_scheduler.py
+          tests/test_universal_tuning_scoring.py
+          tests/test_universal_tuning_statistics.py
+          tests/test_universal_tuning_tasks.py
+          tests/test_universal_tuning_v1_audit.py
+          tests/test_qwen_thinking_tuning.py
+          -q -k
+          "not test_powershell_launcher_dry_run_executes_repo_local_module and not test_powershell_launcher_uses_v2_default_dry_run"
+
+      - name: Run full repository regression on Linux
+        run: >-
+          python -m pytest -q -k
+          "not test_powershell_launcher_dry_run_executes_repo_local_module and not test_powershell_launcher_uses_v2_default_dry_run"
+
+      - name: Seed canonical historical replay corpus with zero inference
+        shell: bash
+        run: |
+          rm -rf /tmp/v3-stage6-completion
+          mkdir -p \
+            /tmp/v3-stage6-completion/replay \
+            /tmp/v3-stage6-completion/causal \
+            /tmp/v3-stage6-completion/surface \
+            /tmp/v3-stage6-completion/mutation
+          python -m inverted.capability_ratchet.cli seed-v2 \
+            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+            --replay-root /tmp/v3-stage6-completion/replay \
+            > /tmp/v3-stage6-completion/seed.json
+
+      - name: Run permanent replay Stage-5 and Stage-6 omission audit
+        shell: bash
+        run: |
+          python scripts/audit-v3-replay-foundation.py \
+            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+            --replay-root /tmp/v3-stage6-completion/replay \
+            > /tmp/v3-stage6-completion/audit.json
+
+      - name: Resolve historical Stage-6 prerequisites with zero model calls
+        shell: bash
+        run: |
+          python -m inverted.capability_ratchet.cli plan-surface \
+            --replay-root /tmp/v3-stage6-completion/replay \
+            --causal-root /tmp/v3-stage6-completion/causal \
+            --surface-root /tmp/v3-stage6-completion/surface \
+            --auto-eligible \
+            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+            > /tmp/v3-stage6-completion/historical-stage6-prerequisites.json
+
+      - name: Enforce Stage-6 completion invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/v3-stage6-completion')
+          seed = json.loads((root / 'seed.json').read_text(encoding='utf-8'))
+          audit = json.loads((root / 'audit.json').read_text(encoding='utf-8'))
+          historical = json.loads(
+              (root / 'historical-stage6-prerequisites.json').read_text(encoding='utf-8')
+          )
+          privacy = json.loads(Path('/tmp/stage6-privacy.json').read_text(encoding='utf-8'))
+
+          assert seed['MODEL_CALLS'] == 0
+          assert seed['total_observations'] == 3960
+          assert seed['material_failures'] == 2491
+          assert seed['fixtures_added'] == 2491
+          assert seed['invalid_rows'] == 0
+
+          assert audit['MODEL_CALLS'] == 0
+          assert audit['forgotten_count'] == 0, audit['forgotten_items']
+          assert audit['source_observations'] == 3960
+          assert audit['expected_material_failures'] == 2491
+          assert audit['registered_failure_fixtures'] == 2491
+          assert audit['expected_reasoning_cap_fixtures'] == 2045
+          assert audit['registered_reasoning_cap_fixtures'] == 2045
+          assert audit['replay_asset_files'] == 4604
+          assert audit['orphan_asset_count'] == 0
+          assert audit['registry_rows'] == 2491
+          assert audit['registry_ok'] is True
+          assert audit['stage5_axis_count'] == 11
+          assert audit['stage5_compiler_axis_count'] == 11
+          assert audit['stage6_axis_count'] == 13
+          assert audit['stage6_mutation_fixture_roundtrip'] is True
+          assert audit['stage6_synthetic_fresh_sealed_count'] == 0
+          assert audit['stage6_certified_event_count'] == 0
+          assert audit['stage6_zero_call_plan_contract'] is True
+          assert audit['stage6_registered_mutation_fixtures'] == 0
+
+          # Historical evidence has no durable MOVEMENT mechanism on which Stage 6 may
+          # manufacture a mutation study. If a future corpus reaches that prerequisite
+          # but lacks an explicit deterministic template, the only acceptable next
+          # status is NO_MUTATION_TEMPLATE. Both statuses are zero-call boundaries.
+          assert historical['MODEL_CALLS'] == 0
+          assert historical['status'] in {'NO_ELIGIBLE_MECHANISMS', 'NO_MUTATION_TEMPLATE'}
+          if historical['status'] == 'NO_ELIGIBLE_MECHANISMS':
+              assert historical['eligible_mechanisms'] == []
+              assert historical['plans'] == []
+
+          assert privacy['privacy_ok'] is True
+          assert privacy['total_matches'] == 0
+
+          summary = {
+              'STAGE6_COMPLETION': 'PASS',
+              'MODEL_CALLS': 0,
+              'source_observations': audit['source_observations'],
+              'failure_fixtures': audit['registered_failure_fixtures'],
+              'reasoning_cap_fixtures': audit['registered_reasoning_cap_fixtures'],
+              'replay_assets': audit['replay_asset_files'],
+              'orphan_assets': audit['orphan_asset_count'],
+              'forgotten_count': audit['forgotten_count'],
+              'stage6_axis_count': audit['stage6_axis_count'],
+              'stage6_mutation_fixture_roundtrip': audit['stage6_mutation_fixture_roundtrip'],
+              'stage6_synthetic_fresh_sealed_count': audit['stage6_synthetic_fresh_sealed_count'],
+              'stage6_certified_event_count': audit['stage6_certified_event_count'],
+              'stage6_zero_call_plan_contract': audit['stage6_zero_call_plan_contract'],
+              'historical_stage6_status': historical['status'],
+              'privacy_matches': privacy['total_matches'],
+          }
+          (root / 'STAGE6-COMPLETION.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(summary, sort_keys=True, separators=(',', ':')))
+          PY
+
+      - name: Verify tracked tree remains clean
+        shell: bash
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          status="$(git status --porcelain)"
+          printf '%s\n' "$status"
+          test -z "$status"
+
+      - name: Upload Stage-6 zero-call completion evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v3-stage6-completion-evidence
+          path: |
+            /tmp/v3-stage6-completion/seed.json
+            /tmp/v3-stage6-completion/audit.json
+            /tmp/v3-stage6-completion/historical-stage6-prerequisites.json
+            /tmp/v3-stage6-completion/STAGE6-COMPLETION.json
+            /tmp/stage6-privacy.json
+          if-no-files-found: error
