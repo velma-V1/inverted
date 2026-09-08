@@ -5,7 +5,9 @@ on:
     branches:
       - build/qwen-thinking-tuning
     paths:
+      - .gitignore
       - .github/workflows/v3-plan3-completion.yml
+      - docs/superpowers/plans/2026-09-07-v3-operating-surface-deepening.md
       - src/inverted/capability_ratchet/**
       - scripts/audit-v3-replay-foundation.py
       - tests/test_capability_ratchet_*.py
