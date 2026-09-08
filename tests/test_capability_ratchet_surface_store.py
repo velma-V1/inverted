@@ -251,7 +251,7 @@ def test_surface_store_detects_manifest_tamper(tmp_path) -> None:
     assert not report.ok
     assert "surface-studies.sha256" in report.hash_mismatches
 
-    store.study_manifest_path.write_text(
-        hashlib.sha256(store.study_path.read_bytes()).hexdigest() + "\n", encoding="ascii"
+    store.study_manifest_path.write_bytes(
+        hashlib.sha256(store.study_path.read_bytes()).hexdigest().encode("ascii") + b"\n"
     )
     assert store.validate().ok
