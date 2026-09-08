@@ -115,9 +115,14 @@ class TomographyEvidenceStore:
 
     @staticmethod
     def _logical_id(value: Any) -> str:
-        for name in ("study_id", "probe_id", "outcome_id", "profile_id"):
-            if hasattr(value, name):
-                return str(getattr(value, name))
+        if isinstance(value, TomographyStudy):
+            return value.study_id
+        if isinstance(value, TomographyProbe):
+            return value.probe_id
+        if isinstance(value, TomographyOutcome):
+            return value.outcome_id
+        if isinstance(value, TomographyProfile):
+            return value.profile_id
         raise TypeError("unsupported tomography record")
 
     def _records(self) -> tuple[Any, ...]:
