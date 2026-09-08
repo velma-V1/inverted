@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 import inverted.capability_ratchet as ratchet
+from inverted.universal_tuning.core import AtomicTask
 
 
 def _api() -> dict[str, Any]:
     required = (
         "AttemptOutcome",
-        "CampaignTask",
         "RetryCampaignOrchestrator",
         "RetryIngredient",
     )
@@ -17,9 +17,19 @@ def _api() -> dict[str, Any]:
     return {name: getattr(ratchet, name) for name in required}
 
 
+def _task(task_id: str, difficulty: int) -> AtomicTask:
+    return AtomicTask(
+        task_id=task_id,
+        family="TEST1B_V3",
+        difficulty=difficulty,
+        prompt=f"Solve {task_id}",
+        expected={"answer": difficulty},
+        scorer="exact_value",
+    )
+
+
 def test_hard_failure_gets_exactly_two_retries_is_snapshotted_and_campaign_continues() -> None:
     api = _api()
-    CampaignTask = api["CampaignTask"]
     RetryIngredient = api["RetryIngredient"]
     AttemptOutcome = api["AttemptOutcome"]
     RetryCampaignOrchestrator = api["RetryCampaignOrchestrator"]
@@ -50,8 +60,8 @@ def test_hard_failure_gets_exactly_two_retries_is_snapshotted_and_campaign_conti
     result = orchestrator.run(
         model_id="qwen3.5-9b-q8",
         tasks=(
-            CampaignTask("difficulty-1", difficulty=1),
-            CampaignTask("difficulty-2", difficulty=2),
+            _task("difficulty-1", 1),
+            _task("difficulty-2", 2),
         ),
     )
 
@@ -76,7 +86,6 @@ def test_hard_failure_gets_exactly_two_retries_is_snapshotted_and_campaign_conti
 
 def test_retry_a_recovery_stops_retrying_that_task_but_continues_ladder() -> None:
     api = _api()
-    CampaignTask = api["CampaignTask"]
     RetryIngredient = api["RetryIngredient"]
     AttemptOutcome = api["AttemptOutcome"]
     RetryCampaignOrchestrator = api["RetryCampaignOrchestrator"]
@@ -103,8 +112,8 @@ def test_retry_a_recovery_stops_retrying_that_task_but_continues_ladder() -> Non
     result = orchestrator.run(
         model_id="qwen3.5-9b-q8",
         tasks=(
-            CampaignTask("difficulty-1", difficulty=1),
-            CampaignTask("difficulty-2", difficulty=2),
+            _task("difficulty-1", 1),
+            _task("difficulty-2", 2),
         ),
     )
 
@@ -123,7 +132,6 @@ def test_retry_a_recovery_stops_retrying_that_task_but_continues_ladder() -> Non
 
 def test_retry_b_recovery_records_both_pre_recovery_failures() -> None:
     api = _api()
-    CampaignTask = api["CampaignTask"]
     RetryIngredient = api["RetryIngredient"]
     AttemptOutcome = api["AttemptOutcome"]
     RetryCampaignOrchestrator = api["RetryCampaignOrchestrator"]
@@ -147,7 +155,7 @@ def test_retry_b_recovery_records_both_pre_recovery_failures() -> None:
     )
     result = orchestrator.run(
         model_id="qwen3.5-9b-q8",
-        tasks=(CampaignTask("difficulty-1", difficulty=1),),
+        tasks=(_task("difficulty-1", 1),),
     )
 
     assert snapshots == ["INITIAL", "RETRY_A"]
