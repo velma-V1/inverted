@@ -17,6 +17,7 @@ from .interventions import InterventionGenerator
 from .lab import FailureLab, FailureResearchProgram
 from .mechanisms import MechanismLocalizer
 from .mutation_analysis import MutationAnalyzer
+from .mutation_bootstrap import plan_eligible_mutations
 from .mutation_generator import MutationGenerator
 from .mutation_lab import MutationLab
 from .mutation_planner import MutationPlanner
@@ -123,12 +124,22 @@ def _add_surface_args(
         parser.add_argument("--allow-model-calls", action="store_true")
 
 
-def _add_mutation_args(parser: argparse.ArgumentParser, *, executable: bool = False) -> None:
+def _add_mutation_args(
+    parser: argparse.ArgumentParser,
+    *,
+    executable: bool = False,
+    auto_eligible: bool = False,
+) -> None:
     parser.add_argument("--replay-root", required=True)
     parser.add_argument("--causal-root", required=True)
     parser.add_argument("--surface-root", required=True)
     parser.add_argument("--mutation-root", required=True)
-    parser.add_argument("--study-id", required=True)
+    if auto_eligible:
+        selector = parser.add_mutually_exclusive_group(required=True)
+        selector.add_argument("--study-id")
+        selector.add_argument("--auto-eligible", action="store_true")
+    else:
+        parser.add_argument("--study-id", required=True)
     if executable:
         parser.add_argument("--allow-model-calls", action="store_true")
 
@@ -212,7 +223,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_surface_args(run_surface, executable=True)
 
     plan_mutations = sub.add_parser("plan-mutations")
-    _add_mutation_args(plan_mutations)
+    _add_mutation_args(plan_mutations, auto_eligible=True)
 
     show_mutations = sub.add_parser("show-mutations")
     _add_mutation_args(show_mutations)
@@ -557,6 +568,22 @@ def _mutation_plan_payload(study, plan) -> dict[str, Any]:
             "protected_challenges": plan.protected_challenge_calls,
         },
         "MODEL_CALLS": 0,
+    }
+
+
+def _auto_mutation_payload(mutation: MutationEvidenceStore) -> dict[str, Any]:
+    result = plan_eligible_mutations(mutation)
+    return {
+        "status": result.status,
+        "eligible_mechanisms": list(result.eligible_mechanisms),
+        "plans": [
+            {
+                "study": _mutation_study_payload(item.study),
+                "plan": _mutation_plan_payload(item.study, item.plan),
+            }
+            for item in result.plans
+        ],
+        "MODEL_CALLS": result.model_calls,
     }
 
 
@@ -906,26 +933,29 @@ def main(
             causal, surface, mutation = _build_mutation_stores(
                 store, causal_root, surface_root, mutation_root
             )
-            study = _mutation_study(mutation, args.study_id)
-            if args.command == "plan-mutations":
-                payload = _mutation_plan_payload(study, MutationPlanner(mutation).plan_next(study))
+            if args.command == "plan-mutations" and getattr(args, "auto_eligible", False):
+                payload = _auto_mutation_payload(mutation)
             else:
-                payload = {
-                    "study": _mutation_study_payload(study),
-                    "outcomes": [
-                        _mutation_outcome_payload(row)
-                        for row in mutation.outcomes(study.study_id)
-                    ],
-                    "profiles": [
-                        _mutation_profile_payload(row)
-                        for row in mutation.profiles(study.study_id)
-                    ],
-                    "replay_store_valid": store.validate().ok,
-                    "causal_store_valid": causal.validate().ok,
-                    "surface_store_valid": surface.validate().ok,
-                    "mutation_store_valid": mutation.validate().ok,
-                    "MODEL_CALLS": 0,
-                }
+                study = _mutation_study(mutation, args.study_id)
+                if args.command == "plan-mutations":
+                    payload = _mutation_plan_payload(study, MutationPlanner(mutation).plan_next(study))
+                else:
+                    payload = {
+                        "study": _mutation_study_payload(study),
+                        "outcomes": [
+                            _mutation_outcome_payload(row)
+                            for row in mutation.outcomes(study.study_id)
+                        ],
+                        "profiles": [
+                            _mutation_profile_payload(row)
+                            for row in mutation.profiles(study.study_id)
+                        ],
+                        "replay_store_valid": store.validate().ok,
+                        "causal_store_valid": causal.validate().ok,
+                        "surface_store_valid": surface.validate().ok,
+                        "mutation_store_valid": mutation.validate().ok,
+                        "MODEL_CALLS": 0,
+                    }
         except (KeyError, TypeError, ValueError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
