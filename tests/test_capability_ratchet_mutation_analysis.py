@@ -367,7 +367,7 @@ def test_promotion_candidate_emits_only_movement_to_tier_candidate(tmp_path):
         replay,
         ReplaySelector(promotion_state=PromotionState.TIER_CANDIDATE, mechanism="mechanism-1"),
     )
-    assert source.failure_snapshot_id in {item.failure_snapshot_id for item in selected}
+    assert [item.failure_snapshot_id for item in selected] == [source.failure_snapshot_id]
 
 
 def test_protected_negative_transfer_blocks_promotion_and_remains_boundary(tmp_path):
@@ -386,27 +386,18 @@ def test_protected_negative_transfer_blocks_promotion_and_remains_boundary(tmp_p
     )
 
 
-def test_tier_candidate_state_and_mechanism_are_inherited_by_child_failure_family(tmp_path):
+def test_registered_policy_can_explicitly_allow_one_protected_failure(tmp_path):
     specs = _promotion_specs(protected_failure=True)
     passes = (True,) * (len(specs) - 1) + (False,)
     relaxed = MutationPolicy(max_protected_failures=1)
     replay, mutation, study, _ = _case(tmp_path, specs, passes, policy=relaxed)
     analyzer = MutationAnalyzer(replay, mutation)
     profile = analyzer.analyze(study.study_id)
+    assert profile.protected_failures
     assert profile.classification is GeneralizationClass.PROMOTION_CANDIDATE
-    assert analyzer.maybe_promote(profile) is not None
-
-    children = tuple(
-        record for record in replay.records()
-        if isinstance(record, FailureFixture) and record.parent_failure_snapshot_id is not None
-    )
-    assert children
-    selected = select_failures(
-        replay,
-        ReplaySelector(promotion_state=PromotionState.TIER_CANDIDATE, mechanism="mechanism-1"),
-    )
-    selected_ids = {item.failure_snapshot_id for item in selected}
-    assert children[0].failure_snapshot_id in selected_ids
+    event = analyzer.maybe_promote(profile)
+    assert event is not None
+    assert event.to_state is PromotionState.TIER_CANDIDATE
 
 
 def test_stage6_never_emits_certified(tmp_path):
