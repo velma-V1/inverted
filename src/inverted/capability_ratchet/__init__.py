@@ -37,6 +37,11 @@ from .interventions import InterventionGenerator, TailoredInterventionGenerator
 from .lab import FailureLab, FailureResearchProgram, FailureResearchResult
 from .mechanisms import MechanismAssessment, MechanismLocalizer
 from .mutation_analysis import MutationAnalyzer
+from .mutation_bootstrap import (
+    MutationBootstrapPlan,
+    MutationBootstrapResult,
+    plan_eligible_mutations,
+)
 from .mutation_core import (
     GeneralizationClass,
     GeneralizationProfile,
@@ -106,6 +111,8 @@ __all__ = [
     "MechanismRole",
     "MutationAnalyzer",
     "MutationAxis",
+    "MutationBootstrapPlan",
+    "MutationBootstrapResult",
     "MutationDirection",
     "MutationEvidenceStore",
     "MutationFixture",
@@ -167,6 +174,7 @@ __all__ = [
     "build_ablations",
     "build_failure_fixture",
     "from_payload",
+    "plan_eligible_mutations",
     "plan_eligible_surfaces",
     "preview_v2_failures",
     "seed_v2_failures",
