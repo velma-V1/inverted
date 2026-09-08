@@ -507,6 +507,7 @@ class ReplayStore:
                 broken.append(f"{kind} {identity}: root family mismatch")
 
         child_claims: dict[str, list[str]] = {}
+        campaign_retry_ids: set[str] = set()
         for record in active_records:
             if isinstance(record, FailureFixture) and record.parent_failure_snapshot_id is not None:
                 parent = failures.get(record.parent_failure_snapshot_id)
@@ -525,6 +526,41 @@ class ReplayStore:
                     broken.append(f"failure {record.failure_snapshot_id}: does not resolve to a root failure")
                 elif record.family != failures[root_id].family:
                     broken.append(f"failure {record.failure_snapshot_id}: family mismatch with root {root_id}")
+
+                if record.metadata.get("lineage_kind") == "CAMPAIGN_RETRY":
+                    campaign_retry_ids.add(record.failure_snapshot_id)
+                    if parent is not None:
+                        expected_stage = {
+                            "RETRY_A": "INITIAL",
+                            "RETRY_B": "RETRY_A",
+                        }.get(record.metadata.get("attempt_stage"))
+                        if expected_stage is None:
+                            broken.append(
+                                f"failure {record.failure_snapshot_id}: invalid campaign retry stage"
+                            )
+                        if parent.metadata.get("attempt_stage") != expected_stage:
+                            broken.append(
+                                f"failure {record.failure_snapshot_id}: campaign retry stage does not follow parent"
+                            )
+                        if record.source_campaign_id != parent.source_campaign_id:
+                            broken.append(
+                                f"failure {record.failure_snapshot_id}: campaign retry source campaign mismatch"
+                            )
+                        if record.focus_task_id != parent.focus_task_id:
+                            broken.append(
+                                f"failure {record.failure_snapshot_id}: campaign retry task mismatch"
+                            )
+                        if record.partition != parent.partition:
+                            broken.append(
+                                f"failure {record.failure_snapshot_id}: campaign retry partition mismatch"
+                            )
+                        if (record.source_model_id, record.source_model_digest) != (
+                            parent.source_model_id,
+                            parent.source_model_digest,
+                        ):
+                            broken.append(
+                                f"failure {record.failure_snapshot_id}: campaign retry model mismatch"
+                            )
             elif isinstance(record, ReplayRequest):
                 parent = failures.get(record.parent_failure_snapshot_id)
                 validate_declared_root(
@@ -576,6 +612,8 @@ class ReplayStore:
         for failure in failures.values():
             if failure.parent_failure_snapshot_id is None:
                 continue
+            if failure.failure_snapshot_id in campaign_retry_ids:
+                continue
             claims = child_claims.get(failure.failure_snapshot_id, [])
             if not claims:
                 broken.append(
@@ -596,7 +634,12 @@ class ReplayStore:
     @staticmethod
     def _asset_hashes(record: ReplayRecord | SupersessionRecord) -> tuple[str, ...]:
         if isinstance(record, FailureFixture):
-            return (record.model_visible_asset_sha256,)
+            digests = [record.model_visible_asset_sha256]
+            for key in ("forensic_asset_sha256", "oracle_asset_sha256"):
+                value = record.metadata.get(key)
+                if value is not None:
+                    digests.append(value)
+            return tuple(digests)
         if isinstance(record, ReplayResult):
             return (record.output_asset_sha256, record.raw_call_asset_sha256)
         return ()
