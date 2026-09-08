@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from inverted.capability_ratchet import Partition, ReplayRecordType
+from inverted.capability_ratchet import Partition, ReplayRecordType, ReplayRequest
 from inverted.capability_ratchet.historical import V2EvidenceSource, seed_v2_failures
 from inverted.capability_ratchet.replay_store import ReplayStore
 
@@ -105,6 +105,44 @@ def test_seed_imports_one_fixture_per_atomic_failure_and_reuses_batch_asset(tmp_
     assert len(failures) == 2
     assert failures[0].model_visible_asset_sha256 == failures[1].model_visible_asset_sha256
     assert {f.focus_task_id for f in failures} == {"mini-1", "mini-3"}
+
+
+def test_test1b_v3_generation0_contract_is_classified_provenanced_and_replay_ready(tmp_path) -> None:
+    source = V2EvidenceSource(write_mini_v2(tmp_path / "source", failed=(1, 3)))
+    store = ReplayStore(tmp_path / "replay")
+
+    result = seed_v2_failures(source, store)
+    failures = failure_records(store)
+
+    assert result.total_observations == 5
+    assert result.material_failures == 2
+    assert result.fixtures_added == 2
+    assert result.invalid_rows == 0
+    assert {fixture.focus_task_id for fixture in failures} == {"mini-1", "mini-3"}
+    assert all(fixture.partition is Partition.HISTORICAL for fixture in failures)
+    assert all(fixture.failure_classes == ("SEMANTIC_FAIL",) for fixture in failures)
+    assert all(fixture.source_campaign_id.startswith("v2-evidence-") for fixture in failures)
+    assert all(fixture.source_trial_id == "trial-1" for fixture in failures)
+    assert all(
+        fixture.source_evidence_refs == (
+            "raw_calls.jsonl:trial-1",
+            f"atomic_observations.jsonl:{fixture.focus_observation_id}",
+        )
+        for fixture in failures
+    )
+
+    for fixture in failures:
+        request = ReplayRequest.for_exact(
+            fixture,
+            decision_id="generation0-certification",
+            hypothesis_id="historical-failure-reproduces-exactly",
+        )
+        assert request.failure_snapshot_id == fixture.failure_snapshot_id
+        assert request.parent_failure_snapshot_id == fixture.failure_snapshot_id
+        assert request.parent_state_hash == fixture.state_hash
+        assert request.partition is Partition.HISTORICAL
+        assert request.changed_dimensions == ()
+        assert request.overrides == {}
 
 
 def test_reasoning_cap_exhaustion_is_material_even_when_answers_pass(tmp_path) -> None:
