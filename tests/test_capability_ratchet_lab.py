@@ -116,7 +116,7 @@ def test_prepare_is_zero_call_deterministic_and_compiles_one_parent_state(tmp_pa
     assert all(request.parent_failure_snapshot_id == fixture.failure_snapshot_id for request in first.replay_requests)
     assert all(request.parent_state_hash == fixture.state_hash for request in first.replay_requests)
     assert not any(isinstance(row, ReplayRequest) for row in replay.records())
-    assert replay.registry_path.read_bytes() != before  # causal metadata is external; replay remains failure-only
+    assert replay.registry_path.read_bytes() == before
     assert replay.get_failure(fixture.failure_snapshot_id) == fixture
     assert causal.validate().ok
 
