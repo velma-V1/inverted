@@ -53,7 +53,8 @@ def _point(
         bool(row.completed and row.semantic_pass and row.contract_pass)
         for row in rows
     )
-    success_rate = sum(successes) / len(rows)
+    success_count = sum(successes)
+    success_rate = success_count / len(rows)
     failure_counts: Counter[str] = Counter()
     for row, success in zip(rows, successes):
         if success:
@@ -64,7 +65,7 @@ def _point(
         thinking_budget=int(budget),
         n_observations=len(rows),
         success_rate=success_rate,
-        failure_rate=1.0 - success_rate,
+        failure_rate=(len(rows) - success_count) / len(rows),
         semantic_quality_mean=_mean(row.semantic_quality for row in rows),
         contract_quality_mean=_mean(row.contract_quality for row in rows),
         completion_rate=_mean(float(row.completed) for row in rows),
