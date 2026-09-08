@@ -7,10 +7,13 @@ without creating a second evidence system.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from inverted.universal_tuning.core import AtomicTask
+
+from .core import _freeze
 
 
 _INITIAL = "INITIAL"
@@ -28,6 +31,17 @@ def _required(name: str, value: str) -> None:
         raise ValueError(f"{name} is required")
 
 
+def _string_tuple(name: str, value: Any, *, allow_empty: bool) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, (list, tuple)):
+        raise TypeError(f"{name} must be a sequence of strings")
+    items = tuple(value)
+    if not allow_empty and not items:
+        raise ValueError(f"{name} must not be empty")
+    if any(not isinstance(item, str) or not item.strip() for item in items):
+        raise TypeError(f"{name} must contain non-blank strings")
+    return items
+
+
 @dataclass(frozen=True)
 class RetryIngredient:
     """One declared intervention used after a failed attempt."""
@@ -41,25 +55,62 @@ class RetryIngredient:
 
 
 @dataclass(frozen=True)
+class AttemptEvidence:
+    """Exact evidence required to turn a failed attempt into TEST_REPLAY data."""
+
+    request_envelopes: tuple[Mapping[str, Any], ...]
+    forensic_payload: Mapping[str, Any]
+    oracle_payload: Mapping[str, Any]
+    inference_profile: Mapping[str, Any]
+    inference_seed: int
+    source_evidence_refs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        envelopes = tuple(self.request_envelopes)
+        if not envelopes or any(not isinstance(item, Mapping) for item in envelopes):
+            raise TypeError("request_envelopes must contain at least one mapping")
+        if not isinstance(self.forensic_payload, Mapping):
+            raise TypeError("forensic_payload must be a mapping")
+        if not isinstance(self.oracle_payload, Mapping):
+            raise TypeError("oracle_payload must be a mapping")
+        if not isinstance(self.inference_profile, Mapping):
+            raise TypeError("inference_profile must be a mapping")
+        if not isinstance(self.inference_seed, int) or isinstance(self.inference_seed, bool):
+            raise TypeError("inference_seed must be an integer")
+        refs = _string_tuple(
+            "source_evidence_refs", self.source_evidence_refs, allow_empty=False
+        )
+        object.__setattr__(self, "request_envelopes", _freeze(envelopes))
+        object.__setattr__(self, "forensic_payload", _freeze(self.forensic_payload))
+        object.__setattr__(self, "oracle_payload", _freeze(self.oracle_payload))
+        object.__setattr__(self, "inference_profile", _freeze(self.inference_profile))
+        object.__setattr__(self, "source_evidence_refs", refs)
+
+
+@dataclass(frozen=True)
 class AttemptOutcome:
     """Normalized result returned by the model-specific attempt executor."""
 
     passed: bool
     failure_classes: tuple[str, ...] = ()
+    failure_subtypes: tuple[str, ...] = ()
+    evidence: AttemptEvidence | None = None
 
     def __post_init__(self) -> None:
         if type(self.passed) is not bool:
             raise TypeError("passed must be boolean")
-        if isinstance(self.failure_classes, (str, bytes, bytearray)):
-            raise TypeError("failure_classes must be a sequence of strings")
-        classes = tuple(self.failure_classes)
-        if any(not isinstance(item, str) or not item.strip() for item in classes):
-            raise TypeError("failure_classes must contain non-blank strings")
-        if self.passed and classes:
-            raise ValueError("passed outcomes cannot contain failure classes")
-        if not self.passed and not classes:
-            raise ValueError("failed outcomes require at least one failure class")
+        classes = _string_tuple(
+            "failure_classes", self.failure_classes, allow_empty=self.passed
+        )
+        subtypes = _string_tuple(
+            "failure_subtypes", self.failure_subtypes, allow_empty=True
+        )
+        if self.passed and (classes or subtypes):
+            raise ValueError("passed outcomes cannot contain failure classes or subtypes")
+        if self.evidence is not None and not isinstance(self.evidence, AttemptEvidence):
+            raise TypeError("evidence must be AttemptEvidence or None")
         object.__setattr__(self, "failure_classes", classes)
+        object.__setattr__(self, "failure_subtypes", subtypes)
 
 
 @dataclass(frozen=True)
