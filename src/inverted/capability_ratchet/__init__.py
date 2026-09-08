@@ -14,6 +14,7 @@ from .core import (
     from_payload,
     to_payload,
 )
+from .ollama_retry import OllamaExecutionCapabilities, OllamaRetryAttemptExecutor
 from .orchestration import (
     AttemptEvidence,
     AttemptOutcome,
@@ -32,6 +33,8 @@ __all__ = [
     "AttemptOutcome",
     "CapabilityBoundaries",
     "FailureFixture",
+    "OllamaExecutionCapabilities",
+    "OllamaRetryAttemptExecutor",
     "Partition",
     "PromotionState",
     "QueuedFailureReplay",
