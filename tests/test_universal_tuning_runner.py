@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -170,10 +171,11 @@ def test_model_completion_failure_is_recorded_and_later_trials_continue(tmp_path
     assert len(adapter.calls) == 4
     assert result.physical_calls > 0
     rows = [json.loads(line) for line in (tmp_path / "atomic_observations.jsonl").read_text().splitlines()]
-    first_batch = [row for row in rows if row["batch_id"] == trials[0].batch_id and row["profile"] == {
-        "thinking_budget": trials[0].profile.thinking_budget, "temperature": trials[0].profile.temperature,
-        "top_p": None, "top_k": None, "min_p": None, "presence_penalty": None, "repeat_penalty": None,
-    }]
+    first_batch = [
+        row for row in rows
+        if row["batch_id"] == trials[0].batch_id
+        and row["profile"] == asdict(trials[0].profile)
+    ]
     assert len(first_batch) == 5
     assert all(not row["completed"] for row in first_batch)
     assert all("COMPLETION_FAIL" in row["failure_classes"] for row in first_batch)
