@@ -19,6 +19,7 @@ from .mechanisms import MechanismLocalizer
 from .query import ReplaySelector, select_failures, select_surface_study
 from .replay_store import ReplayStore
 from .surface_analysis import SurfaceAnalyzer
+from .surface_bootstrap import plan_eligible_surfaces
 from .surface_evidence import SurfaceEvidenceCompiler
 from .surface_interventions import SurfaceInterventionCompiler
 from .surface_lab import OperatingSurfaceLab
@@ -98,13 +99,20 @@ def _add_lab_args(parser: argparse.ArgumentParser, *, executable: bool = False) 
         parser.add_argument("--allow-model-calls", action="store_true")
 
 
-def _add_surface_args(parser: argparse.ArgumentParser, *, executable: bool = False) -> None:
+def _add_surface_args(
+    parser: argparse.ArgumentParser,
+    *,
+    executable: bool = False,
+    auto_eligible: bool = False,
+) -> None:
     parser.add_argument("--replay-root", required=True)
     parser.add_argument("--causal-root", required=True)
     parser.add_argument("--surface-root", required=True)
     selector = parser.add_mutually_exclusive_group(required=True)
     selector.add_argument("--study-id")
     selector.add_argument("--mechanism-id")
+    if auto_eligible:
+        selector.add_argument("--auto-eligible", action="store_true")
     if executable:
         parser.add_argument("--allow-model-calls", action="store_true")
 
@@ -178,7 +186,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_lab_args(run_lab, executable=True)
 
     plan_surface = sub.add_parser("plan-surface")
-    _add_surface_args(plan_surface)
+    _add_surface_args(plan_surface, auto_eligible=True)
+    plan_surface.add_argument("--source")
 
     show_surface = sub.add_parser("show-surface")
     _add_surface_args(show_surface)
@@ -347,18 +356,22 @@ def _surface_study_payload(study) -> dict[str, Any]:
     }
 
 
+def _surface_point_payload(point) -> dict[str, Any]:
+    return {
+        "surface_point_id": point.surface_point_id,
+        "axis": point.axis.value,
+        "value": point.value,
+        "decision_id": point.decision_id,
+        "protected_exploration": point.protected_exploration,
+    }
+
+
 def _surface_plan_payload(study, plan) -> dict[str, Any]:
     return {
         "study_id": study.study_id,
         "failure_snapshot_id": study.failure_snapshot_id,
         "mechanism_id": study.mechanism_id,
-        "points": [{
-            "surface_point_id": point.surface_point_id,
-            "axis": point.axis.value,
-            "value": point.value,
-            "decision_id": point.decision_id,
-            "protected_exploration": point.protected_exploration,
-        } for point in plan.points],
+        "points": [_surface_point_payload(point) for point in plan.points],
         "decision_reason": plan.decision_reason,
         "stop_reason": plan.stop_reason,
         "call_geometry": {
@@ -367,6 +380,33 @@ def _surface_plan_payload(study, plan) -> dict[str, Any]:
             "worst_case": plan.worst_case_physical_calls,
             "protected_exploration": plan.protected_exploration_calls,
         },
+        "MODEL_CALLS": 0,
+    }
+
+
+def _auto_surface_payload(lab: OperatingSurfaceLab, args: argparse.Namespace) -> dict[str, Any]:
+    source = V2EvidenceSource(Path(args.source)) if getattr(args, "source", None) else None
+    planned = plan_eligible_surfaces(lab, source=source)
+    if not planned:
+        return {
+            "MODEL_CALLS": 0,
+            "eligible_mechanisms": [],
+            "plans": [],
+            "status": "NO_ELIGIBLE_MECHANISMS",
+        }
+    return {
+        "status": "SURFACE_PLAN_READY",
+        "eligible_mechanisms": sorted({item.study.mechanism_id for item in planned}),
+        "plans": [
+            {
+                "study": _surface_study_payload(item.study),
+                "reused_points": [_surface_point_payload(point) for point in item.reused_points],
+                "unresolved_points": [_surface_point_payload(point) for point in item.unresolved_points],
+                "historical_prior_count": item.historical_prior_count,
+                "plan": _surface_plan_payload(item.study, item.plan),
+            }
+            for item in planned
+        ],
         "MODEL_CALLS": 0,
     }
 
@@ -634,26 +674,29 @@ def main(
         surface_root = Path(args.surface_root)
         try:
             lab = _build_surface_lab(store, causal_root, surface_root)
-            study = _surface_study(lab, args)
-            if args.command == "plan-surface":
-                payload = _surface_plan_payload(study, lab.prepare(study.study_id))
+            if args.command == "plan-surface" and getattr(args, "auto_eligible", False):
+                payload = _auto_surface_payload(lab, args)
             else:
-                payload = {
-                    "study": _surface_study_payload(study),
-                    "observations": [
-                        _surface_observation_payload(row)
-                        for row in lab.surface_store.observations(study.study_id)
-                    ],
-                    "profiles": [
-                        _surface_profile_payload(row)
-                        for row in lab.surface_store.profiles(study.mechanism_id)
-                        if row.study_id == study.study_id
-                    ],
-                    "replay_store_valid": store.validate().ok,
-                    "causal_store_valid": lab.causal_store.validate().ok,
-                    "surface_store_valid": lab.surface_store.validate().ok,
-                    "MODEL_CALLS": 0,
-                }
+                study = _surface_study(lab, args)
+                if args.command == "plan-surface":
+                    payload = _surface_plan_payload(study, lab.prepare(study.study_id))
+                else:
+                    payload = {
+                        "study": _surface_study_payload(study),
+                        "observations": [
+                            _surface_observation_payload(row)
+                            for row in lab.surface_store.observations(study.study_id)
+                        ],
+                        "profiles": [
+                            _surface_profile_payload(row)
+                            for row in lab.surface_store.profiles(study.mechanism_id)
+                            if row.study_id == study.study_id
+                        ],
+                        "replay_store_valid": store.validate().ok,
+                        "causal_store_valid": lab.causal_store.validate().ok,
+                        "surface_store_valid": lab.surface_store.validate().ok,
+                        "MODEL_CALLS": 0,
+                    }
         except (KeyError, TypeError, ValueError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
