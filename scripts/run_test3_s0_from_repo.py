@@ -18,6 +18,19 @@ def _run(args: list[str], *, cwd: Path) -> None:
     subprocess.run(args, cwd=cwd, check=True)
 
 
+def _print_s0_failure_packet(output: Path) -> None:
+    """Expose the already-written integrity failure evidence without weakening the gate."""
+    for name in ("verdict.json", "source_integrity.csv", "provenance.json"):
+        path = output / name
+        if not path.is_file():
+            continue
+        print(f"===== {name} =====", file=sys.stderr)
+        try:
+            print(path.read_text(encoding="utf-8-sig"), file=sys.stderr)
+        except UnicodeDecodeError:
+            print(path.read_text(encoding="utf-8", errors="replace"), file=sys.stderr)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Reproduce Test-3 S0 from committed empirical evidence.")
     parser.add_argument("--work-dir", default="test3-s0-repo-run")
@@ -92,21 +105,25 @@ def main() -> int:
         manifest_args.extend(["--source", source_id, source_class, str(path)])
     _run(manifest_args, cwd=repo)
 
-    _run(
-        [
-            sys.executable,
-            "-m",
-            "inverted.test3_s0_cli",
-            "run",
-            "--config",
-            "configs/test3-s0.yaml",
-            "--manifest",
-            str(manifest),
-            "--output-dir",
-            str(output),
-        ],
-        cwd=repo,
-    )
+    try:
+        _run(
+            [
+                sys.executable,
+                "-m",
+                "inverted.test3_s0_cli",
+                "run",
+                "--config",
+                "configs/test3-s0.yaml",
+                "--manifest",
+                str(manifest),
+                "--output-dir",
+                str(output),
+            ],
+            cwd=repo,
+        )
+    except subprocess.CalledProcessError:
+        _print_s0_failure_packet(output)
+        raise
 
     verdict = json.loads((output / "verdict.json").read_text(encoding="utf-8-sig"))
     prereg = json.loads(
