@@ -386,18 +386,9 @@ def test_protected_negative_transfer_blocks_promotion_and_remains_boundary(tmp_p
     )
 
 
-def test_registered_policy_can_explicitly_allow_one_protected_failure(tmp_path):
-    specs = _promotion_specs(protected_failure=True)
-    passes = (True,) * (len(specs) - 1) + (False,)
-    relaxed = MutationPolicy(max_protected_failures=1)
-    replay, mutation, study, _ = _case(tmp_path, specs, passes, policy=relaxed)
-    analyzer = MutationAnalyzer(replay, mutation)
-    profile = analyzer.analyze(study.study_id)
-    assert profile.protected_failures
-    assert profile.classification is GeneralizationClass.PROMOTION_CANDIDATE
-    event = analyzer.maybe_promote(profile)
-    assert event is not None
-    assert event.to_state is PromotionState.TIER_CANDIDATE
+def test_registered_policy_cannot_allow_protected_failure() -> None:
+    with pytest.raises(ValueError, match="protected negative transfer"):
+        MutationPolicy(max_protected_failures=1)
 
 
 def test_stage6_never_emits_certified(tmp_path):
