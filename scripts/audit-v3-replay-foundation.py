@@ -8,8 +8,22 @@ from typing import Any
 
 import inverted.capability_ratchet as cr
 from inverted.capability_ratchet.cli import _build_parser
-from inverted.capability_ratchet.core import FailureFixture, Partition, ReplayResult
+from inverted.capability_ratchet.core import (
+    FailureFixture,
+    MutationFixture,
+    Partition,
+    PromotionEvent,
+    PromotionState,
+    ReplayResult,
+    from_payload,
+    to_payload,
+)
 from inverted.capability_ratchet.historical import V2EvidenceSource, preview_v2_failures
+from inverted.capability_ratchet.mutation_core import (
+    MutationAxis,
+    MutationDirection,
+    MutationOrigin,
+)
 from inverted.capability_ratchet.replay_store import ReplayStore
 from inverted.capability_ratchet.snapshot import _scan_secrets
 from inverted.capability_ratchet.surface_core import SurfaceAxis
@@ -38,6 +52,11 @@ REQUIRED_EXPORTS = {
     "SurfaceInterventionCompiler", "SurfaceObservation", "SurfacePlan", "SurfacePlanner",
     "SurfacePoint", "SurfaceStepResult", "SurfaceStoreValidation", "SurfaceStudy",
     "plan_eligible_surfaces", "select_surface_study", "semantic_contract_hash",
+    "GeneralizationClass", "GeneralizationProfile", "MutationAnalyzer", "MutationAxis",
+    "MutationDirection", "MutationEvidenceStore", "MutationFixture", "MutationGenerator",
+    "MutationLab", "MutationOrigin", "MutationOutcome", "MutationPlan", "MutationPlanner",
+    "MutationPolicy", "MutationReplayCompiler", "MutationSpec", "MutationStepResult",
+    "MutationStoreValidation", "MutationStudy", "MutationTemplate",
 }
 
 EXPECTED_SURFACE_AXES = {
@@ -52,6 +71,22 @@ EXPECTED_SURFACE_AXES = {
     SurfaceAxis.CONTEXT_POSITION,
     SurfaceAxis.DELIVERY_MODE,
     SurfaceAxis.TRIGGER_MODE,
+}
+
+EXPECTED_MUTATION_AXES = {
+    MutationAxis.NUMBERS_ENTITIES,
+    MutationAxis.DEPENDENCY_DEPTH,
+    MutationAxis.REQUIREMENT_COUNT,
+    MutationAxis.ACTION_SPACE_SIZE,
+    MutationAxis.CRITICAL_INFORMATION_POSITION,
+    MutationAxis.DISTRACTORS,
+    MutationAxis.EVIDENCE_STATE,
+    MutationAxis.AUTHORITY_STATE,
+    MutationAxis.REVERSIBILITY_CONSEQUENCE,
+    MutationAxis.TOOL_AVAILABILITY,
+    MutationAxis.CONTEXT_PRESSURE,
+    MutationAxis.ORDER,
+    MutationAxis.RECOVERY_OPPORTUNITY,
 }
 
 EXPECTED_REPRESENTATION_MODES = {
@@ -88,6 +123,13 @@ REQUIRED_FILES = (
     "src/inverted/capability_ratchet/surface_analysis.py",
     "src/inverted/capability_ratchet/surface_lab.py",
     "src/inverted/capability_ratchet/surface_bootstrap.py",
+    "src/inverted/capability_ratchet/mutation_core.py",
+    "src/inverted/capability_ratchet/mutation_generator.py",
+    "src/inverted/capability_ratchet/mutation_store.py",
+    "src/inverted/capability_ratchet/mutation_planner.py",
+    "src/inverted/capability_ratchet/mutation_replay.py",
+    "src/inverted/capability_ratchet/mutation_analysis.py",
+    "src/inverted/capability_ratchet/mutation_lab.py",
     "src/inverted/capability_ratchet/cli.py",
     "scripts/run-test-replay.ps1",
     "tests/test_capability_ratchet_core.py",
@@ -116,6 +158,15 @@ REQUIRED_FILES = (
     "tests/test_capability_ratchet_surface_omission_audit.py",
     "tests/test_capability_ratchet_surface_value_modes.py",
     "tests/test_capability_ratchet_surface_completion.py",
+    "tests/test_capability_ratchet_mutation_core.py",
+    "tests/test_capability_ratchet_mutation_generator.py",
+    "tests/test_capability_ratchet_mutation_store.py",
+    "tests/test_capability_ratchet_mutation_planner.py",
+    "tests/test_capability_ratchet_mutation_replay.py",
+    "tests/test_capability_ratchet_mutation_analysis.py",
+    "tests/test_capability_ratchet_mutation_lab.py",
+    "tests/test_capability_ratchet_mutation_preflight.py",
+    ".github/workflows/v3-stage6-completion.yml",
 )
 
 
@@ -223,74 +274,32 @@ def _stage5_semantic_checks(repo: Path, findings: list[str]) -> None:
         "Stage-5 planner lacks exact frozen-fixture call estimator",
     )
 
-    evidence_source = (
-        repo / "src/inverted/capability_ratchet/surface_evidence.py"
-    ).read_text(encoding="utf-8")
-    compiler_source = (
-        repo / "src/inverted/capability_ratchet/surface_interventions.py"
-    ).read_text(encoding="utf-8")
-    store_source = (
-        repo / "src/inverted/capability_ratchet/surface_store.py"
-    ).read_text(encoding="utf-8")
-    planner_source = (
-        repo / "src/inverted/capability_ratchet/surface_planner.py"
-    ).read_text(encoding="utf-8")
-    bootstrap_source = (
-        repo / "src/inverted/capability_ratchet/surface_bootstrap.py"
-    ).read_text(encoding="utf-8")
-    cli_source = (
-        repo / "src/inverted/capability_ratchet/cli.py"
-    ).read_text(encoding="utf-8")
+    evidence_source = (repo / "src/inverted/capability_ratchet/surface_evidence.py").read_text(encoding="utf-8")
+    compiler_source = (repo / "src/inverted/capability_ratchet/surface_interventions.py").read_text(encoding="utf-8")
+    store_source = (repo / "src/inverted/capability_ratchet/surface_store.py").read_text(encoding="utf-8")
+    planner_source = (repo / "src/inverted/capability_ratchet/surface_planner.py").read_text(encoding="utf-8")
+    bootstrap_source = (repo / "src/inverted/capability_ratchet/surface_bootstrap.py").read_text(encoding="utf-8")
+    cli_source = (repo / "src/inverted/capability_ratchet/cli.py").read_text(encoding="utf-8")
 
-    _add(
-        findings,
-        "surface-replay-{candidate.surface_point_id}" not in evidence_source,
-        "Stage-5 replay observations cannot recover generic surface-point identity",
-    )
-    _add(
-        findings,
-        "_mechanism_intervention_ids" not in evidence_source
-        or "_registered_baseline" not in evidence_source,
-        "Stage-5 cannot reuse the proven Plan-2 mechanism replay as a surface baseline",
-    )
-    _add(
-        findings,
-        "point_physical_calls" not in planner_source,
-        "Stage-5 planner does not consume the frozen-fixture physical-call estimator",
-    )
-    _add(
-        findings,
-        "registered originating intervention" not in store_source,
-        "Stage-5 studies are not gated by their originating causal intervention",
-    )
-    _add(
-        findings,
-        "requires a registered mechanism baseline value" not in store_source,
-        "Stage-5 non-cognition studies can omit their matched mechanism baseline",
-    )
-    _add(
-        findings,
-        "surface_delivery_events" not in store_source,
-        "Stage-5 progressive/trigger studies are not gated by observable delivery events",
-    )
-    missing_representation_modes = sorted(
-        mode for mode in EXPECTED_REPRESENTATION_MODES if mode not in compiler_source
-    )
-    _add(
-        findings,
-        bool(missing_representation_modes),
-        f"Stage-5 registered representation modes are incomplete: {missing_representation_modes}",
-    )
-    _add(
-        findings,
-        "_scaled_context" not in compiler_source or "dose > 32.0" not in compiler_source,
-        "Stage-5 context dose cannot safely probe overload above the proven baseline",
-    )
-    _add(
-        findings,
-        "PRE_DECISION" not in compiler_source or "JUST_IN_TIME" not in compiler_source,
-        "Stage-5 timing lacks preregistered pre-decision/just-in-time delivery modes",
-    )
+    _add(findings, "surface-replay-{candidate.surface_point_id}" not in evidence_source,
+         "Stage-5 replay observations cannot recover generic surface-point identity")
+    _add(findings, "_mechanism_intervention_ids" not in evidence_source or "_registered_baseline" not in evidence_source,
+         "Stage-5 cannot reuse the proven Plan-2 mechanism replay as a surface baseline")
+    _add(findings, "point_physical_calls" not in planner_source,
+         "Stage-5 planner does not consume the frozen-fixture physical-call estimator")
+    _add(findings, "registered originating intervention" not in store_source,
+         "Stage-5 studies are not gated by their originating causal intervention")
+    _add(findings, "requires a registered mechanism baseline value" not in store_source,
+         "Stage-5 non-cognition studies can omit their matched mechanism baseline")
+    _add(findings, "surface_delivery_events" not in store_source,
+         "Stage-5 progressive/trigger studies are not gated by observable delivery events")
+    missing_representation_modes = sorted(mode for mode in EXPECTED_REPRESENTATION_MODES if mode not in compiler_source)
+    _add(findings, bool(missing_representation_modes),
+         f"Stage-5 registered representation modes are incomplete: {missing_representation_modes}")
+    _add(findings, "_scaled_context" not in compiler_source or "dose > 32.0" not in compiler_source,
+         "Stage-5 context dose cannot safely probe overload above the proven baseline")
+    _add(findings, "PRE_DECISION" not in compiler_source or "JUST_IN_TIME" not in compiler_source,
+         "Stage-5 timing lacks preregistered pre-decision/just-in-time delivery modes")
     _add(
         findings,
         "progressive delivery requires context divisible" not in compiler_source.lower()
@@ -304,49 +313,83 @@ def _stage5_semantic_checks(repo: Path, findings: list[str]) -> None:
         "lab.prepare",
     )
     missing_bootstrap = [token for token in bootstrap_requirements if token not in bootstrap_source]
-    _add(
-        findings,
-        bool(missing_bootstrap),
-        f"Stage-5 zero-call bootstrap contract is incomplete: {missing_bootstrap}",
-    )
-    forbidden_bootstrap = [
-        token
-        for token in ("QwenOllamaAdapter", "ReplayExecutor")
-        if token in bootstrap_source
-    ]
-    _add(
-        findings,
-        bool(forbidden_bootstrap),
-        f"Stage-5 bootstrap contains live execution machinery: {forbidden_bootstrap}",
-    )
+    _add(findings, bool(missing_bootstrap),
+         f"Stage-5 zero-call bootstrap contract is incomplete: {missing_bootstrap}")
+    forbidden_bootstrap = [token for token in ("QwenOllamaAdapter", "ReplayExecutor") if token in bootstrap_source]
+    _add(findings, bool(forbidden_bootstrap),
+         f"Stage-5 bootstrap contains live execution machinery: {forbidden_bootstrap}")
     plan_surface_options = _cli_options("plan-surface")
-    missing_auto_options = sorted(
-        {"--auto-eligible", "--source"} - plan_surface_options
-    )
-    _add(
-        findings,
-        bool(missing_auto_options),
-        f"Stage-5 historical auto-planning CLI options missing: {missing_auto_options}",
-    )
-    _add(
-        findings,
-        "NO_ELIGIBLE_MECHANISMS" not in cli_source
-        or "SURFACE_PLAN_READY" not in cli_source,
-        "Stage-5 auto-planning lacks explicit eligibility status contract",
-    )
+    missing_auto_options = sorted({"--auto-eligible", "--source"} - plan_surface_options)
+    _add(findings, bool(missing_auto_options),
+         f"Stage-5 historical auto-planning CLI options missing: {missing_auto_options}")
+    _add(findings, "NO_ELIGIBLE_MECHANISMS" not in cli_source or "SURFACE_PLAN_READY" not in cli_source,
+         "Stage-5 auto-planning lacks explicit eligibility status contract")
     incomplete = [
         marker
-        for marker in (
-            "not implemented",
-            "does not support this surface axis yet",
-        )
+        for marker in ("not implemented", "does not support this surface axis yet")
         if marker in compiler_source.lower()
     ]
+    _add(findings, bool(incomplete), f"incomplete Stage-5 execution markers remain: {incomplete}")
+
+
+def _stage6_semantic_checks(repo: Path, findings: list[str]) -> bool:
     _add(
         findings,
-        bool(incomplete),
-        f"incomplete Stage-5 execution markers remain: {incomplete}",
+        set(MutationAxis) != EXPECTED_MUTATION_AXES,
+        "Stage-6 mutation-axis contract mismatch: "
+        + repr(sorted(item.value for item in set(MutationAxis) ^ EXPECTED_MUTATION_AXES)),
     )
+    probe = MutationFixture.create(
+        failure_snapshot_id="audit-stage6-root",
+        source_failure_snapshot_id="audit-stage6-root",
+        source_state_hash="a" * 64,
+        mechanism_id="audit-stage6-mechanism",
+        mutation_axis=MutationAxis.DEPENDENCY_DEPTH,
+        mutation_direction=MutationDirection.HARDER,
+        mutation_value=4,
+        structural_region_id="audit/region",
+        model_visible_asset_sha256="b" * 64,
+        oracle_asset_sha256="c" * 64,
+        semantic_contract_hash="d" * 64,
+        partition=Partition.DEVELOPMENT,
+        origin=MutationOrigin.SYNTHETIC_NEIGHBORHOOD,
+    )
+    roundtrip_ok = from_payload(to_payload(probe)) == probe
+    _add(findings, not roundtrip_ok, "Stage-6 MUTATION_FIXTURE parser/serializer roundtrip failed")
+
+    plan_options = _cli_options("plan-mutations")
+    show_options = _cli_options("show-mutations")
+    run_options = _cli_options("run-mutations")
+    zero_call_contract = (
+        "--allow-model-calls" not in plan_options
+        and "--allow-model-calls" not in show_options
+        and "--allow-model-calls" in run_options
+    )
+    _add(findings, not zero_call_contract,
+         "Stage-6 zero-call planning/inspection or live-call gate contract is incomplete")
+
+    generator_source = (repo / "src/inverted/capability_ratchet/mutation_generator.py").read_text(encoding="utf-8")
+    planner_source = (repo / "src/inverted/capability_ratchet/mutation_planner.py").read_text(encoding="utf-8")
+    replay_source = (repo / "src/inverted/capability_ratchet/mutation_replay.py").read_text(encoding="utf-8")
+    analyzer_source = (repo / "src/inverted/capability_ratchet/mutation_analysis.py").read_text(encoding="utf-8")
+    lab_source = (repo / "src/inverted/capability_ratchet/mutation_lab.py").read_text(encoding="utf-8")
+
+    _add(findings, "NO_MUTATION_TEMPLATE" not in lab_source,
+         "Stage-6 lab can fail to expose missing deterministic template status")
+    _add(findings, "FRESH" not in generator_source or "SEALED" not in generator_source,
+         "Stage-6 generator lacks FRESH/SEALED synthetic-mutation exclusion")
+    _add(findings, "protected" not in planner_source or "HARDER" not in planner_source,
+         "Stage-6 planner lacks protected/harder challenge logic")
+    _add(findings, "ReplayRequest" not in replay_source or "COUNTERFACTUAL" not in replay_source,
+         "Stage-6 mutation transfer does not visibly compile through canonical replay requests")
+    _add(findings, "Stage 6 permits only MOVEMENT -> TIER_CANDIDATE" not in analyzer_source,
+         "Stage-6 promotion ceiling is not explicit")
+    forbidden = [
+        name for name in ("QwenOllamaAdapter", "httpx", "requests.", "urllib.request")
+        if name in generator_source or name in planner_source or name in lab_source
+    ]
+    _add(findings, bool(forbidden), f"Stage-6 zero-call components contain live transport machinery: {forbidden}")
+    return roundtrip_ok and zero_call_contract
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -357,30 +400,22 @@ def main(argv: list[str] | None = None) -> int:
     repo = Path.cwd()
     findings: list[str] = []
 
-    _add(
-        findings,
-        not REQUIRED_EXPORTS.issubset(set(cr.__all__)),
-        f"missing public exports: {sorted(REQUIRED_EXPORTS - set(cr.__all__))}",
-    )
+    _add(findings, not REQUIRED_EXPORTS.issubset(set(cr.__all__)),
+         f"missing public exports: {sorted(REQUIRED_EXPORTS - set(cr.__all__))}")
     missing_files = [path for path in REQUIRED_FILES if not (repo / path).is_file()]
     _add(findings, bool(missing_files), f"missing required replay files: {missing_files}")
     required_commands = {
         "validate", "list", "show", "seed-v2", "plan-replay", "execute-replay",
         "autopsy", "plan-lab", "show-lab", "run-lab",
         "plan-surface", "show-surface", "run-surface",
+        "plan-mutations", "show-mutations", "run-mutations",
     }
-    _add(
-        findings,
-        _cli_commands() != required_commands,
-        f"CLI command surface mismatch: {sorted(_cli_commands())}",
-    )
+    _add(findings, _cli_commands() != required_commands,
+         f"CLI command surface mismatch: {sorted(_cli_commands())}")
     _stage5_semantic_checks(repo, findings)
+    stage6_contract_ok = _stage6_semantic_checks(repo, findings)
     placeholder_hits = _placeholder_hits(repo)
-    _add(
-        findings,
-        bool(placeholder_hits),
-        f"placeholder markers remain: {placeholder_hits[:10]}",
-    )
+    _add(findings, bool(placeholder_hits), f"placeholder markers remain: {placeholder_hits[:10]}")
     staged_runs = _staged_run_paths()
     _add(findings, bool(staged_runs), f"generated runs are staged: {staged_runs}")
 
@@ -388,16 +423,10 @@ def main(argv: list[str] | None = None) -> int:
     preview = preview_v2_failures(source)
     loaded = source.load()
     expected_ids, expected_capped = _material_observation_ids(loaded)
-    _add(
-        findings,
-        preview.invalid_rows != 0,
-        f"historical preview has invalid rows: {preview.invalid_rows}",
-    )
-    _add(
-        findings,
-        preview.material_failures != len(expected_ids),
-        f"preview/material-set mismatch: preview={preview.material_failures} expected={len(expected_ids)}",
-    )
+    _add(findings, preview.invalid_rows != 0,
+         f"historical preview has invalid rows: {preview.invalid_rows}")
+    _add(findings, preview.material_failures != len(expected_ids),
+         f"preview/material-set mismatch: preview={preview.material_failures} expected={len(expected_ids)}")
 
     store = ReplayStore(Path(args.replay_root))
     validation = store.validate()
@@ -410,7 +439,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     records = store.records() if validation.ok else ()
     fixtures = [record for record in records if isinstance(record, FailureFixture)]
+    mutation_fixtures = [record for record in records if isinstance(record, MutationFixture)]
     results = [record for record in records if isinstance(record, ReplayResult)]
+    promotion_events = [record for record in records if isinstance(record, PromotionEvent)]
     actual_ids = {
         fixture.focus_observation_id
         for fixture in fixtures
@@ -428,11 +459,25 @@ def main(argv: list[str] | None = None) -> int:
         if fixture.parent_failure_snapshot_id is None
         and "REASONING_CAP_EXHAUSTION" in fixture.failure_classes
     )
-    _add(
-        findings,
-        capped_actual != expected_capped,
-        f"reasoning-cap fixture coverage mismatch: actual={capped_actual} expected={expected_capped}",
-    )
+    _add(findings, capped_actual != expected_capped,
+         f"reasoning-cap fixture coverage mismatch: actual={capped_actual} expected={expected_capped}")
+
+    synthetic_fresh_sealed = [
+        fixture
+        for fixture in mutation_fixtures
+        if fixture.origin is MutationOrigin.SYNTHETIC_NEIGHBORHOOD
+        and fixture.partition in {Partition.FRESH, Partition.SEALED}
+    ]
+    _add(findings, bool(synthetic_fresh_sealed),
+         f"Stage-6 synthetic FRESH/SEALED mutation fixtures: {len(synthetic_fresh_sealed)}")
+    stage6_certified = [
+        event
+        for event in promotion_events
+        if event.metadata.get("stage") == "STAGE_6"
+        and event.to_state is PromotionState.CERTIFIED
+    ]
+    _add(findings, bool(stage6_certified),
+         f"Stage-6 CERTIFIED promotion events are forbidden: {len(stage6_certified)}")
 
     referenced_assets: set[str] = set()
     malformed_fixture_count = 0
@@ -485,26 +530,19 @@ def main(argv: list[str] | None = None) -> int:
         except (KeyError, TypeError, ValueError, IndexError):
             malformed_fixture_count += 1
 
-    _add(
-        findings,
-        malformed_fixture_count != 0,
-        f"malformed/incomplete historical fixtures: {malformed_fixture_count}",
-    )
+    _add(findings, malformed_fixture_count != 0,
+         f"malformed/incomplete historical fixtures: {malformed_fixture_count}")
+    for fixture in mutation_fixtures:
+        referenced_assets.add(fixture.model_visible_asset_sha256)
+        referenced_assets.add(fixture.oracle_asset_sha256)
     for result in results:
         referenced_assets.add(result.output_asset_sha256)
         referenced_assets.add(result.raw_call_asset_sha256)
     asset_root = store.asset_root
-    asset_files = (
-        {path.stem for path in asset_root.glob("*.json")}
-        if asset_root.exists()
-        else set()
-    )
+    asset_files = {path.stem for path in asset_root.glob("*.json")} if asset_root.exists() else set()
     orphan_assets = sorted(asset_files - referenced_assets)
-    _add(
-        findings,
-        bool(orphan_assets),
-        f"orphan replay assets: count={len(orphan_assets)} sample={orphan_assets[:5]}",
-    )
+    _add(findings, bool(orphan_assets),
+         f"orphan replay assets: count={len(orphan_assets)} sample={orphan_assets[:5]}")
 
     payload = {
         "forgotten_count": len(findings),
@@ -522,9 +560,17 @@ def main(argv: list[str] | None = None) -> int:
         "stage5_axis_count": len(EXPECTED_SURFACE_AXES),
         "stage5_compiler_axis_count": len(SUPPORTED_SURFACE_AXES),
         "stage5_representation_mode_count": len(EXPECTED_REPRESENTATION_MODES),
-        "stage5_auto_plan_contract": (
-            {"--auto-eligible", "--source"}.issubset(_cli_options("plan-surface"))
+        "stage5_auto_plan_contract": {"--auto-eligible", "--source"}.issubset(_cli_options("plan-surface")),
+        "stage6_axis_count": len(EXPECTED_MUTATION_AXES),
+        "stage6_mutation_fixture_roundtrip": stage6_contract_ok,
+        "stage6_synthetic_fresh_sealed_count": len(synthetic_fresh_sealed),
+        "stage6_certified_event_count": len(stage6_certified),
+        "stage6_zero_call_plan_contract": (
+            "--allow-model-calls" not in _cli_options("plan-mutations")
+            and "--allow-model-calls" not in _cli_options("show-mutations")
+            and "--allow-model-calls" in _cli_options("run-mutations")
         ),
+        "stage6_registered_mutation_fixtures": len(mutation_fixtures),
     }
     print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
     return 0 if not findings else 1
