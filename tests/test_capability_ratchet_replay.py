@@ -292,3 +292,18 @@ def test_cross_model_result_records_actual_request_model_substitution(tmp_path) 
     assert result.adapter_changes["request_envelopes.0.model"] == {
         "source": "source-model", "target": "target-model",
     }
+
+
+def test_counterfactual_accepts_frozen_nested_json_override(tmp_path) -> None:
+    fixture, store = fixture_and_store(tmp_path)
+    adapter = FakeReplayAdapter()
+    replacement = [
+        {"role": "user", "content": "TASK t0\nReturn JSON."},
+        {"role": "system", "content": "Follow contract."},
+    ]
+    request = counterfactual_request(
+        fixture, path="request_envelopes.0.messages", value=replacement,
+    )
+    plan = ReplayExecutor(store, {fixture.source_model_id: adapter}).plan(request)
+    assert plan.visible_payload["request_envelopes"][0]["messages"] == replacement
+    assert plan.changed_values["request_envelopes.0.messages"][1] == replacement
