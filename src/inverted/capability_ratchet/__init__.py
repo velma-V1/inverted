@@ -2,7 +2,9 @@
 
 from .core import (
     FailureFixture,
+    MechanismLabel,
     Partition,
+    PromotionEvent,
     PromotionState,
     ReplayMode,
     ReplayRecord,
@@ -27,7 +29,9 @@ from .snapshot import build_failure_fixture
 __all__ = [
     "FailureFixture",
     "HistoricalSeedResult",
+    "MechanismLabel",
     "Partition",
+    "PromotionEvent",
     "PromotionState",
     "QwenReplayAdapter",
     "ReplayAdapter",
