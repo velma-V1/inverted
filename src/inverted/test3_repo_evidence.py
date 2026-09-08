@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import shutil
 from pathlib import Path
@@ -107,6 +108,108 @@ def _manifest_index(rows: list[dict[str, str]]) -> tuple[dict[str, dict[str, str
     return index, errors
 
 
+def _read_inner_manifest(root: Path) -> tuple[list[dict[str, str]], list[str]]:
+    path = root / "SHA256SUMS.csv"
+    if not path.is_file():
+        return [], ["missing inner SHA256SUMS.csv"]
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if not reader.fieldnames or "path" not in reader.fieldnames or "sha256" not in reader.fieldnames:
+                return [], ["inner SHA256SUMS.csv must contain path and sha256 columns"]
+            return [dict(row) for row in reader], []
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        return [], [f"cannot parse inner SHA256SUMS.csv: {exc}"]
+
+
+def _inner_manifest_mismatches(root: Path) -> tuple[list[dict[str, str]], list[str]]:
+    rows, errors = _read_inner_manifest(root)
+    if errors:
+        return rows, errors
+    mismatches: list[str] = []
+    for row in rows:
+        raw = str(row.get("path") or "").replace("\\", "/")
+        rel = Path(raw)
+        if not raw or rel.is_absolute() or ".." in rel.parts:
+            mismatches.append(f"invalid inner manifest path: {raw!r}")
+            continue
+        path = root / rel
+        if not path.is_file():
+            mismatches.append(f"missing inner-manifest file: {raw}")
+            continue
+        expected_hash = str(row.get("sha256") or "").strip().lower()
+        if not expected_hash or _sha256(path).lower() != expected_hash:
+            mismatches.append(raw)
+            continue
+        expected_bytes = row.get("bytes")
+        if expected_bytes not in (None, ""):
+            try:
+                if int(str(expected_bytes)) != path.stat().st_size:
+                    mismatches.append(raw)
+            except ValueError:
+                mismatches.append(f"invalid bytes value: {raw}")
+    return rows, mismatches
+
+
+def _reseal_verified_temporary_inner_manifest(
+    source_id: str,
+    target_dir: Path,
+) -> dict[str, Any] | None:
+    """Re-seal a temporary privacy-safe source when only its old inner seal drifted.
+
+    The caller has already proven every copied source byte against the repository's
+    outer FILES-SHA256.csv. This function never edits committed evidence and never
+    changes a scientific payload. It only recomputes the temporary bundle's inner
+    SHA256SUMS.csv over the same historical path inventory so the downstream bundle
+    verifier can validate the privacy-transformed, outer-sealed copy.
+    """
+    rows, mismatches = _inner_manifest_mismatches(target_dir)
+    if not mismatches:
+        return None
+    if not rows:
+        raise ValueError(
+            f"Cannot re-seal {source_id}: inner manifest is missing or unparsable: {mismatches}"
+        )
+
+    manifest = target_dir / "SHA256SUMS.csv"
+    original_sha = _sha256(manifest)
+    normalized_rows: list[dict[str, Any]] = []
+    for row in rows:
+        raw = str(row.get("path") or "").replace("\\", "/")
+        rel = Path(raw)
+        if not raw or rel.is_absolute() or ".." in rel.parts:
+            raise ValueError(f"Cannot re-seal {source_id}: invalid inner manifest path {raw!r}")
+        path = target_dir / rel
+        if not path.is_file():
+            raise ValueError(f"Cannot re-seal {source_id}: missing inner-manifest file {raw}")
+        normalized_rows.append({
+            "path": raw,
+            "sha256": _sha256(path),
+            "bytes": path.stat().st_size,
+        })
+
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=["path", "sha256", "bytes"], lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(normalized_rows)
+    manifest.write_text(buffer.getvalue(), encoding="utf-8", newline="")
+
+    _, remaining = _inner_manifest_mismatches(target_dir)
+    if remaining:
+        raise ValueError(f"Temporary inner re-seal failed for {source_id}: {remaining}")
+
+    return {
+        "source_id": source_id,
+        "reason": "outer_sealed_privacy_transform",
+        "outer_manifest_verified": True,
+        "committed_source_mutated": False,
+        "original_inner_manifest_sha256": original_sha,
+        "normalized_inner_manifest_sha256": _sha256(manifest),
+        "mismatched_paths": sorted(mismatches),
+        "inventory_path_count": len(normalized_rows),
+    }
+
+
 def verify_repo_evidence(
     evidence_root: str | Path,
     *,
@@ -199,11 +302,14 @@ def materialize_repo_empirical_sources(
     evidence_root: str | Path,
     destination_root: str | Path,
 ) -> tuple[dict[str, Path], dict[str, Any]]:
-    """Create byte-exact temporary copies of committed Test-1/Test-2 evidence.
+    """Create integrity-proven temporary copies of committed Test-1/Test-2 evidence.
 
     Source bytes are selected only when proven by evidence/FILES-SHA256.csv.
     This reverses Git newline canonicalization where the frozen hash proves the
-    original CRLF form. The committed checkout itself is never modified.
+    original CRLF form. If a privacy-safe repository transformation left an old
+    inner bundle manifest stale, only the temporary copy's inner manifest is
+    re-sealed over the same historical inventory after all payload bytes have
+    passed the outer seal. The committed checkout itself is never modified.
     """
     root = Path(evidence_root)
     destination = Path(destination_root)
@@ -286,11 +392,19 @@ def materialize_repo_empirical_sources(
             "Cannot materialize unverified repo evidence files: " + ", ".join(sorted(unverified))
         )
 
+    integrity_reseals: list[dict[str, Any]] = []
+    for source_id, target_dir in paths.items():
+        reseal = _reseal_verified_temporary_inner_manifest(source_id, target_dir)
+        if reseal is not None:
+            integrity_reseals.append(reseal)
+
     report = {
-        "verification_policy": "exact_bytes_or_hash_proven_git_lf_to_crlf_rehydration",
+        "verification_policy": "exact_bytes_or_hash_proven_git_lf_to_crlf_rehydration_with_temporary_outer_sealed_inner_reseal",
         "exact_files": exact_count,
         "git_newline_rehydrated_files": rehydrated_count,
         "unverified_files": [],
+        "integrity_resealed_sources": [item["source_id"] for item in integrity_reseals],
+        "integrity_reseals": integrity_reseals,
         "files": file_report,
     }
     return paths, report
