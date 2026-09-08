@@ -19,10 +19,16 @@ from inverted.capability_ratchet.core import (
     to_payload,
 )
 from inverted.capability_ratchet.historical import V2EvidenceSource, preview_v2_failures
+from inverted.capability_ratchet.mutation_bootstrap import (
+    MutationBootstrapPlan,
+    MutationBootstrapResult,
+    plan_eligible_mutations,
+)
 from inverted.capability_ratchet.mutation_core import (
     MutationAxis,
     MutationDirection,
     MutationOrigin,
+    MutationPolicy,
 )
 from inverted.capability_ratchet.replay_store import ReplayStore
 from inverted.capability_ratchet.snapshot import _scan_secrets
@@ -53,10 +59,11 @@ REQUIRED_EXPORTS = {
     "SurfacePoint", "SurfaceStepResult", "SurfaceStoreValidation", "SurfaceStudy",
     "plan_eligible_surfaces", "select_surface_study", "semantic_contract_hash",
     "GeneralizationClass", "GeneralizationProfile", "MutationAnalyzer", "MutationAxis",
-    "MutationDirection", "MutationEvidenceStore", "MutationFixture", "MutationGenerator",
-    "MutationLab", "MutationOrigin", "MutationOutcome", "MutationPlan", "MutationPlanner",
+    "MutationBootstrapPlan", "MutationBootstrapResult", "MutationDirection",
+    "MutationEvidenceStore", "MutationFixture", "MutationGenerator", "MutationLab",
+    "MutationOrigin", "MutationOutcome", "MutationPlan", "MutationPlanner",
     "MutationPolicy", "MutationReplayCompiler", "MutationSpec", "MutationStepResult",
-    "MutationStoreValidation", "MutationStudy", "MutationTemplate",
+    "MutationStoreValidation", "MutationStudy", "MutationTemplate", "plan_eligible_mutations",
 }
 
 EXPECTED_SURFACE_AXES = {
@@ -130,6 +137,7 @@ REQUIRED_FILES = (
     "src/inverted/capability_ratchet/mutation_replay.py",
     "src/inverted/capability_ratchet/mutation_analysis.py",
     "src/inverted/capability_ratchet/mutation_lab.py",
+    "src/inverted/capability_ratchet/mutation_bootstrap.py",
     "src/inverted/capability_ratchet/cli.py",
     "scripts/run-test-replay.ps1",
     "tests/test_capability_ratchet_core.py",
@@ -165,7 +173,10 @@ REQUIRED_FILES = (
     "tests/test_capability_ratchet_mutation_replay.py",
     "tests/test_capability_ratchet_mutation_analysis.py",
     "tests/test_capability_ratchet_mutation_lab.py",
+    "tests/test_capability_ratchet_mutation_bootstrap.py",
+    "tests/test_capability_ratchet_mutation_policy_invariants.py",
     "tests/test_capability_ratchet_mutation_preflight.py",
+    "tests/test_capability_ratchet_mutation_audit_closure.py",
     ".github/workflows/v3-stage6-completion.yml",
 )
 
@@ -332,7 +343,10 @@ def _stage5_semantic_checks(repo: Path, findings: list[str]) -> None:
     _add(findings, bool(incomplete), f"incomplete Stage-5 execution markers remain: {incomplete}")
 
 
-def _stage6_semantic_checks(repo: Path, findings: list[str]) -> bool:
+def _stage6_semantic_checks(
+    repo: Path,
+    findings: list[str],
+) -> tuple[bool, bool, bool, bool]:
     _add(
         findings,
         set(MutationAxis) != EXPECTED_MUTATION_AXES,
@@ -368,11 +382,16 @@ def _stage6_semantic_checks(repo: Path, findings: list[str]) -> bool:
     _add(findings, not zero_call_contract,
          "Stage-6 zero-call planning/inspection or live-call gate contract is incomplete")
 
+    auto_plan_contract = "--auto-eligible" in plan_options
+    _add(findings, not auto_plan_contract,
+         "Stage-6 historical auto-planning CLI lacks --auto-eligible")
+
     generator_source = (repo / "src/inverted/capability_ratchet/mutation_generator.py").read_text(encoding="utf-8")
     planner_source = (repo / "src/inverted/capability_ratchet/mutation_planner.py").read_text(encoding="utf-8")
     replay_source = (repo / "src/inverted/capability_ratchet/mutation_replay.py").read_text(encoding="utf-8")
     analyzer_source = (repo / "src/inverted/capability_ratchet/mutation_analysis.py").read_text(encoding="utf-8")
     lab_source = (repo / "src/inverted/capability_ratchet/mutation_lab.py").read_text(encoding="utf-8")
+    bootstrap_source = (repo / "src/inverted/capability_ratchet/mutation_bootstrap.py").read_text(encoding="utf-8")
 
     _add(findings, "NO_MUTATION_TEMPLATE" not in lab_source,
          "Stage-6 lab can fail to expose missing deterministic template status")
@@ -384,12 +403,48 @@ def _stage6_semantic_checks(repo: Path, findings: list[str]) -> bool:
          "Stage-6 mutation transfer does not visibly compile through canonical replay requests")
     _add(findings, "Stage 6 permits only MOVEMENT -> TIER_CANDIDATE" not in analyzer_source,
          "Stage-6 promotion ceiling is not explicit")
+
+    bootstrap_requirements = (
+        "NO_ELIGIBLE_MECHANISMS",
+        "NO_MUTATION_TEMPLATE",
+        "MUTATION_PLAN_READY",
+        "PromotionState.MOVEMENT",
+        "MutationPlanner",
+    )
+    missing_bootstrap = [token for token in bootstrap_requirements if token not in bootstrap_source]
+    _add(findings, bool(missing_bootstrap),
+         f"Stage-6 zero-call bootstrap contract is incomplete: {missing_bootstrap}")
+    forbidden_bootstrap = [
+        token
+        for token in ("QwenOllamaAdapter", "ReplayExecutor", "httpx", "requests.", "urllib.request")
+        if token in bootstrap_source
+    ]
+    _add(findings, bool(forbidden_bootstrap),
+         f"Stage-6 bootstrap contains live execution machinery: {forbidden_bootstrap}")
+    auto_plan_contract = auto_plan_contract and not missing_bootstrap and not forbidden_bootstrap
+
+    try:
+        MutationPolicy(max_protected_failures=1)
+    except ValueError:
+        policy_veto = True
+    else:
+        policy_veto = False
+    protected_veto_contract = (
+        policy_veto
+        and "and not protected_failures" in analyzer_source
+        and "if profile.protected_failures" in analyzer_source
+        and "and not profile.protected_failures" in planner_source
+        and "if current.protected_failures" in planner_source
+    )
+    _add(findings, not protected_veto_contract,
+         "Stage-6 protected negative-transfer veto can be relaxed or bypassed")
+
     forbidden = [
         name for name in ("QwenOllamaAdapter", "httpx", "requests.", "urllib.request")
         if name in generator_source or name in planner_source or name in lab_source
     ]
     _add(findings, bool(forbidden), f"Stage-6 zero-call components contain live transport machinery: {forbidden}")
-    return roundtrip_ok and zero_call_contract
+    return roundtrip_ok, zero_call_contract, auto_plan_contract, protected_veto_contract
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -413,7 +468,12 @@ def main(argv: list[str] | None = None) -> int:
     _add(findings, _cli_commands() != required_commands,
          f"CLI command surface mismatch: {sorted(_cli_commands())}")
     _stage5_semantic_checks(repo, findings)
-    stage6_contract_ok = _stage6_semantic_checks(repo, findings)
+    (
+        stage6_roundtrip_ok,
+        stage6_zero_call_contract,
+        stage6_auto_plan_contract,
+        stage6_protected_failure_veto_contract,
+    ) = _stage6_semantic_checks(repo, findings)
     placeholder_hits = _placeholder_hits(repo)
     _add(findings, bool(placeholder_hits), f"placeholder markers remain: {placeholder_hits[:10]}")
     staged_runs = _staged_run_paths()
@@ -562,14 +622,12 @@ def main(argv: list[str] | None = None) -> int:
         "stage5_representation_mode_count": len(EXPECTED_REPRESENTATION_MODES),
         "stage5_auto_plan_contract": {"--auto-eligible", "--source"}.issubset(_cli_options("plan-surface")),
         "stage6_axis_count": len(EXPECTED_MUTATION_AXES),
-        "stage6_mutation_fixture_roundtrip": stage6_contract_ok,
+        "stage6_mutation_fixture_roundtrip": stage6_roundtrip_ok,
         "stage6_synthetic_fresh_sealed_count": len(synthetic_fresh_sealed),
         "stage6_certified_event_count": len(stage6_certified),
-        "stage6_zero_call_plan_contract": (
-            "--allow-model-calls" not in _cli_options("plan-mutations")
-            and "--allow-model-calls" not in _cli_options("show-mutations")
-            and "--allow-model-calls" in _cli_options("run-mutations")
-        ),
+        "stage6_zero_call_plan_contract": stage6_zero_call_contract,
+        "stage6_auto_plan_contract": stage6_auto_plan_contract,
+        "stage6_protected_failure_veto_contract": stage6_protected_failure_veto_contract,
         "stage6_registered_mutation_fixtures": len(mutation_fixtures),
     }
     print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
