@@ -108,18 +108,17 @@ def select_failures(store: ReplayStore, selector: ReplaySelector) -> tuple[Failu
             and record.target_model_id == selector.target_model
         }
 
-    promotion_by_root: dict[str, PromotionState] = {}
-    mechanisms_by_root: dict[str, set[str]] = defaultdict(set)
+    promotion_by_snapshot: dict[str, PromotionState] = {}
+    mechanisms_by_snapshot: dict[str, set[str]] = defaultdict(set)
     for record in records:
         if isinstance(record, PromotionEvent):
-            promotion_by_root[record.failure_snapshot_id] = record.to_state
+            promotion_by_snapshot[record.failure_snapshot_id] = record.to_state
         elif isinstance(record, MechanismLabel):
-            mechanisms_by_root[record.failure_snapshot_id].add(record.mechanism_id)
+            mechanisms_by_snapshot[record.failure_snapshot_id].add(record.mechanism_id)
 
     selected: list[FailureFixture] = []
     for fixture in active_failures:
         root_id = _root_failure_id(fixture, active_by_id)
-        root = active_by_id[root_id]
         if selector.source_model is not None and fixture.source_model_id != selector.source_model:
             continue
         if selector.family is not None and fixture.family != selector.family:
@@ -133,10 +132,16 @@ def select_failures(store: ReplayStore, selector: ReplaySelector) -> tuple[Failu
         if partition is not None and fixture.partition is not partition:
             continue
         if promotion is not None:
-            current_promotion = promotion_by_root.get(root_id, root.promotion_state)
+            current_promotion = promotion_by_snapshot.get(
+                fixture.failure_snapshot_id, fixture.promotion_state
+            )
             if current_promotion is not promotion:
                 continue
-        if selector.mechanism is not None and selector.mechanism not in mechanisms_by_root.get(root_id, set()):
+        if (
+            selector.mechanism is not None
+            and selector.mechanism
+            not in mechanisms_by_snapshot.get(fixture.failure_snapshot_id, set())
+        ):
             continue
         if snapshots and fixture.failure_snapshot_id not in snapshots:
             continue
