@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 from inverted.capability_ratchet.autopsy import FailureAutopsy
 from inverted.capability_ratchet.causal_store import CausalEvidenceStore
 from inverted.capability_ratchet.core import (
@@ -170,11 +168,14 @@ def test_failed_child_can_seed_new_program_without_mutating_parent_evidence(tmp_
 def test_execute_rejects_program_or_adapter_lineage_drift_before_calls(tmp_path):
     lab, fixture, _, _ = planted_lab(tmp_path)
     program = lab.prepare(fixture.failure_snapshot_id)
-    bad = replace(program, failure_snapshot_id="different-failure")
-    adapter = PlantedAdapter()
+    object.__setattr__(program, "failure_snapshot_id", "different-failure")
+
+    class ForbiddenAdapter(PlantedAdapter):
+        def execute_fixture(self, fixture, visible_payload, request):
+            raise AssertionError("adapter must not be called for a drifted program")
 
     try:
-        lab.execute(bad, adapters={"fake-model": adapter})
+        lab.execute(program, adapters={"fake-model": ForbiddenAdapter()})
     except ValueError as exc:
         assert "failure" in str(exc).lower() or "lineage" in str(exc).lower()
     else:
