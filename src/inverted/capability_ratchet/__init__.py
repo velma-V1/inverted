@@ -35,11 +35,28 @@ from .historical import (
 from .interventions import InterventionGenerator, TailoredInterventionGenerator
 from .lab import FailureLab, FailureResearchProgram, FailureResearchResult
 from .mechanisms import MechanismAssessment, MechanismLocalizer
-from .query import ReplaySelector, select_failures
+from .query import ReplaySelector, select_failures, select_surface_study
 from .qwen_replay import QwenReplayAdapter, V2ReplayScorer
 from .replay import ReplayAdapter, ReplayCompletion, ReplayExecutor, ReplayPlan
 from .replay_store import ReplayStore, ReplayValidation, SupersessionRecord
 from .snapshot import build_failure_fixture
+from .surface_analysis import SurfaceAnalyzer
+from .surface_core import (
+    OperatingSurfaceProfile,
+    SurfaceAxis,
+    SurfaceBand,
+    SurfaceCallGeometry,
+    SurfaceDisposition,
+    SurfaceEvidenceKind,
+    SurfaceObservation,
+    SurfacePoint,
+    SurfaceStudy,
+)
+from .surface_evidence import SurfaceEvidenceCompiler
+from .surface_interventions import SurfaceInterventionCompiler, semantic_contract_hash
+from .surface_lab import OperatingSurfaceLab, SurfaceStepResult
+from .surface_planner import SurfacePlan, SurfacePlanner
+from .surface_store import SurfaceEvidenceStore, SurfaceStoreValidation
 from .tournament import TournamentBranch, TournamentPlan, TournamentPlanner, build_ablations
 
 __all__ = [
@@ -63,6 +80,8 @@ __all__ = [
     "MechanismLabel",
     "MechanismLocalizer",
     "MechanismRole",
+    "OperatingSurfaceLab",
+    "OperatingSurfaceProfile",
     "Partition",
     "PromotionEvent",
     "PromotionState",
@@ -79,6 +98,22 @@ __all__ = [
     "ReplaySelector",
     "ReplayStore",
     "ReplayValidation",
+    "SurfaceAnalyzer",
+    "SurfaceAxis",
+    "SurfaceBand",
+    "SurfaceCallGeometry",
+    "SurfaceDisposition",
+    "SurfaceEvidenceCompiler",
+    "SurfaceEvidenceKind",
+    "SurfaceEvidenceStore",
+    "SurfaceInterventionCompiler",
+    "SurfaceObservation",
+    "SurfacePlan",
+    "SurfacePlanner",
+    "SurfacePoint",
+    "SurfaceStepResult",
+    "SurfaceStoreValidation",
+    "SurfaceStudy",
     "SupersessionRecord",
     "TailoredInterventionGenerator",
     "TournamentBranch",
@@ -92,5 +127,7 @@ __all__ = [
     "preview_v2_failures",
     "seed_v2_failures",
     "select_failures",
+    "select_surface_study",
+    "semantic_contract_hash",
     "to_payload",
 ]
