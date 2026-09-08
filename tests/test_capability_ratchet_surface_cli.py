@@ -6,8 +6,9 @@ from types import SimpleNamespace
 import pytest
 
 from inverted.capability_ratchet import cli
-from inverted.capability_ratchet.core import Partition, PromotionState
+from inverted.capability_ratchet.core import FailureFixture, Partition, PromotionState
 from inverted.capability_ratchet.query import select_surface_study
+from inverted.capability_ratchet.replay_store import ReplayStore
 from inverted.capability_ratchet.surface_core import SurfaceAxis, SurfacePoint, SurfaceStudy
 from inverted.capability_ratchet.surface_planner import SurfacePlan
 
@@ -26,6 +27,41 @@ def _study(*, mechanism_id="mechanism-1", failure_id="failure-1") -> SurfaceStud
         axes=(SurfaceAxis.REASONING_BUDGET,),
         axis_values={"REASONING_BUDGET": (0, 512, 8192)},
     )
+
+
+def _valid_replay_root(tmp_path):
+    store = ReplayStore(tmp_path / "replay")
+    visible = store.put_asset({
+        "request_envelopes": [{
+            "model": "model",
+            "messages": [],
+            "options": {"seed": 1, "temperature": 0.7, "num_predict": 128},
+            "think": False,
+        }]
+    })
+    store.append(FailureFixture(
+        failure_snapshot_id="failure-cli-root",
+        source_campaign_id="campaign",
+        source_trial_id="trial",
+        focus_observation_id="obs",
+        focus_task_id="task",
+        batch_task_ids=("task",),
+        family="ARITHMETIC",
+        failure_classes=("SEMANTIC_FAIL",),
+        source_model_id="model",
+        source_model_digest="digest",
+        source_runtime={"provider": "fake"},
+        inference_profile={"thinking_budget": 0, "temperature": 0.7},
+        inference_seed=1,
+        partition=Partition.DEVELOPMENT,
+        model_visible_asset_sha256=visible,
+        state_hash=visible,
+        oracle_ref="oracle",
+        expected_contract="answer_object",
+        source_evidence_refs=("source:1",),
+    ))
+    assert store.validate().ok
+    return store.root
 
 
 class FakeSurfaceStore:
@@ -52,6 +88,7 @@ class FakeSurfaceLab:
     def __init__(self, study):
         self.study = study
         self.surface_store = FakeSurfaceStore((study,))
+        self.causal_store = SimpleNamespace(validate=lambda: SimpleNamespace(ok=True))
 
     def prepare(self, study_id, *, max_new_points=2):
         assert study_id == self.study.study_id
@@ -85,13 +122,14 @@ def test_surface_study_selection_is_exact_and_rejects_ambiguity() -> None:
 
 
 def test_plan_surface_is_zero_call_and_exposes_call_geometry(tmp_path, monkeypatch, capsys) -> None:
+    root = _valid_replay_root(tmp_path)
     study = _study()
     lab = FakeSurfaceLab(study)
     monkeypatch.setattr(cli, "_build_surface_lab", lambda store, causal_root, surface_root: lab)
 
     code = cli.main([
         "plan-surface",
-        "--replay-root", str(tmp_path / "replay"),
+        "--replay-root", str(root),
         "--causal-root", str(tmp_path / "causal"),
         "--surface-root", str(tmp_path / "surface"),
         "--study-id", study.study_id,
@@ -110,13 +148,14 @@ def test_plan_surface_is_zero_call_and_exposes_call_geometry(tmp_path, monkeypat
 
 
 def test_show_surface_is_zero_call_and_reports_integrity(tmp_path, monkeypatch, capsys) -> None:
+    root = _valid_replay_root(tmp_path)
     study = _study()
     lab = FakeSurfaceLab(study)
     monkeypatch.setattr(cli, "_build_surface_lab", lambda store, causal_root, surface_root: lab)
 
     code = cli.main([
         "show-surface",
-        "--replay-root", str(tmp_path / "replay"),
+        "--replay-root", str(root),
         "--causal-root", str(tmp_path / "causal"),
         "--surface-root", str(tmp_path / "surface"),
         "--mechanism-id", study.mechanism_id,
@@ -149,6 +188,7 @@ def test_run_surface_rejects_before_live_executor_without_explicit_gate(tmp_path
 
 
 def test_run_surface_uses_injected_executor_only_after_explicit_gate(tmp_path, capsys) -> None:
+    root = _valid_replay_root(tmp_path)
     invoked = []
 
     def fake_runner(store, causal_root, surface_root, args):
@@ -157,7 +197,7 @@ def test_run_surface_uses_injected_executor_only_after_explicit_gate(tmp_path, c
 
     code = cli.main([
         "run-surface",
-        "--replay-root", str(tmp_path / "replay"),
+        "--replay-root", str(root),
         "--causal-root", str(tmp_path / "causal"),
         "--surface-root", str(tmp_path / "surface"),
         "--study-id", "surface-study-1",
