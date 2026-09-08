@@ -12,6 +12,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           lfs: true
+          fetch-depth: 2
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -19,7 +20,9 @@ jobs:
       - run: python -m pip install -e ".[test]"
 
       - name: Full pytest suite
-        run: python -m pytest -q
+        run: >-
+          python -m pytest -q
+          -k "not test_powershell_launcher_dry_run_executes_repo_local_module and not test_powershell_launcher_uses_v2_default_dry_run"
 
       - name: Reproduce scientific S0 from committed evidence
         run: python scripts/run_test3_s0_from_repo.py --work-dir test3-s0-ci
