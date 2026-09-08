@@ -198,3 +198,189 @@ def test_selector_filters_by_collected_difficulty(tmp_path) -> None:
     assert [f.failure_snapshot_id for f in select_failures(
         store, ReplaySelector(difficulty=1)
     )] == ["f-c"]
+
+
+def _build_mutation_cli_state(tmp_path):
+    from inverted.capability_ratchet.causal_core import MechanismRole
+    from inverted.capability_ratchet.causal_store import CausalEvidenceStore
+    from inverted.capability_ratchet.core import (
+        MechanismLabel, MutationFixture, PromotionEvent, ReplayResult,
+    )
+    from inverted.capability_ratchet.mutation_core import (
+        MutationAxis, MutationDirection, MutationOrigin, MutationPolicy, MutationSpec,
+    )
+    from inverted.capability_ratchet.mutation_store import MutationEvidenceStore, MutationStudy
+    from inverted.capability_ratchet.surface_store import SurfaceEvidenceStore
+
+    replay = ReplayStore(tmp_path / "mutation-cli-replay")
+    visible = {
+        "request_envelopes": [{
+            "model": "fake-model", "stream": False, "think": False,
+            "options": {"seed": 1},
+            "messages": [{"role": "user", "content": "BASE"}],
+        }],
+        "task": {"depth": 2},
+    }
+    source = FailureFixture(
+        failure_snapshot_id="mutation-cli-root",
+        source_campaign_id="campaign", source_trial_id="trial",
+        focus_observation_id="obs", focus_task_id="task", batch_task_ids=("task",),
+        family="PLANNING", failure_classes=("SEMANTIC_FAIL",),
+        source_model_id="fake-model", source_model_digest="fake-digest",
+        source_runtime={"provider": "fake"}, inference_profile={"thinking_budget": 0},
+        inference_seed=1, partition=Partition.DEVELOPMENT,
+        model_visible_asset_sha256=replay.put_asset(visible), state_hash="a" * 64,
+        oracle_ref="oracle", expected_contract="answer", source_evidence_refs=("source:1",),
+        oracle_asset_sha256=replay.put_asset({"answer": "base"}),
+    )
+    replay.append(source)
+    source = replay.get_failure(source.failure_snapshot_id)
+    request = ReplayRequest(
+        replay_request_id="mutation-cli-movement-request",
+        failure_snapshot_id=source.failure_snapshot_id,
+        parent_failure_snapshot_id=source.failure_snapshot_id,
+        parent_state_hash=source.state_hash,
+        decision_id="D4", hypothesis_id="hyp-cli",
+        expected_causal_implication="repair works", mode=ReplayMode.COUNTERFACTUAL,
+        source_model_id=source.source_model_id, source_model_digest=source.source_model_digest,
+        target_model_id=source.source_model_id, target_model_digest=source.source_model_digest,
+        partition=source.partition,
+        changed_dimensions=("request_envelopes.0.messages.0.content",),
+        intervention_id="int-cli",
+        overrides={"request_envelopes.0.messages.0.content": "REPAIRED"},
+    )
+    replay.append(request)
+    result = ReplayResult(
+        replay_result_id="mutation-cli-movement-result",
+        replay_request_id=request.replay_request_id,
+        failure_snapshot_id=source.failure_snapshot_id,
+        parent_failure_snapshot_id=source.failure_snapshot_id,
+        parent_state_hash=source.state_hash, mode=request.mode,
+        target_model_id=source.source_model_id, target_model_digest=source.source_model_digest,
+        partition=source.partition, completed=True, semantic_pass=True, contract_pass=True,
+        output_asset_sha256=replay.put_asset({"ok": True}),
+        raw_call_asset_sha256=replay.put_asset({"raw_calls": [{"request": visible["request_envelopes"][0]}]}),
+    )
+    replay.append(result)
+    label = MechanismLabel(
+        mechanism_label_id="mutation-cli-label",
+        failure_snapshot_id=source.failure_snapshot_id,
+        parent_failure_snapshot_id=source.failure_snapshot_id,
+        parent_state_hash=source.state_hash,
+        mechanism_id="mutation-cli-mechanism", hypothesis_id="hyp-cli",
+        intervention_ids=("int-cli",), role=MechanismRole.REQUIRED,
+        evidence_replay_result_ids=(result.replay_result_id,), confidence=1.0,
+    )
+    replay.append(label)
+    replay.append(PromotionEvent(
+        promotion_event_id="mutation-cli-movement",
+        failure_snapshot_id=source.failure_snapshot_id,
+        mechanism_id=label.mechanism_id,
+        from_state=PromotionState.UNASSESSED, to_state=PromotionState.MOVEMENT,
+        reason="movement", evidence_replay_result_ids=(result.replay_result_id,),
+        partition=source.partition,
+    ))
+
+    causal = CausalEvidenceStore(tmp_path / "mutation-cli-causal", replay_store=replay)
+    surface = SurfaceEvidenceStore(
+        tmp_path / "mutation-cli-surface", replay_store=replay, causal_store=causal
+    )
+    mutation = MutationEvidenceStore(
+        tmp_path / "mutation-cli-mutation", replay_store=replay, surface_store=surface
+    )
+    spec = MutationSpec(
+        axis=MutationAxis.DEPENDENCY_DEPTH,
+        direction=MutationDirection.HARDER,
+        value=5,
+        structural_region_id="planning/dependency",
+        protected=True,
+    )
+    study = MutationStudy(
+        study_id="mutation-cli-study",
+        failure_snapshot_id=source.failure_snapshot_id,
+        mechanism_id=label.mechanism_id,
+        source_failure_snapshot_id=source.failure_snapshot_id,
+        source_state_hash=source.state_hash,
+        operating_surface_profile_id=None,
+        policy=MutationPolicy(), decision_id="D12",
+        candidate_specs=(spec,), protected_spec_ids=(spec.spec_id,),
+    )
+    mutation.append_study(study)
+    fixture_row = MutationFixture.create(
+        failure_snapshot_id=source.failure_snapshot_id,
+        source_failure_snapshot_id=source.failure_snapshot_id,
+        source_state_hash=source.state_hash,
+        mechanism_id=label.mechanism_id,
+        mutation_axis=spec.axis, mutation_direction=spec.direction,
+        mutation_value=spec.value, structural_region_id=spec.structural_region_id,
+        model_visible_asset_sha256=replay.put_asset({**visible, "task": {"depth": 5}}),
+        oracle_asset_sha256=replay.put_asset({"answer": "mutated"}),
+        semantic_contract_hash="d" * 64, partition=source.partition,
+        origin=MutationOrigin.SYNTHETIC_NEIGHBORHOOD,
+        metadata={
+            "mutation_spec_id": spec.spec_id,
+            "protected": True,
+            "operating_surface_profile_id": "movement-only",
+        },
+    )
+    replay.append(fixture_row)
+    assert replay.validate().ok and mutation.validate().ok
+    return replay, causal, surface, mutation, study
+
+
+def test_mutation_plan_and_show_cli_are_zero_call_inspection_paths(tmp_path, capsys) -> None:
+    replay, causal, surface, mutation, study = _build_mutation_cli_state(tmp_path)
+    common = [
+        "--replay-root", str(replay.root),
+        "--causal-root", str(causal.root),
+        "--surface-root", str(surface.root),
+        "--mutation-root", str(mutation.root),
+        "--study-id", study.study_id,
+    ]
+    assert main(["plan-mutations", *common]) == 0
+    planned = json.loads(capsys.readouterr().out.strip())
+    assert planned["MODEL_CALLS"] == 0
+    assert planned["study_id"] == study.study_id
+    assert len(planned["specs"]) == 1
+
+    assert main(["show-mutations", *common]) == 0
+    shown = json.loads(capsys.readouterr().out.strip())
+    assert shown["MODEL_CALLS"] == 0
+    assert shown["study"]["study_id"] == study.study_id
+    assert shown["mutation_store_valid"] is True
+
+
+def test_run_mutations_gate_fires_before_any_store_or_adapter_construction(tmp_path, capsys) -> None:
+    rc = main([
+        "run-mutations",
+        "--replay-root", str(tmp_path / "missing-replay"),
+        "--causal-root", str(tmp_path / "missing-causal"),
+        "--surface-root", str(tmp_path / "missing-surface"),
+        "--mutation-root", str(tmp_path / "missing-mutation"),
+        "--study-id", "missing-study",
+    ])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "--allow-model-calls" in captured.err
+
+
+def test_run_mutations_allow_gate_enters_injected_executor_without_real_calls(tmp_path, capsys) -> None:
+    replay, causal, surface, mutation, study = _build_mutation_cli_state(tmp_path)
+    seen = []
+
+    def fake_runner(actual_store, causal_root, surface_root, mutation_root, args):
+        seen.append((actual_store.root, causal_root, surface_root, mutation_root, args.study_id))
+        return {"study_id": args.study_id, "MODEL_CALLS": 0}
+
+    rc = main([
+        "run-mutations",
+        "--replay-root", str(replay.root),
+        "--causal-root", str(causal.root),
+        "--surface-root", str(surface.root),
+        "--mutation-root", str(mutation.root),
+        "--study-id", study.study_id,
+        "--allow-model-calls",
+    ], live_mutation_executor=fake_runner)
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert rc == 0 and payload["MODEL_CALLS"] == 0
+    assert seen == [(replay.root, causal.root, surface.root, mutation.root, study.study_id)]
