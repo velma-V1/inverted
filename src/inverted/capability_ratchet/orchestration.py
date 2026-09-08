@@ -1,0 +1,258 @@
+"""Deterministic bounded-retry orchestration for Test1B-v3 campaigns.
+
+This module owns control flow only. Model execution and immutable failure capture are
+injected so the campaign can reuse the existing runner and TEST_REPLAY snapshot store
+without creating a second evidence system.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+
+from inverted.universal_tuning.core import AtomicTask
+
+
+_INITIAL = "INITIAL"
+_RETRY_A = "RETRY_A"
+_RETRY_B = "RETRY_B"
+
+_FIRST_SHOT_PASS = "FIRST_SHOT_PASS"
+_RECOVERED_RETRY_A = "RECOVERED_RETRY_A"
+_RECOVERED_RETRY_B = "RECOVERED_RETRY_B"
+_HARD_FAILURE = "HARD_FAILURE"
+
+
+def _required(name: str, value: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} is required")
+
+
+@dataclass(frozen=True)
+class RetryIngredient:
+    """One declared intervention used after a failed attempt."""
+
+    ingredient_id: str
+    description: str
+
+    def __post_init__(self) -> None:
+        _required("ingredient_id", self.ingredient_id)
+        _required("description", self.description)
+
+
+@dataclass(frozen=True)
+class AttemptOutcome:
+    """Normalized result returned by the model-specific attempt executor."""
+
+    passed: bool
+    failure_classes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if type(self.passed) is not bool:
+            raise TypeError("passed must be boolean")
+        if isinstance(self.failure_classes, (str, bytes, bytearray)):
+            raise TypeError("failure_classes must be a sequence of strings")
+        classes = tuple(self.failure_classes)
+        if any(not isinstance(item, str) or not item.strip() for item in classes):
+            raise TypeError("failure_classes must contain non-blank strings")
+        if self.passed and classes:
+            raise ValueError("passed outcomes cannot contain failure classes")
+        if not self.passed and not classes:
+            raise ValueError("failed outcomes require at least one failure class")
+        object.__setattr__(self, "failure_classes", classes)
+
+
+@dataclass(frozen=True)
+class AttemptContext:
+    """System-owned context for exactly one physical/logical campaign attempt."""
+
+    model_id: str
+    task: AtomicTask
+    stage: str
+    attempt_index: int
+    retry_ingredient: RetryIngredient | None
+
+    def __post_init__(self) -> None:
+        _required("model_id", self.model_id)
+        if not isinstance(self.task, AtomicTask):
+            raise TypeError("task must be an AtomicTask")
+        if self.stage not in {_INITIAL, _RETRY_A, _RETRY_B}:
+            raise ValueError("stage must be INITIAL, RETRY_A, or RETRY_B")
+        if self.attempt_index not in {0, 1, 2}:
+            raise ValueError("attempt_index must be 0, 1, or 2")
+        if self.stage == _INITIAL:
+            if self.attempt_index != 0 or self.retry_ingredient is not None:
+                raise ValueError("INITIAL attempt cannot contain a retry ingredient")
+        else:
+            expected_index = 1 if self.stage == _RETRY_A else 2
+            if self.attempt_index != expected_index:
+                raise ValueError("retry stage and attempt_index disagree")
+            if not isinstance(self.retry_ingredient, RetryIngredient):
+                raise TypeError("retry attempts require a RetryIngredient")
+
+
+@dataclass(frozen=True)
+class TaskCampaignResult:
+    task_id: str
+    difficulty: int
+    status: str
+    attempt_count: int
+    failure_snapshot_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _required("task_id", self.task_id)
+        if self.status not in {
+            _FIRST_SHOT_PASS,
+            _RECOVERED_RETRY_A,
+            _RECOVERED_RETRY_B,
+            _HARD_FAILURE,
+        }:
+            raise ValueError("invalid task campaign status")
+        if self.attempt_count not in {1, 2, 3}:
+            raise ValueError("attempt_count must be 1, 2, or 3")
+        snapshots = tuple(self.failure_snapshot_ids)
+        if any(not isinstance(item, str) or not item.strip() for item in snapshots):
+            raise TypeError("failure_snapshot_ids must contain non-blank strings")
+        object.__setattr__(self, "failure_snapshot_ids", snapshots)
+
+
+@dataclass(frozen=True)
+class RetryCampaignResult:
+    model_id: str
+    task_results: tuple[TaskCampaignResult, ...]
+
+    def __post_init__(self) -> None:
+        _required("model_id", self.model_id)
+        results = tuple(self.task_results)
+        if any(not isinstance(item, TaskCampaignResult) for item in results):
+            raise TypeError("task_results must contain TaskCampaignResult values")
+        object.__setattr__(self, "task_results", results)
+
+    @property
+    def hard_failure_task_ids(self) -> tuple[str, ...]:
+        return tuple(
+            item.task_id for item in self.task_results if item.status == _HARD_FAILURE
+        )
+
+    @property
+    def total_attempts(self) -> int:
+        return sum(item.attempt_count for item in self.task_results)
+
+
+AttemptExecutor = Callable[[AttemptContext], AttemptOutcome]
+FailureSnapshotter = Callable[[AttemptContext, AttemptOutcome], str]
+
+
+class RetryCampaignOrchestrator:
+    """Run a task ladder with at most two declared recovery interventions per failure."""
+
+    def __init__(
+        self,
+        *,
+        execute_attempt: AttemptExecutor,
+        snapshot_failure: FailureSnapshotter,
+        retry_a: RetryIngredient,
+        retry_b: RetryIngredient,
+    ) -> None:
+        if not callable(execute_attempt):
+            raise TypeError("execute_attempt must be callable")
+        if not callable(snapshot_failure):
+            raise TypeError("snapshot_failure must be callable")
+        if not isinstance(retry_a, RetryIngredient) or not isinstance(retry_b, RetryIngredient):
+            raise TypeError("retry_a and retry_b must be RetryIngredient values")
+        if retry_a.ingredient_id == retry_b.ingredient_id:
+            raise ValueError("retry_a and retry_b must use distinct intervention identities")
+        self._execute_attempt = execute_attempt
+        self._snapshot_failure = snapshot_failure
+        self._retry_a = retry_a
+        self._retry_b = retry_b
+
+    def _execute(self, context: AttemptContext) -> AttemptOutcome:
+        outcome = self._execute_attempt(context)
+        if not isinstance(outcome, AttemptOutcome):
+            raise TypeError("execute_attempt must return AttemptOutcome")
+        return outcome
+
+    def _snapshot(self, context: AttemptContext, outcome: AttemptOutcome) -> str:
+        snapshot_id = self._snapshot_failure(context, outcome)
+        _required("failure snapshot id", snapshot_id)
+        return snapshot_id
+
+    def run(self, *, model_id: str, tasks: Iterable[AtomicTask]) -> RetryCampaignResult:
+        _required("model_id", model_id)
+        task_list = tuple(tasks)
+        if any(not isinstance(task, AtomicTask) for task in task_list):
+            raise TypeError("tasks must contain AtomicTask values")
+        task_ids = tuple(task.task_id for task in task_list)
+        if len(set(task_ids)) != len(task_ids):
+            raise ValueError("campaign task_ids must be unique")
+
+        results: list[TaskCampaignResult] = []
+        for task in task_list:
+            snapshots: list[str] = []
+
+            initial = AttemptContext(
+                model_id=model_id,
+                task=task,
+                stage=_INITIAL,
+                attempt_index=0,
+                retry_ingredient=None,
+            )
+            initial_outcome = self._execute(initial)
+            if initial_outcome.passed:
+                results.append(TaskCampaignResult(
+                    task_id=task.task_id,
+                    difficulty=task.difficulty,
+                    status=_FIRST_SHOT_PASS,
+                    attempt_count=1,
+                    failure_snapshot_ids=(),
+                ))
+                continue
+            snapshots.append(self._snapshot(initial, initial_outcome))
+
+            retry_a = AttemptContext(
+                model_id=model_id,
+                task=task,
+                stage=_RETRY_A,
+                attempt_index=1,
+                retry_ingredient=self._retry_a,
+            )
+            retry_a_outcome = self._execute(retry_a)
+            if retry_a_outcome.passed:
+                results.append(TaskCampaignResult(
+                    task_id=task.task_id,
+                    difficulty=task.difficulty,
+                    status=_RECOVERED_RETRY_A,
+                    attempt_count=2,
+                    failure_snapshot_ids=tuple(snapshots),
+                ))
+                continue
+            snapshots.append(self._snapshot(retry_a, retry_a_outcome))
+
+            retry_b = AttemptContext(
+                model_id=model_id,
+                task=task,
+                stage=_RETRY_B,
+                attempt_index=2,
+                retry_ingredient=self._retry_b,
+            )
+            retry_b_outcome = self._execute(retry_b)
+            if retry_b_outcome.passed:
+                results.append(TaskCampaignResult(
+                    task_id=task.task_id,
+                    difficulty=task.difficulty,
+                    status=_RECOVERED_RETRY_B,
+                    attempt_count=3,
+                    failure_snapshot_ids=tuple(snapshots),
+                ))
+                continue
+            snapshots.append(self._snapshot(retry_b, retry_b_outcome))
+            results.append(TaskCampaignResult(
+                task_id=task.task_id,
+                difficulty=task.difficulty,
+                status=_HARD_FAILURE,
+                attempt_count=3,
+                failure_snapshot_ids=tuple(snapshots),
+            ))
+
+        return RetryCampaignResult(model_id=model_id, task_results=tuple(results))
