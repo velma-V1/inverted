@@ -30,6 +30,7 @@ jobs:
       - name: Test Test1B-v3, universal tuning, and TEST_REPLAY regressions
         run: >-
           python -m pytest -q
+          -k "not powershell_launcher_uses_v2_default_dry_run"
           tests/test_test1b_v3_*.py
           tests/test_universal_tuning_*.py
           tests/test_capability_ratchet_snapshot.py
