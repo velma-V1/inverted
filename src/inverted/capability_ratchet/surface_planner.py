@@ -48,7 +48,12 @@ class SurfacePlan:
             self.worst_case_physical_calls,
             self.protected_exploration_calls,
         )
-        if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in values):
+        if any(
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
+            for value in values
+        ):
             raise ValueError("surface plan call counts must be non-negative integers")
         if not self.minimum_physical_calls <= self.expected_physical_calls <= self.worst_case_physical_calls:
             raise ValueError("surface plan call counts must be ordered")
@@ -131,8 +136,15 @@ class SurfacePlanner:
             and not metrics.get("failure_classes")
         )
 
-    @staticmethod
-    def _point_cost(axis: SurfaceAxis, value: Any) -> int:
+    def _point_cost(self, study: SurfaceStudy, axis: SurfaceAxis, value: Any) -> int:
+        estimator = getattr(self.evidence_compiler, "point_physical_calls", None)
+        if callable(estimator):
+            cost = estimator(study, self._point(study, axis, value))
+            if not isinstance(cost, int) or isinstance(cost, bool) or cost < 1:
+                raise ValueError("surface point physical-call estimate must be a positive integer")
+            return cost
+        # Compatibility fallback for isolated planner test doubles. Production
+        # planning always uses the frozen fixture estimator above.
         if axis is SurfaceAxis.REASONING_BUDGET:
             return 1 if value == 0 else 2
         if axis is SurfaceAxis.TEMPERATURE:
@@ -143,10 +155,13 @@ class SurfacePlanner:
     def _is_numeric(values: tuple[Any, ...]) -> bool:
         return all(isinstance(value, Real) and not isinstance(value, bool) for value in values)
 
-    def _resolved_profile(self, study: SurfaceStudy, axis: SurfaceAxis) -> OperatingSurfaceProfile | None:
+    def _resolved_profile(
+        self, study: SurfaceStudy, axis: SurfaceAxis
+    ) -> OperatingSurfaceProfile | None:
         profiles = tuple(self.surface_store.profiles(study.mechanism_id))
         matches = [
-            profile for profile in profiles
+            profile
+            for profile in profiles
             if isinstance(profile, OperatingSurfaceProfile)
             and profile.study_id == study.study_id
             and profile.axis is axis
@@ -155,16 +170,25 @@ class SurfacePlanner:
         ]
         return matches[-1] if matches else None
 
-    def _same_state_rows(self, study: SurfaceStudy, axis: SurfaceAxis) -> tuple[SurfaceObservation, ...]:
+    def _same_state_rows(
+        self, study: SurfaceStudy, axis: SurfaceAxis
+    ) -> tuple[SurfaceObservation, ...]:
         return tuple(
-            row for row in self.surface_store.observations(study.study_id)
+            row
+            for row in self.surface_store.observations(study.study_id)
             if isinstance(row, SurfaceObservation)
             and row.axis is axis
             and row.evidence_kind is SurfaceEvidenceKind.SAME_STATE_CAUSAL
         )
 
     @staticmethod
-    def _point(study: SurfaceStudy, axis: SurfaceAxis, value: Any, *, protected: bool = False) -> SurfacePoint:
+    def _point(
+        study: SurfaceStudy,
+        axis: SurfaceAxis,
+        value: Any,
+        *,
+        protected: bool = False,
+    ) -> SurfacePoint:
         return SurfacePoint.create(
             study=study,
             axis=axis,
@@ -219,7 +243,11 @@ class SurfacePlanner:
     def plan_next(self, study: SurfaceStudy, *, max_new_points: int = 2) -> SurfacePlan:
         if not isinstance(study, SurfaceStudy):
             raise TypeError("study must be SurfaceStudy")
-        if not isinstance(max_new_points, int) or isinstance(max_new_points, bool) or max_new_points < 1:
+        if (
+            not isinstance(max_new_points, int)
+            or isinstance(max_new_points, bool)
+            or max_new_points < 1
+        ):
             raise ValueError("max_new_points must be a positive integer")
         answered = frozenset(self.evidence_compiler.answered_points(study))
         resolved: list[OperatingSurfaceProfile] = []
@@ -232,7 +260,8 @@ class SurfacePlanner:
 
             values = tuple(study.axis_values[axis.value])
             unresolved_values = tuple(
-                value for value in values
+                value
+                for value in values
                 if self._point(study, axis, value).surface_point_id not in answered
             )
             if not unresolved_values:
@@ -240,12 +269,22 @@ class SurfacePlanner:
 
             candidates = self._ordered_candidates(study, axis, unresolved_values)
             selected = candidates[:max_new_points]
-            protected = tuple(point for point in candidates if point.protected_exploration)
-            reserve = self._point_cost(axis, protected[0].value) if protected else 0
-            selected_cost = sum(self._point_cost(axis, point.value) for point in selected)
-            protected_selected = any(point.protected_exploration for point in selected)
+            protected = tuple(
+                point for point in candidates if point.protected_exploration
+            )
+            reserve = (
+                self._point_cost(study, axis, protected[0].value) if protected else 0
+            )
+            selected_cost = sum(
+                self._point_cost(study, axis, point.value) for point in selected
+            )
+            protected_selected = any(
+                point.protected_exploration for point in selected
+            )
             expected = selected_cost if protected_selected else selected_cost + reserve
-            worst = sum(self._point_cost(axis, value) for value in unresolved_values)
+            worst = sum(
+                self._point_cost(study, axis, value) for value in unresolved_values
+            )
             expected = min(expected, worst)
             reason = (
                 f"adaptively bracket {axis.value}: probe the lowest unresolved boundary "
@@ -261,10 +300,14 @@ class SurfacePlanner:
             )
 
         if len(resolved) == len(study.axes) and resolved:
-            disposition = resolved[0].disposition.value if len(resolved) == 1 else "ALL_AXES"
+            disposition = (
+                resolved[0].disposition.value if len(resolved) == 1 else "ALL_AXES"
+            )
             return SurfacePlan(
                 points=(),
-                decision_reason="stored operating-surface evidence already settles the active decision",
+                decision_reason=(
+                    "stored operating-surface evidence already settles the active decision"
+                ),
                 minimum_physical_calls=0,
                 expected_physical_calls=0,
                 worst_case_physical_calls=0,
@@ -273,7 +316,9 @@ class SurfacePlanner:
             )
         return SurfacePlan(
             points=(),
-            decision_reason="stored same-state evidence leaves no unresolved registered point",
+            decision_reason=(
+                "stored same-state evidence leaves no unresolved registered point"
+            ),
             minimum_physical_calls=0,
             expected_physical_calls=0,
             worst_case_physical_calls=0,
