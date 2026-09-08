@@ -9,10 +9,16 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from .autopsy import FailureAutopsy
+from .causal_store import CausalEvidenceStore
 from .core import Partition, PromotionState, ReplayRequest, ReplayResult, to_payload
 from .historical import V2EvidenceSource, preview_v2_failures, seed_v2_failures
+from .interventions import InterventionGenerator
+from .lab import FailureLab, FailureResearchProgram
+from .mechanisms import MechanismLocalizer
 from .query import ReplaySelector, select_failures
 from .replay_store import ReplayStore
+from .tournament import TournamentPlanner
 
 _SENSITIVE_DISPLAY_KEYS = {"authorization", "api_key", "apikey", "token", "password", "secret"}
 
@@ -47,6 +53,7 @@ def _selector(args: argparse.Namespace) -> ReplaySelector:
         campaign=getattr(args, "campaign", None),
         partition=getattr(args, "partition", None),
         promotion_state=getattr(args, "promotion_state", None),
+        mechanism=getattr(args, "mechanism", None),
         snapshot_ids=snapshots,
     )
 
@@ -73,7 +80,16 @@ def _add_selector_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--campaign")
     parser.add_argument("--partition", choices=[item.value for item in Partition])
     parser.add_argument("--promotion-state", choices=[item.value for item in PromotionState])
+    parser.add_argument("--mechanism")
     parser.add_argument("--snapshot-id", action="append", dest="snapshot_ids")
+
+
+def _add_lab_args(parser: argparse.ArgumentParser, *, executable: bool = False) -> None:
+    parser.add_argument("--replay-root", required=True)
+    parser.add_argument("--causal-root", required=True)
+    parser.add_argument("--snapshot-id", required=True)
+    if executable:
+        parser.add_argument("--allow-model-calls", action="store_true")
 
 
 def _replay_counts(store: ReplayStore) -> dict[str, int]:
@@ -131,6 +147,18 @@ def _build_parser() -> argparse.ArgumentParser:
     execute.add_argument("--decision-id", default="D-REPLAY")
     execute.add_argument("--hypothesis-id", default="H-REPRODUCIBILITY")
     execute.add_argument("--allow-model-calls", action="store_true")
+
+    autopsy = sub.add_parser("autopsy")
+    _add_lab_args(autopsy)
+
+    plan_lab = sub.add_parser("plan-lab")
+    _add_lab_args(plan_lab)
+
+    show_lab = sub.add_parser("show-lab")
+    _add_lab_args(show_lab)
+
+    run_lab = sub.add_parser("run-lab")
+    _add_lab_args(run_lab, executable=True)
     return parser
 
 
@@ -140,7 +168,7 @@ def _plan_rows(store: ReplayStore, args: argparse.Namespace) -> list[dict[str, A
         source_model=selector.source_model, family=selector.family, difficulty=selector.difficulty,
         failure_class=selector.failure_class, campaign=selector.campaign,
         partition=selector.partition, promotion_state=selector.promotion_state,
-        snapshot_ids=selector.snapshot_ids,
+        mechanism=selector.mechanism, snapshot_ids=selector.snapshot_ids,
     )
     selected = select_failures(store, selector)
     if args.limit < 1:
@@ -168,6 +196,99 @@ def _plan_rows(store: ReplayStore, args: argparse.Namespace) -> list[dict[str, A
         })
     return rows
 
+
+def _build_lab(store: ReplayStore, causal_root: Path) -> FailureLab:
+    causal = CausalEvidenceStore(causal_root, replay_store=store)
+    return FailureLab(
+        store,
+        causal,
+        FailureAutopsy(store, causal),
+        InterventionGenerator(store, causal),
+        TournamentPlanner(causal),
+        MechanismLocalizer(store, causal),
+    )
+
+
+def _divergence_payload(divergence) -> dict[str, Any]:
+    return {
+        "divergence_class": divergence.divergence_class.value,
+        "observable_path": divergence.observable_path,
+        "event_index": divergence.event_index,
+        "evidence_refs": list(divergence.evidence_refs),
+        "confidence": divergence.confidence,
+    }
+
+
+def _hypothesis_payload(hypothesis) -> dict[str, Any]:
+    return {
+        "hypothesis_id": hypothesis.hypothesis_id,
+        "owner_candidate": hypothesis.owner_candidate.value,
+        "claim": hypothesis.claim,
+        "expected_if_true": hypothesis.expected_if_true,
+        "falsifier": hypothesis.falsifier,
+        "status": hypothesis.status.value,
+        "protected_exploration": hypothesis.protected_exploration,
+    }
+
+
+def _intervention_payload(intervention) -> dict[str, Any]:
+    return {
+        "intervention_id": intervention.intervention_id,
+        "hypothesis_id": intervention.hypothesis_id,
+        "kind": intervention.kind.value,
+        "label": intervention.label,
+        "changed_dimensions": list(intervention.changed_dimensions),
+        "expected_causal_implication": intervention.expected_causal_implication,
+        "projected_physical_calls": intervention.projected_physical_calls,
+        "composition": list(intervention.composition),
+        "sham_for": intervention.sham_for,
+        "ablates": list(intervention.ablates),
+        "protected_exploration": intervention.protected_exploration,
+    }
+
+
+def _branch_payload(branch) -> dict[str, Any]:
+    return {
+        "branch_id": branch.branch_id,
+        "hypothesis_id": branch.hypothesis_id,
+        "intervention_ids": list(branch.intervention_ids),
+        "mode": branch.mode,
+        "decision_reason": branch.decision_reason,
+        "unresolved_decision": branch.unresolved_decision,
+        "protected_exploration": branch.protected_exploration,
+        "projected_physical_calls": branch.projected_physical_calls,
+    }
+
+
+def _autopsy_payload(program: FailureResearchProgram) -> dict[str, Any]:
+    return {
+        "failure_snapshot_id": program.failure_snapshot_id,
+        "root_failure_snapshot_id": program.root_failure_snapshot_id,
+        "first_divergence": _divergence_payload(program.autopsy.first_divergence),
+        "hypotheses": [_hypothesis_payload(item) for item in program.autopsy.hypotheses],
+        "evidence_refs": list(program.autopsy.evidence_refs),
+        "unresolved_questions": list(program.autopsy.unresolved_questions),
+        "MODEL_CALLS": 0,
+    }
+
+
+def _program_payload(program: FailureResearchProgram) -> dict[str, Any]:
+    return {
+        "failure_snapshot_id": program.failure_snapshot_id,
+        "root_failure_snapshot_id": program.root_failure_snapshot_id,
+        "first_divergence": _divergence_payload(program.autopsy.first_divergence),
+        "hypothesis_ids": [item.hypothesis_id for item in program.autopsy.hypotheses],
+        "interventions": [_intervention_payload(item) for item in program.interventions],
+        "branches": [_branch_payload(item) for item in program.tournament.branches],
+        "call_geometry": {
+            "minimum": program.tournament.minimum_physical_calls,
+            "expected": program.tournament.expected_physical_calls,
+            "worst_case": program.tournament.worst_case_physical_calls,
+        },
+        "replay_request_ids": [item.replay_request_id for item in program.replay_requests],
+        "projected_physical_calls": program.projected_physical_calls,
+        "MODEL_CALLS": 0,
+    }
 
 
 def _execute_qwen_replay(store: ReplayStore, args: argparse.Namespace) -> dict[str, Any]:
@@ -215,12 +336,48 @@ def _execute_qwen_replay(store: ReplayStore, args: argparse.Namespace) -> dict[s
     payload["MODEL_CALLS"] = int(result.metrics.get("physical_calls", 0) or 0)
     return payload
 
-def main(argv: list[str] | None = None, *, live_executor=None) -> int:
+
+def _execute_qwen_lab(
+    store: ReplayStore,
+    causal_root: Path,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Construct live lab adapters only after ``run-lab`` passes its gate."""
+    lab = _build_lab(store, causal_root)
+    program = lab.prepare(args.snapshot_id)
+    fixture = program.fixture
+    if fixture.oracle_asset_sha256 is None:
+        raise ValueError("fixture has no self-contained oracle asset; refusing unscored lab execution")
+    store.read_asset(fixture.oracle_asset_sha256)
+
+    from inverted.universal_tuning.qwen_ollama import QwenOllamaAdapter
+    from .qwen_replay import QwenReplayAdapter, V2ReplayScorer
+
+    qwen = QwenOllamaAdapter(model_id=fixture.source_model_id)
+    adapter = QwenReplayAdapter(qwen, scorer=V2ReplayScorer(store))
+    result = lab.execute(program, adapters={fixture.source_model_id: adapter})
+    physical_calls = sum(int(item.metrics.get("physical_calls", 0) or 0) for item in result.replay_results)
+    return {
+        "failure_snapshot_id": program.failure_snapshot_id,
+        "root_failure_snapshot_id": program.root_failure_snapshot_id,
+        "replay_result_ids": [item.replay_result_id for item in result.replay_results],
+        "child_failure_snapshot_ids": list(result.child_failure_snapshot_ids),
+        "supported_hypotheses": list(result.assessment.supported_hypotheses),
+        "falsified_hypotheses": list(result.assessment.falsified_hypotheses),
+        "movement_events": [item.promotion_event_id for item in result.assessment.promotion_events],
+        "MODEL_CALLS": physical_calls,
+    }
+
+
+def main(argv: list[str] | None = None, *, live_executor=None, live_lab_executor=None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
     if args.command == "execute-replay" and not args.allow_model_calls:
         print("execute-replay requires explicit --allow-model-calls", file=sys.stderr)
+        return 2
+    if args.command == "run-lab" and not args.allow_model_calls:
+        print("run-lab requires explicit --allow-model-calls", file=sys.stderr)
         return 2
 
     if args.command == "validate":
@@ -277,6 +434,37 @@ def main(argv: list[str] | None = None, *, live_executor=None) -> int:
         try:
             payload = runner(store, args)
         except (TypeError, ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        _print(payload)
+        return 0
+    if args.command in {"autopsy", "plan-lab", "show-lab"}:
+        causal_root = Path(args.causal_root)
+        try:
+            lab = _build_lab(store, causal_root)
+            program = lab.prepare(args.snapshot_id)
+            if args.command == "autopsy":
+                payload = _autopsy_payload(program)
+            elif args.command == "plan-lab":
+                payload = _program_payload(program)
+            else:
+                payload = {
+                    **_program_payload(program),
+                    "replay_store_valid": store.validate().ok,
+                    "causal_store_valid": lab.causal_store.validate().ok,
+                    "mechanism_graph_present": lab.localizer.mechanism_graph_path.exists(),
+                }
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        _print(payload)
+        return 0
+    if args.command == "run-lab":
+        causal_root = Path(args.causal_root)
+        runner = _execute_qwen_lab if live_lab_executor is None else live_lab_executor
+        try:
+            payload = runner(store, causal_root, args)
+        except (KeyError, TypeError, ValueError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
         _print(payload)
