@@ -13,6 +13,8 @@ from dataclasses import replace
 import pytest
 
 from inverted.capability_ratchet import FailureFixture, Partition, ReplayMode, ReplayRequest, ReplayResult
+from inverted.capability_ratchet.causal_core import MechanismRole
+from inverted.capability_ratchet.core import MechanismLabel, PromotionEvent, PromotionState
 from inverted.capability_ratchet.replay_store import ReplayStore
 
 
@@ -772,3 +774,45 @@ print(ReplayStore(root).append(record), flush=True)
     registry_digest = hashlib.sha256((tmp_path / "TEST_REPLAY.jsonl").read_bytes()).hexdigest()
     assert manifest == registry_digest.encode("ascii") + b"\n"
     assert ReplayStore(tmp_path).validate().ok
+
+
+
+def test_mechanism_and_promotion_lineage_is_validated(tmp_path) -> None:
+    store = ReplayStore(tmp_path)
+    visible = store.put_asset({"request": 1})
+    output = store.put_asset({"output": 1})
+    raw = store.put_asset({"raw": 1})
+    root = fixture(visible)
+    store.append(root)
+    request = request_for(root)
+    store.append(request)
+    result = ReplayResult(
+        replay_result_id="result-mechanism", replay_request_id=request.replay_request_id,
+        failure_snapshot_id=root.failure_snapshot_id,
+        parent_failure_snapshot_id=root.failure_snapshot_id,
+        parent_state_hash=root.state_hash, mode=ReplayMode.EXACT, target_model_id="model",
+        target_model_digest="digest", partition=Partition.DEVELOPMENT, completed=True,
+        semantic_pass=True, contract_pass=True, output_asset_sha256=output, raw_call_asset_sha256=raw,
+    )
+    store.append(result)
+    label = MechanismLabel(
+        mechanism_label_id="label-mechanism", failure_snapshot_id=root.failure_snapshot_id,
+        parent_failure_snapshot_id=root.failure_snapshot_id, parent_state_hash=root.state_hash,
+        mechanism_id="mechanism-1", hypothesis_id="H1", intervention_ids=("int-target", "int-sham"),
+        role=MechanismRole.ENABLER, evidence_replay_result_ids=(result.replay_result_id,), confidence=0.9,
+    )
+    store.append(label)
+    store.append(PromotionEvent(
+        promotion_event_id="promotion-mechanism", failure_snapshot_id=root.failure_snapshot_id,
+        mechanism_id=label.mechanism_id, from_state=PromotionState.UNASSESSED,
+        to_state=PromotionState.MOVEMENT, reason="target beat matched sham",
+        evidence_replay_result_ids=(result.replay_result_id,), partition=Partition.DEVELOPMENT,
+    ))
+    assert store.validate().ok
+
+    store.append(replace(
+        label, mechanism_label_id="label-broken", failure_snapshot_id="missing-failure",
+    ))
+    report = store.validate()
+    assert not report.ok
+    assert any("label-broken" in item and "failure" in item for item in report.broken_lineage)

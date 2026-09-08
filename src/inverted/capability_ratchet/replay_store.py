@@ -13,6 +13,8 @@ from typing import Any, Iterator
 
 from .core import (
     FailureFixture,
+    MechanismLabel,
+    PromotionEvent,
     ReplayRecord,
     ReplayRecordType,
     ReplayRequest,
@@ -386,6 +388,10 @@ class ReplayStore:
                 return (ReplayRequest, record.replay_request_id)
             if isinstance(record, ReplayResult):
                 return (ReplayResult, record.replay_result_id)
+            if isinstance(record, MechanismLabel):
+                return (MechanismLabel, record.mechanism_label_id)
+            if isinstance(record, PromotionEvent):
+                return (PromotionEvent, record.promotion_event_id)
             return None
 
         valid_edges: dict[str, str] = {}
@@ -445,7 +451,7 @@ class ReplayStore:
             if key is not None:
                 groups.setdefault(key, []).append(record)
 
-        labels = {FailureFixture: "failure", ReplayRequest: "request", ReplayResult: "result"}
+        labels = {FailureFixture: "failure", ReplayRequest: "request", ReplayResult: "result", MechanismLabel: "mechanism label", PromotionEvent: "promotion event"}
         active_records: list[ReplayRecord] = []
         for (record_type, identity), group in groups.items():
             if len(group) == 1:
@@ -480,6 +486,14 @@ class ReplayStore:
         requests = {
             record.replay_request_id: record
             for record in active_records if isinstance(record, ReplayRequest)
+        }
+        results = {
+            record.replay_result_id: record
+            for record in active_records if isinstance(record, ReplayResult)
+        }
+        mechanism_labels = {
+            record.mechanism_label_id: record
+            for record in active_records if isinstance(record, MechanismLabel)
         }
 
         def root_failure_id(failure: FailureFixture) -> str | None:
@@ -573,6 +587,44 @@ class ReplayStore:
                           (child.source_model_id, child.source_model_digest) !=
                           (record.target_model_id, record.target_model_digest)):
                         broken.append(f"result {record.replay_result_id}: incorrect child parent/state lineage")
+            elif isinstance(record, MechanismLabel):
+                parent = failures.get(record.parent_failure_snapshot_id)
+                validate_declared_root(
+                    "mechanism label", record.mechanism_label_id, record.failure_snapshot_id, parent
+                )
+                if parent is None:
+                    broken.append(f"mechanism label {record.mechanism_label_id}: missing parent failure")
+                elif record.parent_state_hash != parent.state_hash:
+                    broken.append(f"mechanism label {record.mechanism_label_id}: parent state mismatch")
+                for result_id in record.evidence_replay_result_ids:
+                    evidence = results.get(result_id)
+                    if evidence is None:
+                        broken.append(f"mechanism label {record.mechanism_label_id}: missing replay result {result_id}")
+                    elif (evidence.failure_snapshot_id != record.failure_snapshot_id or
+                          evidence.parent_failure_snapshot_id != record.parent_failure_snapshot_id or
+                          evidence.parent_state_hash != record.parent_state_hash):
+                        broken.append(f"mechanism label {record.mechanism_label_id}: replay result lineage mismatch {result_id}")
+            elif isinstance(record, PromotionEvent):
+                root = failures.get(record.failure_snapshot_id)
+                if root is None:
+                    broken.append(f"promotion event {record.promotion_event_id}: missing failure {record.failure_snapshot_id}")
+                elif root.parent_failure_snapshot_id is not None:
+                    broken.append(f"promotion event {record.promotion_event_id}: failure_snapshot_id must identify a root failure")
+                elif record.partition != root.partition:
+                    broken.append(f"promotion event {record.promotion_event_id}: partition mismatch")
+                matching_labels = [
+                    label for label in mechanism_labels.values()
+                    if label.failure_snapshot_id == record.failure_snapshot_id
+                    and label.mechanism_id == record.mechanism_id
+                ]
+                if not matching_labels:
+                    broken.append(f"promotion event {record.promotion_event_id}: missing mechanism label")
+                for result_id in record.evidence_replay_result_ids:
+                    evidence = results.get(result_id)
+                    if evidence is None:
+                        broken.append(f"promotion event {record.promotion_event_id}: missing replay result {result_id}")
+                    elif evidence.failure_snapshot_id != record.failure_snapshot_id:
+                        broken.append(f"promotion event {record.promotion_event_id}: replay result family mismatch {result_id}")
         for failure in failures.values():
             if failure.parent_failure_snapshot_id is None:
                 continue

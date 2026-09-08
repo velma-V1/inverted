@@ -11,6 +11,8 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping, TypeAlias
 
+from .causal_core import MechanismRole
+
 
 class ReplayRecordType(str, Enum):
     FAILURE_FIXTURE = "FAILURE_FIXTURE"
@@ -346,7 +348,79 @@ class ReplayResult:
             raise ValueError("adapter_changes are only valid for CROSS_MODEL replay results")
 
 
-ReplayRecord: TypeAlias = FailureFixture | ReplayRequest | ReplayResult
+@dataclass(frozen=True)
+class MechanismLabel:
+    mechanism_label_id: str
+    failure_snapshot_id: str
+    parent_failure_snapshot_id: str
+    parent_state_hash: str
+    mechanism_id: str
+    hypothesis_id: str
+    intervention_ids: tuple[str, ...]
+    role: MechanismRole
+    evidence_replay_result_ids: tuple[str, ...]
+    confidence: float
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    record_id: str | None = None
+    record_type: ReplayRecordType = field(default=ReplayRecordType.MECHANISM_LABEL, init=False)
+
+    def __post_init__(self) -> None:
+        for name in (
+            "mechanism_label_id", "failure_snapshot_id", "parent_failure_snapshot_id",
+            "mechanism_id", "hypothesis_id",
+        ):
+            _required(name, getattr(self, name))
+        _sha256("parent_state_hash", self.parent_state_hash)
+        intervention_ids = _string_tuple("intervention_ids", self.intervention_ids)
+        evidence_ids = _string_tuple("evidence_replay_result_ids", self.evidence_replay_result_ids)
+        if len(set(intervention_ids)) != len(intervention_ids):
+            raise ValueError("intervention_ids must be unique")
+        if len(set(evidence_ids)) != len(evidence_ids):
+            raise ValueError("evidence_replay_result_ids must be unique")
+        object.__setattr__(self, "intervention_ids", intervention_ids)
+        object.__setattr__(self, "evidence_replay_result_ids", evidence_ids)
+        if not isinstance(self.role, MechanismRole):
+            object.__setattr__(self, "role", MechanismRole(self.role))
+        if not isinstance(self.confidence, (int, float)) or isinstance(self.confidence, bool):
+            raise TypeError("confidence must be numeric")
+        if not 0.0 <= float(self.confidence) <= 1.0:
+            raise ValueError("confidence must be between 0 and 1")
+        object.__setattr__(self, "confidence", float(self.confidence))
+        _freeze_mapping(self, "metadata")
+        _sha256("record_id", self.record_id, optional=True)
+
+
+@dataclass(frozen=True)
+class PromotionEvent:
+    promotion_event_id: str
+    failure_snapshot_id: str
+    mechanism_id: str
+    from_state: PromotionState
+    to_state: PromotionState
+    reason: str
+    evidence_replay_result_ids: tuple[str, ...]
+    partition: Partition
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    record_id: str | None = None
+    record_type: ReplayRecordType = field(default=ReplayRecordType.PROMOTION_EVENT, init=False)
+
+    def __post_init__(self) -> None:
+        for name in ("promotion_event_id", "failure_snapshot_id", "mechanism_id", "reason"):
+            _required(name, getattr(self, name))
+        _coerce_enum(self, "from_state", PromotionState)
+        _coerce_enum(self, "to_state", PromotionState)
+        _coerce_enum(self, "partition", Partition)
+        if self.from_state is self.to_state:
+            raise ValueError("promotion event must change state")
+        evidence_ids = _string_tuple("evidence_replay_result_ids", self.evidence_replay_result_ids)
+        if len(set(evidence_ids)) != len(evidence_ids):
+            raise ValueError("evidence_replay_result_ids must be unique")
+        object.__setattr__(self, "evidence_replay_result_ids", evidence_ids)
+        _freeze_mapping(self, "metadata")
+        _sha256("record_id", self.record_id, optional=True)
+
+
+ReplayRecord: TypeAlias = FailureFixture | ReplayRequest | ReplayResult | MechanismLabel | PromotionEvent
 
 
 def to_payload(value: ReplayRecord) -> dict[str, Any]:
@@ -429,6 +503,36 @@ def to_payload(value: ReplayRecord) -> dict[str, Any]:
             "metadata": value.metadata,
             "record_id": value.record_id,
         }
+    elif isinstance(value, MechanismLabel):
+        payload = {
+            "record_type": value.record_type,
+            "mechanism_label_id": value.mechanism_label_id,
+            "failure_snapshot_id": value.failure_snapshot_id,
+            "parent_failure_snapshot_id": value.parent_failure_snapshot_id,
+            "parent_state_hash": value.parent_state_hash,
+            "mechanism_id": value.mechanism_id,
+            "hypothesis_id": value.hypothesis_id,
+            "intervention_ids": value.intervention_ids,
+            "role": value.role,
+            "evidence_replay_result_ids": value.evidence_replay_result_ids,
+            "confidence": value.confidence,
+            "metadata": value.metadata,
+            "record_id": value.record_id,
+        }
+    elif isinstance(value, PromotionEvent):
+        payload = {
+            "record_type": value.record_type,
+            "promotion_event_id": value.promotion_event_id,
+            "failure_snapshot_id": value.failure_snapshot_id,
+            "mechanism_id": value.mechanism_id,
+            "from_state": value.from_state,
+            "to_state": value.to_state,
+            "reason": value.reason,
+            "evidence_replay_result_ids": value.evidence_replay_result_ids,
+            "partition": value.partition,
+            "metadata": value.metadata,
+            "record_id": value.record_id,
+        }
     else:
         raise TypeError(f"unsupported replay record: {type(value).__name__}")
     return {key: _json_value(item) for key, item in payload.items() if item is not None}
@@ -451,4 +555,8 @@ def from_payload(payload: Mapping[str, Any]) -> ReplayRecord:
         return ReplayRequest(**raw)
     if record_type is ReplayRecordType.REPLAY_RESULT:
         return ReplayResult(**raw)
+    if record_type is ReplayRecordType.MECHANISM_LABEL:
+        return MechanismLabel(**raw)
+    if record_type is ReplayRecordType.PROMOTION_EVENT:
+        return PromotionEvent(**raw)
     raise ValueError(f"unsupported replay record type: {record_type.value}")

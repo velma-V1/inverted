@@ -29,17 +29,17 @@
 
 ## File Structure
 
-- Create `src/inverted/capability_ratchet/causal_core.py` — frozen causal/autopsy/intervention/mechanism contracts and enums.
-- Create `src/inverted/capability_ratchet/causal_store.py` — integrity-gated `causal-hypotheses.jsonl` and immutable intervention registry/assets.
-- Create `src/inverted/capability_ratchet/autopsy.py` — deterministic first-divergence extraction and hypothesis generation.
-- Create `src/inverted/capability_ratchet/interventions.py` — intervention recipes, matched sham/control construction, and `ReplayRequest` compilation.
-- Create `src/inverted/capability_ratchet/tournament.py` — minimal hypothesis-separating tournament geometry, pruning, ablation generation, and call accounting.
-- Create `src/inverted/capability_ratchet/mechanisms.py` — matched-outcome causal localization, MOVEMENT disposition, and hash-linked `mechanism-graph.json` derived view.
-- Create `src/inverted/capability_ratchet/lab.py` — end-to-end failure micro-program orchestration and child-failure feedback.
-- Modify `src/inverted/capability_ratchet/core.py` — add `MECHANISM_LABEL` and `PROMOTION_EVENT` canonical replay records only.
-- Modify `src/inverted/capability_ratchet/replay_store.py` — validate/store the new canonical replay record types without changing prior rows.
-- Modify `src/inverted/capability_ratchet/query.py` and `cli.py` — mechanism/hypothesis inspection and zero-call lab planning.
-- Modify `src/inverted/capability_ratchet/__init__.py` — stable exports after behavior is proven.
+- Create `src/inverted/capability_ratchet/causal_core.py` â€” frozen causal/autopsy/intervention/mechanism contracts and enums.
+- Create `src/inverted/capability_ratchet/causal_store.py` â€” integrity-gated `causal-hypotheses.jsonl` and immutable intervention registry/assets.
+- Create `src/inverted/capability_ratchet/autopsy.py` â€” deterministic first-divergence extraction and hypothesis generation.
+- Create `src/inverted/capability_ratchet/interventions.py` â€” intervention recipes, matched sham/control construction, and `ReplayRequest` compilation.
+- Create `src/inverted/capability_ratchet/tournament.py` â€” minimal hypothesis-separating tournament geometry, pruning, ablation generation, and call accounting.
+- Create `src/inverted/capability_ratchet/mechanisms.py` â€” matched-outcome causal localization, MOVEMENT disposition, and hash-linked `mechanism-graph.json` derived view.
+- Create `src/inverted/capability_ratchet/lab.py` â€” end-to-end failure micro-program orchestration and child-failure feedback.
+- Modify `src/inverted/capability_ratchet/core.py` â€” add `MECHANISM_LABEL` and `PROMOTION_EVENT` canonical replay records only.
+- Modify `src/inverted/capability_ratchet/replay_store.py` â€” validate/store the new canonical replay record types without changing prior rows.
+- Modify `src/inverted/capability_ratchet/query.py` and `cli.py` â€” mechanism/hypothesis inspection and zero-call lab planning.
+- Modify `src/inverted/capability_ratchet/__init__.py` â€” stable exports after behavior is proven.
 - Create tests `tests/test_capability_ratchet_causal_core.py`, `..._causal_store.py`, `..._autopsy.py`, `..._interventions.py`, `..._tournament.py`, `..._mechanisms.py`, `..._lab.py`, and `..._causal_preflight.py`.
 
 ---
@@ -57,7 +57,7 @@
 - Produces `DivergenceClass`, `ArchitectureOwner`, `HypothesisStatus`, `InterventionKind`, `MechanismRole`, `FirstDivergence`, `CausalHypothesis`, `InterventionDefinition`, `MechanismLabel`, `PromotionEvent`.
 - `MechanismLabel` and `PromotionEvent` are canonical append-only `TEST_REPLAY` record types; hypotheses/interventions are separate scientific metadata objects.
 
-- [ ] **1.1 Write failing contract tests.** Require frozen JSON-safe fields, stable IDs/hashes, evidence refs, falsifier/prediction fields, changed-dimension uniqueness, sham/ablation lineage, and owner/role enums. Add replay-store tests proving `MECHANISM_LABEL` and `PROMOTION_EVENT` serialize/round-trip/validate and prior rows remain byte-identical.
+- [x] **1.1 Write failing contract tests.** Require frozen JSON-safe fields, stable IDs/hashes, evidence refs, falsifier/prediction fields, changed-dimension uniqueness, sham/ablation lineage, and owner/role enums. Add replay-store tests proving `MECHANISM_LABEL` and `PROMOTION_EVENT` serialize/round-trip/validate and prior rows remain byte-identical.
 
 ```python
 def test_hypothesis_is_falsifiable_and_bound_to_failure():
@@ -80,7 +80,7 @@ def test_hypothesis_is_falsifiable_and_bound_to_failure():
     assert h.hypothesis_id.startswith("hyp-")
 ```
 
-- [ ] **1.2 Run red tests.**
+- [x] **1.2 Run red tests.**
 
 ```bash
 pytest tests/test_capability_ratchet_causal_core.py tests/test_capability_ratchet_replay_store.py -q
@@ -88,15 +88,15 @@ pytest tests/test_capability_ratchet_causal_core.py tests/test_capability_ratche
 
 Expected: new causal types/record parsing are missing.
 
-- [ ] **1.3 Implement minimal contracts and replay-record extensions.** Do not add orchestration or generators in this task. Preserve existing `FailureFixture`, `ReplayRequest`, and `ReplayResult` payloads byte-for-byte.
+- [x] **1.3 Implement minimal contracts and replay-record extensions.** Do not add orchestration or generators in this task. Preserve existing `FailureFixture`, `ReplayRequest`, and `ReplayResult` payloads byte-for-byte.
 
-- [ ] **1.4 Run green tests plus existing core/store regressions.**
+- [x] **1.4 Run green tests plus existing core/store regressions.**
 
 ```bash
 pytest tests/test_capability_ratchet_core.py tests/test_capability_ratchet_replay_store.py tests/test_capability_ratchet_causal_core.py -q
 ```
 
-- [ ] **1.5 Commit.**
+- [x] **1.5 Commit.**
 
 ```bash
 git add src/inverted/capability_ratchet/causal_core.py src/inverted/capability_ratchet/core.py src/inverted/capability_ratchet/replay_store.py tests/test_capability_ratchet_causal_core.py tests/test_capability_ratchet_replay_store.py
