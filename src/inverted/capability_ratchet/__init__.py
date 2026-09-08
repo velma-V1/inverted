@@ -19,6 +19,7 @@ from .orchestration import (
     RetryCampaignOrchestrator,
     RetryIngredient,
 )
+from .qwen_retry import QwenRetryAttemptExecutor
 
 __all__ = [
     "AttemptEvidence",
@@ -26,6 +27,7 @@ __all__ = [
     "FailureFixture",
     "Partition",
     "PromotionState",
+    "QwenRetryAttemptExecutor",
     "ReplayFailureSnapshotter",
     "ReplayMode",
     "ReplayRecord",
