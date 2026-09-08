@@ -12,8 +12,14 @@ from .core import (
     from_payload,
     to_payload,
 )
+from .orchestration import (
+    AttemptOutcome,
+    RetryCampaignOrchestrator,
+    RetryIngredient,
+)
 
 __all__ = [
+    "AttemptOutcome",
     "FailureFixture",
     "Partition",
     "PromotionState",
@@ -22,6 +28,8 @@ __all__ = [
     "ReplayRecordType",
     "ReplayRequest",
     "ReplayResult",
+    "RetryCampaignOrchestrator",
+    "RetryIngredient",
     "from_payload",
     "to_payload",
 ]
