@@ -1,0 +1,58 @@
+name: evidence-privacy
+
+on:
+  push:
+    branches:
+      - build/qwen-thinking-tuning
+    paths:
+      - src/inverted/evidence_privacy.py
+      - tests/test_evidence_privacy.py
+      - .github/workflows/evidence-privacy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sanitize-tracked-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Synthetic privacy contract
+        run: python -m pytest tests/test_evidence_privacy.py -q
+      - name: Sanitize tracked evidence without disclosing matched values
+        run: >-
+          python -m inverted.evidence_privacy sanitize
+          --root evidence
+          --outer-manifest evidence/FILES-SHA256.csv
+          --ledger-out evidence/PRIVACY-TRANSFORM.json
+          --scan-out evidence/PRIVACY-TRACKED-SCAN.json
+      - name: Hard privacy check
+        run: >-
+          python -m inverted.evidence_privacy check
+          --root evidence
+          --scan-out evidence/PRIVACY-TRACKED-SCAN.json
+      - name: Verify outer evidence seal
+        run: >-
+          python -c "from inverted.test3_repo_evidence import verify_repo_evidence;
+          errors=verify_repo_evidence('evidence', verify_hashes=True);
+          assert not errors, f'outer evidence verification failed with {len(errors)} aggregate error(s)'"
+      - name: Commit privacy-safe tracked evidence
+        shell: bash
+        run: |
+          if git diff --quiet -- evidence; then
+            echo "No tracked evidence privacy changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add evidence
+          git commit -m "privacy: sanitize tracked evidence"
+          git push origin HEAD:build/qwen-thinking-tuning
