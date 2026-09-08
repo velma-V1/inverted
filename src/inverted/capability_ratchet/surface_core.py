@@ -245,7 +245,7 @@ class SurfacePoint:
         registered = study.axis_values[axis.value]
         if frozen_value not in registered:
             raise ValueError("surface point value is not registered by the study")
-        payload = {
+        identity = {
             "study_id": study.study_id,
             "failure_snapshot_id": study.failure_snapshot_id,
             "mechanism_id": study.mechanism_id,
@@ -253,10 +253,13 @@ class SurfacePoint:
             "partition": study.partition.value,
             "axis": axis.value,
             "value": frozen_value,
-            "decision_id": decision_id,
             "protected_exploration": protected_exploration,
         }
-        return cls(surface_point_id=_stable_id("surface-point", payload), **payload)
+        return cls(
+            surface_point_id=_stable_id("surface-point", identity),
+            decision_id=decision_id,
+            **identity,
+        )
 
 
 @dataclass(frozen=True)

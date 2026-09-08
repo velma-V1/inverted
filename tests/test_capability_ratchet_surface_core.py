@@ -212,3 +212,15 @@ def test_surface_observation_retains_reconstructable_point_coordinates() -> None
     assert observation.value == 512
     assert observation.decision_id == "D3"
     assert observation.protected_exploration is False
+
+
+def test_surface_point_identity_is_independent_of_decision_label() -> None:
+    study = _study()
+    d3 = SurfacePoint.create(
+        study=study, axis=SurfaceAxis.REASONING_BUDGET, value=512, decision_id="D3"
+    )
+    d4 = SurfacePoint.create(
+        study=study, axis=SurfaceAxis.REASONING_BUDGET, value=512, decision_id="D4"
+    )
+    assert d3.surface_point_id == d4.surface_point_id
+    assert d3.decision_id != d4.decision_id
