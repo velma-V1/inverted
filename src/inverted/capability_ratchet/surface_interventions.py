@@ -30,6 +30,18 @@ SUPPORTED_SURFACE_AXES = frozenset({
     SurfaceAxis.TRIGGER_MODE,
 })
 
+_REGISTERED_REPRESENTATIONS = frozenset({
+    "FIELDS",
+    "TYPED_FIELDS",
+    "ORDERED_LIST",
+    "LEDGER",
+    "DECISION_TABLE",
+    "DEPENDENCY_MATRIX",
+    "GRAPH",
+    "COMPACT_SUMMARY",
+    "EXPLICIT_ALTERNATIVES",
+})
+
 
 def _canonical(value: Any) -> bytes:
     return json.dumps(
@@ -278,9 +290,9 @@ class SurfaceInterventionCompiler:
         if point.axis is SurfaceAxis.REPRESENTATION:
             if name in {"PROSE", "BASE", "ORIGINAL"}:
                 represented = baseline
-            elif name == "FIELDS":
+            elif name in _REGISTERED_REPRESENTATIONS:
                 represented = json.dumps(
-                    {"representation": "FIELDS", "semantic_payload": baseline},
+                    {"representation": name, "semantic_payload": baseline},
                     sort_keys=True,
                     separators=(",", ":"),
                     ensure_ascii=False,
@@ -356,6 +368,22 @@ class SurfaceInterventionCompiler:
             )
         return matches[0]
 
+    @staticmethod
+    def _scaled_context(delta: str, dose: float) -> str:
+        words = delta.split()
+        if not words:
+            raise ValueError("registered context treatment adds no measurable context")
+        if dose <= 1.0:
+            keep = max(1, math.ceil(len(words) * dose))
+            return " ".join(words[:keep])
+        whole = int(math.floor(dose))
+        fraction = dose - whole
+        chunks = [delta] * whole
+        if fraction > 0:
+            keep = max(1, math.ceil(len(words) * fraction))
+            chunks.append(" ".join(words[:keep]))
+        return "\n\n".join(chunks)
+
     def _context_target(
         self,
         visible: Mapping[str, Any],
@@ -369,11 +397,11 @@ class SurfaceInterventionCompiler:
             if not isinstance(point.value, (int, float)) or isinstance(point.value, bool):
                 raise ValueError("context dose must be numeric")
             dose = float(point.value)
-            if not 0.0 < dose <= 1.0:
-                raise ValueError("context dose must be in (0, 1]")
-            words = delta.split()
-            keep = max(1, math.ceil(len(words) * dose))
-            target = original + "\n\n" + " ".join(words[:keep])
+            if not math.isfinite(dose) or dose <= 0.0:
+                raise ValueError("context dose must be a finite positive value")
+            if dose > 32.0:
+                raise ValueError("context dose exceeds the bounded Stage-5 safety limit")
+            target = original + "\n\n" + self._scaled_context(delta, dose)
             return [path], {path: target}, f"surface context dose {dose:.6g}"
 
         if point.axis is SurfaceAxis.CONTEXT_POSITION:
@@ -405,6 +433,10 @@ class SurfaceInterventionCompiler:
             if not isinstance(envelopes, list) or target_index >= len(envelopes):
                 raise ValueError("state transition references unavailable request envelope")
             words = delta.split()
+            if len(words) < 2:
+                raise ValueError(
+                    "progressive delivery requires context divisible across a state transition"
+                )
             split = max(1, len(words) // 2)
             early = " ".join(words[:split])
             late = " ".join(words[split:])
@@ -459,20 +491,25 @@ class SurfaceInterventionCompiler:
             name = str(point.value).upper()
             if name in {"EARLY", "UPFRONT", "BASE", "ORIGINAL"}:
                 return list(base.changed_dimensions), dict(base.overrides), "surface timing EARLY"
-            if name != "LATE":
-                raise ValueError(f"unsupported timing surface value: {point.value!r}")
             envelopes = visible.get("request_envelopes")
             if not isinstance(envelopes, list) or len(envelopes) < 2:
-                raise ValueError("late timing surface requires multiple frozen request envelopes")
-            late_index = len(envelopes) - 1
-            late_path = f"request_envelopes.{late_index}.messages"
-            late_messages = json.loads(json.dumps(_get_path(visible, late_path)))
+                raise ValueError("timing surface requires multiple frozen request envelopes")
+            if name == "LATE":
+                target_index = len(envelopes) - 1
+            elif name in {"PRE_DECISION", "JUST_IN_TIME"}:
+                target_index = self._event_index(fixture, name)
+                if target_index >= len(envelopes):
+                    raise ValueError(f"{name.lower()} timing references unavailable request envelope")
+            else:
+                raise ValueError(f"unsupported timing surface value: {point.value!r}")
+            target_path = f"request_envelopes.{target_index}.messages"
+            target_messages = json.loads(json.dumps(_get_path(visible, target_path)))
             early_messages = messages[:index] + messages[index + 1:]
-            late_messages.append(target)
+            target_messages.append(target)
             return (
-                [messages_path, late_path],
-                {messages_path: early_messages, late_path: late_messages},
-                "surface timing LATE",
+                [messages_path, target_path],
+                {messages_path: early_messages, target_path: target_messages},
+                f"surface timing {name}",
             )
 
         if point.axis is SurfaceAxis.TRIGGER_MODE:
