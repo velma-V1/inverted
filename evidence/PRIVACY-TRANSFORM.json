@@ -1,0 +1,42 @@
+{
+  "categories": {
+    "posix_home_profile": 4,
+    "windows_user_profile": 4
+  },
+  "files_changed": 3,
+  "privacy_ok": true,
+  "schema_version": 1,
+  "total_replacements": 8,
+  "transformations": [
+    {
+      "categories": {
+        "posix_home_profile": 2,
+        "windows_user_profile": 2
+      },
+      "path": "test2/tier-a/test2-local-20260831-213407-93922d/TEST2-COMPLETE-EVIDENCE.txt",
+      "post_sha256": "1edc12fa66dbe0af6820c8cf473b38d2fc9fb6339d650949beb58cc122f07054",
+      "pre_sha256": "d92e4b70c7b3e5c355f46de9b7ecb7c90ac75bd51b70918538b49e77e325b4e7",
+      "replacement_count": 4
+    },
+    {
+      "categories": {
+        "posix_home_profile": 1,
+        "windows_user_profile": 1
+      },
+      "path": "test2/tier-a/test2-local-20260831-213407-93922d/provenance/environment.json",
+      "post_sha256": "a8eff596a6b00cda226cb828b03a93fab1844f37957f98d387083e2336ede1aa",
+      "pre_sha256": "09a937fae12006f6f44a52e3184cd350f18c8c02b6cfd1553faa1a2a68f8ef47",
+      "replacement_count": 2
+    },
+    {
+      "categories": {
+        "posix_home_profile": 1,
+        "windows_user_profile": 1
+      },
+      "path": "test2/tier-a/test2-local-20260831-213407-93922d/provenance.json",
+      "post_sha256": "c678f7c7da0a86b1d90ceaa7d4d0baeface0bc5bddb4698d7313ccdc785c369b",
+      "pre_sha256": "a9feade7f95c152cadd035830ff069799f52e348d39c1f7ab9c80e44d889258f",
+      "replacement_count": 2
+    }
+  ]
+}
