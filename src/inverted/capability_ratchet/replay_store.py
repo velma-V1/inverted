@@ -14,6 +14,7 @@ from typing import Any, Iterator
 from .core import (
     FailureFixture,
     MechanismLabel,
+    MutationFixture,
     PromotionEvent,
     ReplayRecord,
     ReplayRecordType,
@@ -384,6 +385,8 @@ class ReplayStore:
         def logical_key(record: ReplayRecord | SupersessionRecord) -> tuple[type[Any], str] | None:
             if isinstance(record, FailureFixture):
                 return (FailureFixture, record.failure_snapshot_id)
+            if isinstance(record, MutationFixture):
+                return (MutationFixture, record.mutation_fixture_id)
             if isinstance(record, ReplayRequest):
                 return (ReplayRequest, record.replay_request_id)
             if isinstance(record, ReplayResult):
@@ -451,7 +454,14 @@ class ReplayStore:
             if key is not None:
                 groups.setdefault(key, []).append(record)
 
-        labels = {FailureFixture: "failure", ReplayRequest: "request", ReplayResult: "result", MechanismLabel: "mechanism label", PromotionEvent: "promotion event"}
+        labels = {
+            FailureFixture: "failure",
+            MutationFixture: "mutation fixture",
+            ReplayRequest: "request",
+            ReplayResult: "result",
+            MechanismLabel: "mechanism label",
+            PromotionEvent: "promotion event",
+        }
         active_records: list[ReplayRecord] = []
         for (record_type, identity), group in groups.items():
             if len(group) == 1:
@@ -539,6 +549,21 @@ class ReplayStore:
                     broken.append(f"failure {record.failure_snapshot_id}: does not resolve to a root failure")
                 elif record.family != failures[root_id].family:
                     broken.append(f"failure {record.failure_snapshot_id}: family mismatch with root {root_id}")
+            elif isinstance(record, MutationFixture):
+                source = failures.get(record.source_failure_snapshot_id)
+                validate_declared_root(
+                    "mutation fixture", record.mutation_fixture_id, record.failure_snapshot_id, source
+                )
+                if source is None:
+                    broken.append(
+                        f"mutation fixture {record.mutation_fixture_id}: missing source failure "
+                        f"{record.source_failure_snapshot_id}"
+                    )
+                else:
+                    if record.source_state_hash != source.state_hash:
+                        broken.append(f"mutation fixture {record.mutation_fixture_id}: source state mismatch")
+                    if record.partition != source.partition:
+                        broken.append(f"mutation fixture {record.mutation_fixture_id}: partition mismatch")
             elif isinstance(record, ReplayRequest):
                 parent = failures.get(record.parent_failure_snapshot_id)
                 validate_declared_root(
@@ -651,6 +676,8 @@ class ReplayStore:
             return tuple(value for value in (
                 record.model_visible_asset_sha256, record.forensic_asset_sha256, record.oracle_asset_sha256
             ) if value is not None)
+        if isinstance(record, MutationFixture):
+            return (record.model_visible_asset_sha256, record.oracle_asset_sha256)
         if isinstance(record, ReplayResult):
             return (record.output_asset_sha256, record.raw_call_asset_sha256)
         return ()
