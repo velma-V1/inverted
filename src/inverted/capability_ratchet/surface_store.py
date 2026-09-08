@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, TypeVar
 
+from .causal_core import InterventionDefinition, InterventionKind
 from .causal_store import CausalEvidenceStore
 from .core import MechanismLabel, PromotionEvent, PromotionState, ReplayResult
 from .replay_store import ReplayStore
@@ -64,6 +65,22 @@ def _canonical(payload: Any) -> bytes:
         ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
+
+
+def _get_path(payload: Any, path: str) -> Any:
+    current = payload
+    for token in path.split("."):
+        if isinstance(current, list):
+            if not token.isdigit():
+                raise ValueError(f"list path requires numeric token: {path}")
+            current = current[int(token)]
+        elif isinstance(current, Mapping):
+            if token not in current:
+                raise ValueError(f"path does not exist: {path}")
+            current = current[token]
+        else:
+            raise ValueError(f"path traverses non-container: {path}")
+    return current
 
 
 def _study_payload(value: SurfaceStudy) -> dict[str, Any]:
@@ -378,7 +395,12 @@ class SurfaceEvidenceStore:
 
     def _require_event(self, fixture, event: str, envelope_count: int) -> None:
         matches = self._event_indices(fixture, event)
-        noun = "state transition" if event == "STATE_TRANSITION" else "trigger"
+        if event == "STATE_TRANSITION":
+            noun = "state transition"
+        elif event in {"PRE_DECISION", "JUST_IN_TIME"}:
+            noun = "timing"
+        else:
+            noun = "trigger"
         if len(matches) != 1:
             raise ValueError(
                 f"{noun} surface requires exactly one preregistered observable {event} event"
@@ -386,7 +408,59 @@ class SurfaceEvidenceStore:
         if matches[0] >= envelope_count:
             raise ValueError(f"{noun} references unavailable request envelope")
 
-    def _require_delivery_geometry(self, fixture, study: SurfaceStudy) -> None:
+    @staticmethod
+    def _active_interventions(
+        label: MechanismLabel,
+        causal_store: CausalEvidenceStore,
+    ) -> tuple[InterventionDefinition, ...]:
+        rows: list[InterventionDefinition] = []
+        for intervention_id in label.intervention_ids:
+            try:
+                rows.append(causal_store.get_intervention(intervention_id))
+            except (KeyError, ValueError):
+                continue
+        return tuple(rows)
+
+    def _require_progressive_context(
+        self,
+        fixture,
+        interventions: tuple[InterventionDefinition, ...],
+    ) -> None:
+        visible = self.replay_store.read_asset(fixture.model_visible_asset_sha256)
+        candidates = [
+            item for item in interventions if item.kind is InterventionKind.CONTEXT
+        ]
+        for intervention in candidates:
+            content_paths = [
+                path for path in intervention.changed_dimensions if path.endswith(".content")
+            ]
+            if len(content_paths) != 1:
+                continue
+            path = content_paths[0]
+            try:
+                original = _get_path(visible, path)
+            except ValueError:
+                continue
+            treated = dict(intervention.overrides).get(path)
+            if (
+                not isinstance(original, str)
+                or not isinstance(treated, str)
+                or not treated.startswith(original)
+            ):
+                continue
+            delta = treated[len(original):].strip()
+            if len(delta.split()) >= 2:
+                return
+        raise ValueError(
+            "progressive delivery requires registered context divisible across a state transition"
+        )
+
+    def _require_delivery_geometry(
+        self,
+        fixture,
+        study: SurfaceStudy,
+        active_interventions: tuple[InterventionDefinition, ...],
+    ) -> None:
         visible = self.replay_store.read_asset(fixture.model_visible_asset_sha256)
         envelopes = visible.get("request_envelopes") if isinstance(visible, dict) else None
         if not isinstance(envelopes, list) or not envelopes:
@@ -397,6 +471,7 @@ class SurfaceEvidenceStore:
             names = {str(value).upper() for value in study.axis_values[SurfaceAxis.DELIVERY_MODE.value]}
             if "PROGRESSIVE" in names:
                 self._require_event(fixture, "STATE_TRANSITION", envelope_count)
+                self._require_progressive_context(fixture, active_interventions)
         if SurfaceAxis.TRIGGER_MODE in study.axes:
             names = {str(value).upper() for value in study.axis_values[SurfaceAxis.TRIGGER_MODE.value]}
             if "FAILURE_TRIGGERED" in names:
@@ -407,6 +482,10 @@ class SurfaceEvidenceStore:
             names = {str(value).upper() for value in study.axis_values[SurfaceAxis.TIMING.value]}
             if "LATE" in names and envelope_count < 2:
                 raise ValueError("late timing surface requires multiple frozen request envelopes")
+            if "PRE_DECISION" in names:
+                self._require_event(fixture, "PRE_DECISION", envelope_count)
+            if "JUST_IN_TIME" in names:
+                self._require_event(fixture, "JUST_IN_TIME", envelope_count)
 
     def _require_study_lineage(self, study: SurfaceStudy) -> None:
         try:
@@ -474,7 +553,10 @@ class SurfaceEvidenceStore:
                     f"surface study {axis.value} requires a registered mechanism baseline value"
                 )
 
-        self._require_delivery_geometry(fixture, study)
+        active_interventions = self._active_interventions(matching[-1], self.causal_store)
+        if not active_interventions:
+            raise ValueError("surface study active mechanism label has no registered intervention")
+        self._require_delivery_geometry(fixture, study, active_interventions)
 
         if study.promotion_state is PromotionState.MOVEMENT:
             movements = [
