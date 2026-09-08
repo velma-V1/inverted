@@ -155,11 +155,11 @@ class TomographyDisposition(str, Enum):
     TOOL_REQUIRED = "TOOL_REQUIRED"
     TOOL_SELECTION_DEFICIT = "TOOL_SELECTION_DEFICIT"
     TOOL_ARGUMENT_DEFICIT = "TOOL_ARGUMENT_DEFICIT"
+    TOOL_EXECUTION_FAILURE = "TOOL_EXECUTION_FAILURE"
     TOOL_INTERPRETATION_DEFICIT = "TOOL_INTERPRETATION_DEFICIT"
     VERIFIER_SUFFICIENT = "VERIFIER_SUFFICIENT"
     RECOVERY_SUFFICIENT = "RECOVERY_SUFFICIENT"
     SKILL_CANDIDATE = "SKILL_CANDIDATE"
-    EXTERNAL_MECHANISM_MOVEMENT = "EXTERNAL_MECHANISM_MOVEMENT"
     MODEL_INTERNAL_RESIDUAL = "MODEL_INTERNAL_RESIDUAL"
     ESCALATION_CANDIDATE = "ESCALATION_CANDIDATE"
     SAFE_STOP_BOUNDARY = "SAFE_STOP_BOUNDARY"
@@ -314,6 +314,11 @@ Correct tool is selected. Autonomous arguments fail, while canonical arguments s
 
 Possible result: `TOOL_ARGUMENT_DEFICIT`.
 
+#### Tool execution
+Correct tool and arguments are selected, but the tool call fails or produces an invalid/unavailable execution result while a controlled canonical result proves the downstream model path is otherwise viable.
+
+Possible result: `TOOL_EXECUTION_FAILURE`. This is an infrastructure/tool boundary, not evidence of a model reasoning deficit.
+
 #### Tool interpretation
 Correct tool and arguments execute successfully. Raw/canonical result is present, but model interpretation fails; an interpretation scaffold/verifier repairs it.
 
@@ -463,7 +468,7 @@ Disposition is separate from promotion:
 - disposition says **who/what appears to own the residual**;
 - promotion says **how strong/generalized the mechanism evidence is**.
 
-This separation prevents a correct ownership label from being mistaken for production readiness.
+No `TomographyDisposition` value may encode a promotion state. This separation prevents a correct ownership label from being mistaken for production readiness.
 
 ## 12. Historical zero-call bootstrap
 
@@ -538,10 +543,11 @@ Required audit assertions:
 - canonical replay linkage is enforced;
 - generic third-retry logic is absent;
 - targeted recovery requires explicit changed state;
-- tool capability/selection/arguments/interpretation remain separable;
+- tool capability/selection/arguments/execution/interpretation remain separable;
 - verifier and recovery remain separable;
 - `FRESH`/`SEALED` contamination is rejected;
 - Stage-7 cannot emit `CERTIFIED`;
+- `TomographyDisposition` cannot encode promotion state;
 - newly discovered `MOVEMENT` mechanisms are routed back through Stage 4/5/6 unless prior generalized evidence is explicitly referenced;
 - Stage-7 source/tests/workflow cannot silently disappear.
 
@@ -554,18 +560,19 @@ The planted matrix must include at least:
 1. **Tool capability:** baseline failure; supplied correct result succeeds.
 2. **Tool selection:** autonomous wrong selection fails; forced correct selection succeeds.
 3. **Tool arguments:** selected correct tool with bad arguments fails; canonical arguments succeed.
-4. **Tool interpretation:** correct result supplied; raw interpretation fails; bounded interpretation/verifier treatment succeeds.
-5. **Verifier detection only:** verifier catches the defect but no recovery is provided; outcome remains failure.
-6. **Targeted recovery:** verifier feedback + targeted repair succeeds.
-7. **Generic retry negative control:** blind retry fails while targeted recovery succeeds.
-8. **Generic retry confound:** blind retry also succeeds, preventing overclaim that targeted recovery was necessary.
-9. **Skill candidate:** same registered procedure succeeds on multiple admissible instances; one planted boundary instance fails.
-10. **Model-internal residual:** admissible external mechanisms fail, preserving the residual rather than fabricating an owner.
-11. **Escalation reference:** stronger-reference success changes D11/D2 evidence but is not relabeled as Qwen success.
-12. **Safe stop:** insufficient authority/evidence correctly terminates without forced execution.
-13. **Child snapshot:** a failed tomography replay creates/links a child failure snapshot.
-14. **Partition protection:** synthetic/development treatment cannot consume `FRESH`/`SEALED` evidence.
-15. **Zero-call bootstrap:** construction of Qwen/Ollama/httpx/socket/live-tool entry points is booby-trapped and planning remains green.
+4. **Tool execution:** correct selection/arguments with failed tool execution; controlled canonical result proves downstream path and assigns the infrastructure/tool boundary.
+5. **Tool interpretation:** correct result supplied; raw interpretation fails; bounded interpretation/verifier treatment succeeds.
+6. **Verifier detection only:** verifier catches the defect but no recovery is provided; outcome remains failure.
+7. **Targeted recovery:** verifier feedback + targeted repair succeeds.
+8. **Generic retry negative control:** blind retry fails while targeted recovery succeeds.
+9. **Generic retry confound:** blind retry also succeeds, preventing overclaim that targeted recovery was necessary.
+10. **Skill candidate:** same registered procedure succeeds on multiple admissible instances; one planted boundary instance fails.
+11. **Model-internal residual:** admissible external mechanisms fail, preserving the residual rather than fabricating an owner.
+12. **Escalation reference:** stronger-reference success changes D11/D2 evidence but is not relabeled as Qwen success.
+13. **Safe stop:** insufficient authority/evidence correctly terminates without forced execution.
+14. **Child snapshot:** a failed tomography replay creates/links a child failure snapshot.
+15. **Partition protection:** synthetic/development treatment cannot consume `FRESH`/`SEALED` evidence.
+16. **Zero-call bootstrap:** construction of Qwen/Ollama/httpx/socket/live-tool entry points is booby-trapped and planning remains green.
 
 ## 17. Regression requirements
 
