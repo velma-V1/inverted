@@ -1,0 +1,196 @@
+name: v3-plan2-completion
+
+on:
+  push:
+    branches:
+      - build/qwen-thinking-tuning
+    paths:
+      - .github/workflows/v3-plan2-completion.yml
+      - src/inverted/capability_ratchet/**
+      - scripts/audit-v3-replay-foundation.py
+      - live-evidence/qwen-thinking-tuning-v2-real-20260907/**
+      - src/inverted/evidence_privacy.py
+      - evidence/PRIVACY-TRACKED-SCAN.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan2-zero-call-completion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+
+      - name: Verify tracked evidence privacy
+        run: >-
+          python -m inverted.evidence_privacy check
+          --root evidence
+          --scan-out /tmp/plan2-privacy-scan.json
+
+      - name: Seed canonical historical replay corpus with zero inference
+        shell: bash
+        run: |
+          rm -rf /tmp/v3-plan2-completion
+          mkdir -p /tmp/v3-plan2-completion/replay /tmp/v3-plan2-completion/causal /tmp/v3-plan2-completion/cohort
+          python -m inverted.capability_ratchet.cli seed-v2 \
+            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+            --replay-root /tmp/v3-plan2-completion/replay \
+            > /tmp/v3-plan2-completion/seed.json
+
+      - name: Run permanent replay-foundation and causal-surface audit
+        shell: bash
+        run: |
+          python scripts/audit-v3-replay-foundation.py \
+            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+            --replay-root /tmp/v3-plan2-completion/replay \
+            > /tmp/v3-plan2-completion/audit.json
+
+      - name: Zero-call autopsy and plan five historical failures
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import json
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          replay_root = Path('/tmp/v3-plan2-completion/replay')
+          causal_root = Path('/tmp/v3-plan2-completion/causal')
+          cohort_root = Path('/tmp/v3-plan2-completion/cohort')
+          fixture_ids = [
+              'failure-v2-020e7c8f3691554298ec16cd',
+              'failure-v2-063052b891d3978b50dbafa1',
+              'failure-v2-06b7e31529b6ea90f14ed26f',
+              'failure-v2-094be5d102355882a3f611af',
+              'failure-v2-0c3663cc8ce0d896969401c6',
+          ]
+
+          rows = []
+          for snapshot_id in fixture_ids:
+              common = [
+                  '--replay-root', str(replay_root),
+                  '--causal-root', str(causal_root),
+                  '--snapshot-id', snapshot_id,
+              ]
+              autopsy_raw = subprocess.check_output(
+                  [sys.executable, '-m', 'inverted.capability_ratchet.cli', 'autopsy', *common],
+                  text=True,
+              )
+              plan_raw = subprocess.check_output(
+                  [sys.executable, '-m', 'inverted.capability_ratchet.cli', 'plan-lab', *common],
+                  text=True,
+              )
+              autopsy = json.loads(autopsy_raw)
+              plan = json.loads(plan_raw)
+
+              assert autopsy['MODEL_CALLS'] == 0
+              assert plan['MODEL_CALLS'] == 0
+              divergence = autopsy['first_divergence']
+              assert divergence['observable_path']
+              assert divergence['evidence_refs']
+              assert autopsy['hypotheses']
+              assert plan['hypothesis_ids']
+              assert plan['interventions']
+              assert plan['branches']
+              assert plan['projected_physical_calls'] >= 0
+              assert set(plan['call_geometry']) == {'minimum', 'expected', 'worst_case'}
+              assert all(item['intervention_id'] and item['hypothesis_id'] for item in plan['interventions'])
+              assert all('kind' in item and 'sham_for' in item for item in plan['interventions'])
+
+              (cohort_root / f'{snapshot_id}-autopsy.json').write_text(
+                  json.dumps(autopsy, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+              )
+              (cohort_root / f'{snapshot_id}-plan.json').write_text(
+                  json.dumps(plan, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+              )
+              rows.append({
+                  'failure_snapshot_id': snapshot_id,
+                  'divergence_class': divergence['divergence_class'],
+                  'hypothesis_count': len(autopsy['hypotheses']),
+                  'intervention_count': len(plan['interventions']),
+                  'branch_count': len(plan['branches']),
+                  'projected_physical_calls': plan['projected_physical_calls'],
+                  'MODEL_CALLS': 0,
+              })
+
+          (cohort_root / 'summary.json').write_text(
+              json.dumps({'fixture_count': len(rows), 'fixtures': rows, 'MODEL_CALLS': 0}, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Enforce Plan 2 completion invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/v3-plan2-completion')
+          seed = json.loads((root / 'seed.json').read_text(encoding='utf-8'))
+          audit = json.loads((root / 'audit.json').read_text(encoding='utf-8'))
+          cohort = json.loads((root / 'cohort/summary.json').read_text(encoding='utf-8'))
+          privacy = json.loads(Path('/tmp/plan2-privacy-scan.json').read_text(encoding='utf-8'))
+
+          assert seed['MODEL_CALLS'] == 0
+          assert seed['total_observations'] == 3960
+          assert seed['material_failures'] == 2491
+          assert seed['fixtures_added'] == 2491
+          assert seed['invalid_rows'] == 0
+
+          assert audit['MODEL_CALLS'] == 0
+          assert audit['forgotten_count'] == 0, audit['forgotten_items']
+          assert audit['source_observations'] == 3960
+          assert audit['expected_material_failures'] == 2491
+          assert audit['registered_failure_fixtures'] == 2491
+          assert audit['expected_reasoning_cap_fixtures'] == 2045
+          assert audit['registered_reasoning_cap_fixtures'] == 2045
+          assert audit['replay_asset_files'] == 4604
+          assert audit['orphan_asset_count'] == 0
+          assert audit['registry_rows'] == 2491
+          assert audit['registry_ok'] is True
+
+          assert privacy['privacy_ok'] is True
+          assert privacy['total_matches'] == 0
+          assert cohort['fixture_count'] == 5
+          assert cohort['MODEL_CALLS'] == 0
+          assert all(row['MODEL_CALLS'] == 0 for row in cohort['fixtures'])
+
+          summary = {
+              'PLAN2_COMPLETION': 'PASS',
+              'MODEL_CALLS': 0,
+              'source_observations': audit['source_observations'],
+              'failure_fixtures': audit['registered_failure_fixtures'],
+              'reasoning_cap_fixtures': audit['registered_reasoning_cap_fixtures'],
+              'replay_assets': audit['replay_asset_files'],
+              'orphan_assets': audit['orphan_asset_count'],
+              'forgotten_count': audit['forgotten_count'],
+              'privacy_matches': privacy['total_matches'],
+              'historical_cohort_planned': cohort['fixture_count'],
+          }
+          (root / 'PLAN2-COMPLETION.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(summary, sort_keys=True, separators=(',', ':')))
+          PY
+
+      - name: Upload Plan 2 zero-call completion evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v3-plan2-completion-evidence
+          path: |
+            /tmp/v3-plan2-completion/seed.json
+            /tmp/v3-plan2-completion/audit.json
+            /tmp/v3-plan2-completion/cohort
+            /tmp/v3-plan2-completion/PLAN2-COMPLETION.json
+            /tmp/plan2-privacy-scan.json
+          if-no-files-found: error
