@@ -30,6 +30,12 @@ REQUIRED_EXPORTS = {
     "TournamentPlanner", "V2EvidenceSource", "V2ReplayScorer", "build_ablations",
     "build_failure_fixture", "from_payload", "preview_v2_failures",
     "seed_v2_failures", "select_failures", "to_payload",
+    "OperatingSurfaceLab", "OperatingSurfaceProfile", "SurfaceAnalyzer", "SurfaceAxis",
+    "SurfaceBand", "SurfaceCallGeometry", "SurfaceDisposition", "SurfaceEvidenceCompiler",
+    "SurfaceEvidenceKind", "SurfaceEvidenceStore", "SurfaceInterventionCompiler",
+    "SurfaceObservation", "SurfacePlan", "SurfacePlanner", "SurfacePoint",
+    "SurfaceStepResult", "SurfaceStoreValidation", "SurfaceStudy", "select_surface_study",
+    "semantic_contract_hash",
 }
 REQUIRED_FILES = (
     "src/inverted/capability_ratchet/core.py",
@@ -46,6 +52,13 @@ REQUIRED_FILES = (
     "src/inverted/capability_ratchet/tournament.py",
     "src/inverted/capability_ratchet/mechanisms.py",
     "src/inverted/capability_ratchet/lab.py",
+    "src/inverted/capability_ratchet/surface_core.py",
+    "src/inverted/capability_ratchet/surface_store.py",
+    "src/inverted/capability_ratchet/surface_evidence.py",
+    "src/inverted/capability_ratchet/surface_planner.py",
+    "src/inverted/capability_ratchet/surface_interventions.py",
+    "src/inverted/capability_ratchet/surface_analysis.py",
+    "src/inverted/capability_ratchet/surface_lab.py",
     "src/inverted/capability_ratchet/cli.py",
     "scripts/run-test-replay.ps1",
     "tests/test_capability_ratchet_core.py",
@@ -62,6 +75,15 @@ REQUIRED_FILES = (
     "tests/test_capability_ratchet_lab.py",
     "tests/test_capability_ratchet_lab_cli.py",
     "tests/test_capability_ratchet_causal_preflight.py",
+    "tests/test_capability_ratchet_surface_core.py",
+    "tests/test_capability_ratchet_surface_store.py",
+    "tests/test_capability_ratchet_surface_evidence.py",
+    "tests/test_capability_ratchet_surface_planner.py",
+    "tests/test_capability_ratchet_surface_interventions.py",
+    "tests/test_capability_ratchet_surface_analysis.py",
+    "tests/test_capability_ratchet_surface_lab.py",
+    "tests/test_capability_ratchet_surface_cli.py",
+    "tests/test_capability_ratchet_surface_preflight.py",
 )
 
 
@@ -137,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     required_commands = {
         "validate", "list", "show", "seed-v2", "plan-replay", "execute-replay",
         "autopsy", "plan-lab", "show-lab", "run-lab",
+        "plan-surface", "show-surface", "run-surface",
     }
     _add(findings, _cli_commands() != required_commands,
          f"CLI command surface mismatch: {sorted(_cli_commands())}")
