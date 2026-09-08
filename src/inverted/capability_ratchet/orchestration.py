@@ -8,12 +8,12 @@ without creating a second evidence system.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from inverted.universal_tuning.core import AtomicTask
 
-from .core import _freeze
+from .core import _freeze, _json_value
 
 
 _INITIAL = "INITIAL"
@@ -24,6 +24,18 @@ _FIRST_SHOT_PASS = "FIRST_SHOT_PASS"
 _RECOVERED_RETRY_A = "RECOVERED_RETRY_A"
 _RECOVERED_RETRY_B = "RECOVERED_RETRY_B"
 _HARD_FAILURE = "HARD_FAILURE"
+
+_CONTEXT_MODES = frozenset({"PRESERVE", "FRESH", "SELECTIVE_RESET"})
+_FAILURE_FEEDBACK_MODES = frozenset({
+    "NONE",
+    "GENERIC",
+    "CLASS_ONLY",
+    "VIOLATED_REQUIREMENT",
+    "REQUIREMENT_WITH_REASON",
+    "VALIDATOR_EVIDENCE",
+    "STRUCTURED_PACKET",
+})
+_RESPONSE_MODES = frozenset({"REPAIR", "REGENERATE"})
 
 
 def _required(name: str, value: str) -> None:
@@ -44,14 +56,49 @@ def _string_tuple(name: str, value: Any, *, allow_empty: bool) -> tuple[str, ...
 
 @dataclass(frozen=True)
 class RetryIngredient:
-    """One declared intervention used after a failed attempt."""
+    """One declared, machine-readable intervention used after a failed attempt.
+
+    Defaults intentionally preserve the original two-argument API: keep context,
+    provide no failure feedback, regenerate, and leave the inference profile unchanged.
+    """
 
     ingredient_id: str
     description: str
+    context_mode: str = "PRESERVE"
+    failure_feedback_mode: str = "NONE"
+    response_mode: str = "REGENERATE"
+    instruction: str | None = None
+    profile_overrides: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _required("ingredient_id", self.ingredient_id)
         _required("description", self.description)
+        if self.context_mode not in _CONTEXT_MODES:
+            raise ValueError(f"context_mode must be one of {sorted(_CONTEXT_MODES)}")
+        if self.failure_feedback_mode not in _FAILURE_FEEDBACK_MODES:
+            raise ValueError(
+                "failure_feedback_mode must be one of "
+                f"{sorted(_FAILURE_FEEDBACK_MODES)}"
+            )
+        if self.response_mode not in _RESPONSE_MODES:
+            raise ValueError(f"response_mode must be one of {sorted(_RESPONSE_MODES)}")
+        if self.instruction is not None:
+            _required("instruction", self.instruction)
+        if not isinstance(self.profile_overrides, Mapping):
+            raise TypeError("profile_overrides must be a mapping")
+        object.__setattr__(self, "profile_overrides", _freeze(self.profile_overrides))
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a stable JSON-compatible causal-intervention payload."""
+        return {
+            "ingredient_id": self.ingredient_id,
+            "description": self.description,
+            "context_mode": self.context_mode,
+            "failure_feedback_mode": self.failure_feedback_mode,
+            "response_mode": self.response_mode,
+            "instruction": self.instruction,
+            "profile_overrides": _json_value(self.profile_overrides),
+        }
 
 
 @dataclass(frozen=True)
@@ -122,6 +169,7 @@ class AttemptContext:
     stage: str
     attempt_index: int
     retry_ingredient: RetryIngredient | None
+    previous_outcome: AttemptOutcome | None = None
 
     def __post_init__(self) -> None:
         _required("model_id", self.model_id)
@@ -134,12 +182,18 @@ class AttemptContext:
         if self.stage == _INITIAL:
             if self.attempt_index != 0 or self.retry_ingredient is not None:
                 raise ValueError("INITIAL attempt cannot contain a retry ingredient")
+            if self.previous_outcome is not None:
+                raise ValueError("INITIAL attempt cannot contain a previous outcome")
         else:
             expected_index = 1 if self.stage == _RETRY_A else 2
             if self.attempt_index != expected_index:
                 raise ValueError("retry stage and attempt_index disagree")
             if not isinstance(self.retry_ingredient, RetryIngredient):
                 raise TypeError("retry attempts require a RetryIngredient")
+            if not isinstance(self.previous_outcome, AttemptOutcome):
+                raise TypeError("retry attempts require the preceding AttemptOutcome")
+            if self.previous_outcome.passed:
+                raise ValueError("retry attempts require a failed previous outcome")
 
 
 @dataclass(frozen=True)
@@ -248,6 +302,7 @@ class RetryCampaignOrchestrator:
                 stage=_INITIAL,
                 attempt_index=0,
                 retry_ingredient=None,
+                previous_outcome=None,
             )
             initial_outcome = self._execute(initial)
             if initial_outcome.passed:
@@ -267,6 +322,7 @@ class RetryCampaignOrchestrator:
                 stage=_RETRY_A,
                 attempt_index=1,
                 retry_ingredient=self._retry_a,
+                previous_outcome=initial_outcome,
             )
             retry_a_outcome = self._execute(retry_a)
             if retry_a_outcome.passed:
@@ -286,6 +342,7 @@ class RetryCampaignOrchestrator:
                 stage=_RETRY_B,
                 attempt_index=2,
                 retry_ingredient=self._retry_b,
+                previous_outcome=retry_a_outcome,
             )
             retry_b_outcome = self._execute(retry_b)
             if retry_b_outcome.passed:
