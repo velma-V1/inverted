@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from inverted.capability_ratchet.causal_core import MechanismRole
+from inverted.capability_ratchet.cli import main
 from inverted.capability_ratchet.core import (
     FailureFixture,
     MechanismLabel,
@@ -157,6 +159,17 @@ def _movement(replay: ReplayStore) -> tuple[FailureFixture, MechanismLabel]:
     return source, mechanism
 
 
+def _cli_args(tmp_path, replay: ReplayStore) -> list[str]:
+    return [
+        "plan-mutations",
+        "--replay-root", str(replay.root),
+        "--causal-root", str(tmp_path / "causal"),
+        "--surface-root", str(tmp_path / "surface"),
+        "--mutation-root", str(tmp_path / "mutation-cli"),
+        "--auto-eligible",
+    ]
+
+
 def test_zero_call_bootstrap_reports_no_eligible_mechanisms_without_movement(tmp_path) -> None:
     _replay, mutation = _store(tmp_path)
 
@@ -178,3 +191,32 @@ def test_zero_call_bootstrap_reports_no_mutation_template_for_movement_without_s
     assert result.eligible_mechanisms == (mechanism.mechanism_id,)
     assert result.plans == ()
     assert result.model_calls == 0
+
+
+def test_plan_mutations_auto_eligible_reports_no_eligible_mechanisms_without_calls(tmp_path, capsys) -> None:
+    replay, _mutation = _store(tmp_path)
+
+    rc = main(_cli_args(tmp_path, replay))
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "MODEL_CALLS": 0,
+        "eligible_mechanisms": [],
+        "plans": [],
+        "status": "NO_ELIGIBLE_MECHANISMS",
+    }
+
+
+def test_plan_mutations_auto_eligible_exposes_missing_template_boundary(tmp_path, capsys) -> None:
+    replay, _mutation = _store(tmp_path)
+    _source, mechanism = _movement(replay)
+
+    rc = main(_cli_args(tmp_path, replay))
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["MODEL_CALLS"] == 0
+    assert payload["status"] == "NO_MUTATION_TEMPLATE"
+    assert payload["eligible_mechanisms"] == [mechanism.mechanism_id]
+    assert payload["plans"] == []
