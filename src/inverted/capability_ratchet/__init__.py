@@ -41,6 +41,7 @@ from .replay import ReplayAdapter, ReplayCompletion, ReplayExecutor, ReplayPlan
 from .replay_store import ReplayStore, ReplayValidation, SupersessionRecord
 from .snapshot import build_failure_fixture
 from .surface_analysis import SurfaceAnalyzer
+from .surface_bootstrap import SurfaceBootstrapPlan, plan_eligible_surfaces
 from .surface_core import (
     OperatingSurfaceProfile,
     SurfaceAxis,
@@ -101,6 +102,7 @@ __all__ = [
     "SurfaceAnalyzer",
     "SurfaceAxis",
     "SurfaceBand",
+    "SurfaceBootstrapPlan",
     "SurfaceCallGeometry",
     "SurfaceDisposition",
     "SurfaceEvidenceCompiler",
@@ -124,6 +126,7 @@ __all__ = [
     "build_ablations",
     "build_failure_fixture",
     "from_payload",
+    "plan_eligible_surfaces",
     "preview_v2_failures",
     "seed_v2_failures",
     "select_failures",
