@@ -195,15 +195,120 @@ def verify_repo_evidence(
     return errors
 
 
+def _inner_manifest_mismatches(source_dir: Path) -> list[str]:
+    """Return hash-stale entries, while rejecting malformed or incomplete wrappers.
+
+    The caller has already proven every materialized payload byte against the
+    frozen outer manifest.  Re-wrapping is therefore allowed only when the
+    historical inner manifest is structurally valid and its referenced files
+    exist, but one or more recorded hashes/byte counts describe older bytes.
+    """
+    inventory = source_dir / "SHA256SUMS.csv"
+    if not inventory.is_file():
+        raise ValueError(f"materialized source is missing SHA256SUMS.csv: {source_dir}")
+    try:
+        with inventory.open(encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if not reader.fieldnames or "path" not in reader.fieldnames or "sha256" not in reader.fieldnames:
+                raise ValueError(f"malformed source SHA256SUMS.csv: {source_dir}")
+            rows = [dict(row) for row in reader]
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        raise ValueError(f"cannot parse source SHA256SUMS.csv: {source_dir}: {exc}") from exc
+    if not rows:
+        raise ValueError(f"source SHA256SUMS.csv is empty: {source_dir}")
+
+    root = source_dir.resolve()
+    mismatches: list[str] = []
+    seen: set[str] = set()
+    for number, row in enumerate(rows, start=2):
+        raw = str(row.get("path") or "").replace("\\", "/")
+        rel = Path(raw)
+        if not raw or rel.is_absolute() or ".." in rel.parts:
+            raise ValueError(f"row {number}: invalid source manifest path {raw!r}")
+        normalized = rel.as_posix()
+        if normalized in seen:
+            raise ValueError(f"row {number}: duplicate source manifest path {normalized}")
+        seen.add(normalized)
+        candidate = (source_dir / rel).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(f"row {number}: source manifest path escapes bundle: {normalized}") from exc
+        if not candidate.is_file():
+            raise ValueError(f"row {number}: source manifest file is missing: {normalized}")
+
+        expected = str(row.get("sha256") or "").strip().lower()
+        if len(expected) != 64 or any(character not in "0123456789abcdef" for character in expected):
+            raise ValueError(f"row {number}: invalid source SHA-256 for {normalized}")
+        stale = _sha256(candidate).lower() != expected
+        expected_bytes = row.get("bytes")
+        if expected_bytes not in (None, ""):
+            try:
+                stale = stale or int(str(expected_bytes)) != candidate.stat().st_size
+            except ValueError as exc:
+                raise ValueError(f"row {number}: invalid source byte count for {normalized}") from exc
+        if stale:
+            mismatches.append(normalized)
+    return mismatches
+
+
+def _write_current_source_wrapper(source_dir: Path) -> None:
+    inventory = source_dir / "SHA256SUMS.csv"
+    files = sorted(
+        path for path in source_dir.rglob("*")
+        if path.is_file() and path.resolve() != inventory.resolve()
+    )
+    if not files:
+        raise ValueError(f"cannot re-wrap empty evidence source: {source_dir}")
+    with inventory.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle, fieldnames=["path", "sha256", "bytes"], lineterminator="\n"
+        )
+        writer.writeheader()
+        for path in files:
+            writer.writerow({
+                "path": path.relative_to(source_dir).as_posix(),
+                "sha256": _sha256(path),
+                "bytes": path.stat().st_size,
+            })
+
+
+def _rewrap_hash_stale_source(
+    source_id: str,
+    source_dir: Path,
+    destination: Path,
+) -> str | None:
+    mismatches = _inner_manifest_mismatches(source_dir)
+    if not mismatches:
+        return None
+
+    inventory = source_dir / "SHA256SUMS.csv"
+    preserved_root = destination / "source-manifests"
+    preserved_root.mkdir(parents=True, exist_ok=True)
+    preserved = preserved_root / f"{source_id}-SHA256SUMS.csv"
+    preserved.write_bytes(inventory.read_bytes())
+
+    _write_current_source_wrapper(source_dir)
+    residual = _inner_manifest_mismatches(source_dir)
+    if residual:
+        raise ValueError(
+            f"temporary sanitized source wrapper failed verification for {source_id}: {residual}"
+        )
+    return preserved.relative_to(destination).as_posix()
+
+
 def materialize_repo_empirical_sources(
     evidence_root: str | Path,
     destination_root: str | Path,
 ) -> tuple[dict[str, Path], dict[str, Any]]:
-    """Create byte-exact temporary copies of committed Test-1/Test-2 evidence.
+    """Materialize outer-manifest-proven Test-1/Test-2 evidence for S0.
 
-    Source bytes are selected only when proven by evidence/FILES-SHA256.csv.
-    This reverses Git newline canonicalization where the frozen hash proves the
-    original CRLF form. The committed checkout itself is never modified.
+    Every payload byte is selected only when proven by evidence/FILES-SHA256.csv.
+    Git newline canonicalization is reversed only when the frozen hash proves
+    the exact original bytes.  If privacy sanitization made a historical inner
+    SHA wrapper stale, that wrapper is preserved outside the replay bundle and
+    a temporary wrapper is generated over the already-proven sanitized bytes.
+    The committed checkout itself is never modified.
     """
     root = Path(evidence_root)
     destination = Path(destination_root)
@@ -286,10 +391,23 @@ def materialize_repo_empirical_sources(
             "Cannot materialize unverified repo evidence files: " + ", ".join(sorted(unverified))
         )
 
+    rewrapped_sources: list[str] = []
+    preserved_source_manifests: dict[str, str] = {}
+    for source_id in ("test1", "test2-tier-a"):
+        preserved = _rewrap_hash_stale_source(source_id, paths[source_id], destination)
+        if preserved is not None:
+            rewrapped_sources.append(source_id)
+            preserved_source_manifests[source_id] = preserved
+
     report = {
         "verification_policy": "exact_bytes_or_hash_proven_git_lf_to_crlf_rehydration",
+        "sanitized_rewrap_policy": (
+            "outer_manifest_proven_payload_only; structurally_valid_hash_stale_inner_wrapper_preserved"
+        ),
         "exact_files": exact_count,
         "git_newline_rehydrated_files": rehydrated_count,
+        "sanitized_rewrapped_sources": rewrapped_sources,
+        "preserved_source_manifests": preserved_source_manifests,
         "unverified_files": [],
         "files": file_report,
     }
