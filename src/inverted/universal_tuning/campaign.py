@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from .core import Profile
+from .core import Profile, profile_fingerprint
 from .qwen_ollama import QwenOllamaAdapter
 from .report import write_campaign_report
 from .runner import ProgressReporter, UniversalRunner
@@ -58,8 +58,8 @@ def call_geometry(family_count: int) -> dict[str, int]:
     return {"minimum": minimum, "expected": expected, "worst_case": worst}
 
 
-def _profile_key(profile: Profile) -> tuple[int, float]:
-    return int(profile.thinking_budget), round(float(profile.temperature), 6)
+def _profile_key(profile: Profile) -> str:
+    return profile_fingerprint(profile)
 
 def _rows_for(
     runner: UniversalRunner, scheduler: AdaptiveScheduler, family: str, stage: str,

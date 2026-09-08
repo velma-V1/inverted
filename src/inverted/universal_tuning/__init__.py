@@ -1,6 +1,13 @@
 """Universal adaptive operating-surface tuner for local and remote models."""
 
-from .core import AtomicScore, AtomicTask, FailureClass, Observation, Profile
+from .core import (
+    AtomicScore,
+    AtomicTask,
+    FailureClass,
+    Observation,
+    Profile,
+    profile_fingerprint,
+)
 from .parameter_catalog import (
     ParameterAxis,
     ProfileScreenCandidate,
@@ -18,4 +25,5 @@ __all__ = [
     "ProfileScreenCandidate",
     "parameter_catalog",
     "plan_profile_screen",
+    "profile_fingerprint",
 ]

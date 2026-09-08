@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import hashlib
 from typing import Iterable, Mapping
 
-from .core import Profile
+from .core import Profile, profile_fingerprint
 from .statistics import (
     PairedBatch,
     classify_comparison,
@@ -273,7 +273,7 @@ class AdaptiveScheduler:
                 ordered.reverse()
             for label, profile in ordered:
                 trials.append(ScheduledTrial(
-                    trial_id=f"{batch_id}:{label}:{profile.thinking_budget}:{profile.temperature:.6f}",
+                    trial_id=f"{batch_id}:{label}:{profile_fingerprint(profile)[:16]}",
                     batch_id=batch_id, family=family, stage=stage, profile=profile,
                     task_ids=task_ids, inference_seed=seed, decision_reason=decision_reason,
                 ))

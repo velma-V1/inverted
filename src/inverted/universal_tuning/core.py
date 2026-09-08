@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
+import hashlib
+import json
 from typing import Any
 
 
@@ -58,6 +60,19 @@ class Profile:
     @property
     def thinking(self) -> bool:
         return self.thinking_budget > 0
+
+
+def profile_fingerprint(profile: Profile) -> str:
+    if not isinstance(profile, Profile):
+        raise TypeError("profile_fingerprint requires a Profile")
+    payload = {
+        "schema": "universal-tuning-profile-v1",
+        "profile": asdict(profile),
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
