@@ -13,7 +13,7 @@ from .statistics import (
 from .tasks import TASK_FAMILIES, TaskPool
 
 BATCH_SIZE = 5
-STAGES = ("gate", "budget", "temperature", "interaction", "holdout")
+STAGES = ("gate", "budget", "temperature", "interaction", "holdout", "screen")
 
 
 @dataclass(frozen=True)
