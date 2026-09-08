@@ -171,10 +171,11 @@ def test_model_completion_failure_is_recorded_and_later_trials_continue(tmp_path
     assert len(adapter.calls) == 4
     assert result.physical_calls > 0
     rows = [json.loads(line) for line in (tmp_path / "atomic_observations.jsonl").read_text().splitlines()]
+    persisted_profile = json.loads(json.dumps(asdict(trials[0].profile)))
     first_batch = [
         row for row in rows
         if row["batch_id"] == trials[0].batch_id
-        and row["profile"] == asdict(trials[0].profile)
+        and row["profile"] == persisted_profile
     ]
     assert len(first_batch) == 5
     assert all(not row["completed"] for row in first_batch)
