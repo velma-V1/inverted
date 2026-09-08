@@ -1,9 +1,10 @@
-﻿"""Compile Stage-5 surface points into canonical causal replay interventions."""
+"""Compile Stage-5 surface points into canonical causal replay interventions."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -15,10 +16,28 @@ from .replay_store import ReplayStore
 from .surface_core import SurfaceAxis, SurfacePoint, SurfaceStudy
 
 
+SUPPORTED_SURFACE_AXES = frozenset({
+    SurfaceAxis.REASONING_BUDGET,
+    SurfaceAxis.TEMPERATURE,
+    SurfaceAxis.CONTEXT_DOSE,
+    SurfaceAxis.REPRESENTATION,
+    SurfaceAxis.ORDER,
+    SurfaceAxis.RECURRENCE,
+    SurfaceAxis.TIMING,
+    SurfaceAxis.PLACEMENT,
+    SurfaceAxis.CONTEXT_POSITION,
+    SurfaceAxis.DELIVERY_MODE,
+    SurfaceAxis.TRIGGER_MODE,
+})
+
+
 def _canonical(value: Any) -> bytes:
     return json.dumps(
-        value, sort_keys=True, separators=(",", ":"),
-        ensure_ascii=False, allow_nan=False,
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
     ).encode("utf-8")
 
 
@@ -89,7 +108,8 @@ class SurfaceInterventionCompiler:
         self, study: SurfaceStudy
     ) -> tuple[MechanismLabel, CausalHypothesis, tuple[InterventionDefinition, ...]]:
         labels = [
-            record for record in self.replay_store.records()
+            record
+            for record in self.replay_store.records()
             if isinstance(record, MechanismLabel)
             and record.failure_snapshot_id == study.failure_snapshot_id
             and record.mechanism_id == study.mechanism_id
@@ -122,7 +142,11 @@ class SurfaceInterventionCompiler:
             kinds = {InterventionKind.COGNITION}
         elif axis in {SurfaceAxis.REPRESENTATION, SurfaceAxis.ORDER, SurfaceAxis.PLACEMENT}:
             kinds = {InterventionKind.REPRESENTATION}
-        elif axis in {SurfaceAxis.CONTEXT_DOSE, SurfaceAxis.CONTEXT_POSITION, SurfaceAxis.DELIVERY_MODE}:
+        elif axis in {
+            SurfaceAxis.CONTEXT_DOSE,
+            SurfaceAxis.CONTEXT_POSITION,
+            SurfaceAxis.DELIVERY_MODE,
+        }:
             kinds = {InterventionKind.CONTEXT}
         else:
             kinds = {InterventionKind.DELIVERY}
@@ -139,9 +163,7 @@ class SurfaceInterventionCompiler:
 
     @staticmethod
     def _merge_dimensions(base: InterventionDefinition) -> tuple[list[str], dict[str, Any]]:
-        dimensions = list(base.changed_dimensions)
-        overrides = dict(base.overrides)
-        return dimensions, overrides
+        return list(base.changed_dimensions), dict(base.overrides)
 
     @staticmethod
     def _ensure_dimension(dimensions: list[str], path: str) -> None:
@@ -193,7 +215,9 @@ class SurfaceInterventionCompiler:
             self._ensure_dimension(dimensions, think_path)
             self._ensure_dimension(dimensions, budget_path)
             overrides[think_path] = point.value > 0
-            overrides[budget_path] = point.value if point.value > 0 else _get_path(visible, budget_path)
+            overrides[budget_path] = (
+                point.value if point.value > 0 else _get_path(visible, budget_path)
+            )
             label = f"surface reasoning budget {point.value}"
             if not original_think and point.value > 0:
                 label += " direct-to-thinking"
@@ -230,7 +254,9 @@ class SurfaceInterventionCompiler:
         messages_path = ".".join(parts[:-2])
         rows = json.loads(json.dumps(_get_path(visible, messages_path)))
         index = int(parts[-2])
-        rows[index]["content"] = dict(base.overrides).get(content_path, rows[index]["content"])
+        rows[index]["content"] = dict(base.overrides).get(
+            content_path, rows[index]["content"]
+        )
         return messages_path, rows, index
 
     def _representation_target(
@@ -250,12 +276,14 @@ class SurfaceInterventionCompiler:
         name = str(point.value).upper()
 
         if point.axis is SurfaceAxis.REPRESENTATION:
-            if name == "PROSE":
+            if name in {"PROSE", "BASE", "ORIGINAL"}:
                 represented = baseline
             elif name == "FIELDS":
                 represented = json.dumps(
                     {"representation": "FIELDS", "semantic_payload": baseline},
-                    sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
                 )
             else:
                 raise ValueError(f"unsupported representation surface value: {point.value!r}")
@@ -266,38 +294,170 @@ class SurfaceInterventionCompiler:
 
         messages_path, messages, index = self._effective_messages(visible, base)
         if point.axis is SurfaceAxis.ORDER:
-            if name != "REVERSE":
+            if name in {"BASE", "ORIGINAL"}:
+                transformed = messages
+            elif name == "REVERSE":
+                transformed = list(reversed(messages))
+            else:
                 raise ValueError(f"unsupported order surface value: {point.value!r}")
-            transformed = list(reversed(messages))
         elif point.axis is SurfaceAxis.PLACEMENT:
-            if name not in {"FRONT", "END"}:
+            if name in {"BASE", "ORIGINAL"}:
+                transformed = messages
+            elif name in {"FRONT", "END"}:
+                target = messages[index]
+                transformed = [row for offset, row in enumerate(messages) if offset != index]
+                transformed.insert(0 if name == "FRONT" else len(transformed), target)
+            else:
                 raise ValueError(f"unsupported placement surface value: {point.value!r}")
-            target = messages[index]
-            transformed = [row for offset, row in enumerate(messages) if offset != index]
-            transformed.insert(0 if name == "FRONT" else len(transformed), target)
         else:
             raise ValueError("representation mechanism does not support this surface axis")
         if semantic_contract_hash(messages) != semantic_contract_hash(transformed):
             raise ValueError("order/placement treatment changed the semantic contract")
         return [messages_path], {messages_path: transformed}, f"surface {point.axis.value.lower()} {name}"
 
+    @staticmethod
+    def _context_parts(
+        visible: Mapping[str, Any], base: InterventionDefinition
+    ) -> tuple[str, str, str]:
+        content_paths = [path for path in base.changed_dimensions if path.endswith(".content")]
+        if len(content_paths) != 1:
+            raise ValueError("context surface requires exactly one registered context content leaf")
+        path = content_paths[0]
+        original = _get_path(visible, path)
+        treated = dict(base.overrides).get(path)
+        if (
+            not isinstance(original, str)
+            or not isinstance(treated, str)
+            or not treated.startswith(original)
+        ):
+            raise ValueError("context surface requires an additive registered context treatment")
+        delta = treated[len(original):].strip()
+        if not delta:
+            raise ValueError("registered context treatment adds no measurable context")
+        return path, original, delta
+
+    @staticmethod
+    def _event_index(fixture: FailureFixture, event: str) -> int:
+        raw = fixture.metadata.get("surface_delivery_events", ())
+        rows = raw if isinstance(raw, (list, tuple)) else ()
+        matches: list[int] = []
+        for item in rows:
+            if not isinstance(item, Mapping):
+                continue
+            if str(item.get("event", "")).upper() != event:
+                continue
+            index = item.get("envelope_index")
+            if isinstance(index, int) and not isinstance(index, bool) and index > 0:
+                matches.append(index)
+        if len(matches) != 1:
+            noun = "state transition" if event == "STATE_TRANSITION" else "trigger"
+            raise ValueError(
+                f"{noun} surface requires exactly one preregistered observable {event} event"
+            )
+        return matches[0]
+
+    def _context_target(
+        self,
+        visible: Mapping[str, Any],
+        base: InterventionDefinition,
+        point: SurfacePoint,
+        fixture: FailureFixture,
+    ) -> tuple[list[str], dict[str, Any], str]:
+        path, original, delta = self._context_parts(visible, base)
+
+        if point.axis is SurfaceAxis.CONTEXT_DOSE:
+            if not isinstance(point.value, (int, float)) or isinstance(point.value, bool):
+                raise ValueError("context dose must be numeric")
+            dose = float(point.value)
+            if not 0.0 < dose <= 1.0:
+                raise ValueError("context dose must be in (0, 1]")
+            words = delta.split()
+            keep = max(1, math.ceil(len(words) * dose))
+            target = original + "\n\n" + " ".join(words[:keep])
+            return [path], {path: target}, f"surface context dose {dose:.6g}"
+
+        if point.axis is SurfaceAxis.CONTEXT_POSITION:
+            name = str(point.value).upper()
+            if name in {"INLINE", "BASE", "ORIGINAL"}:
+                return list(base.changed_dimensions), dict(base.overrides), "surface context position INLINE"
+            if name not in {"FRONT", "END"}:
+                raise ValueError(f"unsupported context position value: {point.value!r}")
+            parts = path.split(".")
+            if len(parts) < 5 or not parts[-2].isdigit():
+                raise ValueError("context position requires a message content leaf")
+            messages_path = ".".join(parts[:-2])
+            messages = json.loads(json.dumps(_get_path(visible, messages_path)))
+            index = int(parts[-2])
+            role = messages[index].get("role", "user")
+            messages[index]["content"] = original
+            packet = {"role": role, "content": delta}
+            messages.insert(0 if name == "FRONT" else len(messages), packet)
+            return [messages_path], {messages_path: messages}, f"surface context position {name}"
+
+        if point.axis is SurfaceAxis.DELIVERY_MODE:
+            name = str(point.value).upper()
+            if name in {"STATIC", "BASE", "ORIGINAL"}:
+                return list(base.changed_dimensions), dict(base.overrides), "surface delivery mode STATIC"
+            if name != "PROGRESSIVE":
+                raise ValueError(f"unsupported delivery mode value: {point.value!r}")
+            target_index = self._event_index(fixture, "STATE_TRANSITION")
+            envelopes = visible.get("request_envelopes")
+            if not isinstance(envelopes, list) or target_index >= len(envelopes):
+                raise ValueError("state transition references unavailable request envelope")
+            words = delta.split()
+            split = max(1, len(words) // 2)
+            early = " ".join(words[:split])
+            late = " ".join(words[split:])
+            if not late:
+                raise ValueError(
+                    "progressive delivery requires context divisible across a state transition"
+                )
+            late_messages = envelopes[target_index].get("messages")
+            if (
+                not isinstance(late_messages, list)
+                or not late_messages
+                or not isinstance(late_messages[-1], Mapping)
+                or not isinstance(late_messages[-1].get("content"), str)
+            ):
+                raise ValueError("state transition envelope lacks target message")
+            late_path = (
+                f"request_envelopes.{target_index}.messages.{len(late_messages) - 1}.content"
+            )
+            late_original = _get_path(visible, late_path)
+            return (
+                [path, late_path],
+                {
+                    path: original + "\n\n" + early,
+                    late_path: late_original + "\n\n" + late,
+                },
+                "surface delivery mode PROGRESSIVE",
+            )
+
+        raise ValueError("context mechanism does not support this surface axis")
+
     def _delivery_target(
         self,
         visible: Mapping[str, Any],
         base: InterventionDefinition,
         point: SurfacePoint,
+        fixture: FailureFixture,
     ) -> tuple[list[str], dict[str, Any], str]:
         messages_path, messages, index = self._effective_messages(visible, base)
         target = messages[index]
+
         if point.axis is SurfaceAxis.RECURRENCE:
             if not isinstance(point.value, int) or isinstance(point.value, bool) or point.value < 1:
                 raise ValueError("recurrence surface value must be a positive integer")
-            transformed = messages[:index] + [target for _ in range(point.value)] + messages[index + 1:]
+            transformed = (
+                messages[:index]
+                + [target for _ in range(point.value)]
+                + messages[index + 1:]
+            )
             return [messages_path], {messages_path: transformed}, f"surface recurrence {point.value}"
 
         if point.axis is SurfaceAxis.TIMING:
             name = str(point.value).upper()
-            if name == "EARLY":
+            if name in {"EARLY", "UPFRONT", "BASE", "ORIGINAL"}:
                 return list(base.changed_dimensions), dict(base.overrides), "surface timing EARLY"
             if name != "LATE":
                 raise ValueError(f"unsupported timing surface value: {point.value!r}")
@@ -315,7 +475,40 @@ class SurfaceInterventionCompiler:
                 "surface timing LATE",
             )
 
-        raise ValueError("delivery mechanism does not support this surface axis yet")
+        if point.axis is SurfaceAxis.TRIGGER_MODE:
+            name = str(point.value).upper()
+            if name in {"ALWAYS", "BASE", "ORIGINAL"}:
+                return list(base.changed_dimensions), dict(base.overrides), "surface trigger mode ALWAYS"
+            event = {
+                "FAILURE_TRIGGERED": "FAILURE",
+                "VERIFIER_TRIGGERED": "VERIFIER",
+            }.get(name)
+            if event is None:
+                raise ValueError(f"unsupported trigger mode value: {point.value!r}")
+            target_index = self._event_index(fixture, event)
+            envelopes = visible.get("request_envelopes")
+            if not isinstance(envelopes, list) or target_index >= len(envelopes):
+                raise ValueError("trigger references unavailable request envelope")
+            path, original, delta = self._context_parts(visible, base)
+            late_messages = envelopes[target_index].get("messages")
+            if (
+                not isinstance(late_messages, list)
+                or not late_messages
+                or not isinstance(late_messages[-1], Mapping)
+                or not isinstance(late_messages[-1].get("content"), str)
+            ):
+                raise ValueError("trigger envelope lacks target message")
+            late_path = (
+                f"request_envelopes.{target_index}.messages.{len(late_messages) - 1}.content"
+            )
+            late_original = _get_path(visible, late_path)
+            return (
+                [path, late_path],
+                {path: original, late_path: late_original + "\n\n" + delta},
+                f"surface trigger mode {name}",
+            )
+
+        raise ValueError("delivery mechanism does not support this registered surface axis")
 
     def compile_point(
         self,
@@ -336,6 +529,7 @@ class SurfaceInterventionCompiler:
             or point.partition != study.partition
         ):
             raise ValueError("surface point lineage differs from study")
+
         fixture = self._fixture(study)
         _, hypothesis, interventions = self._mechanism_context(study)
         base = self._compatible_base(point.axis, interventions)
@@ -343,14 +537,24 @@ class SurfaceInterventionCompiler:
 
         if base.kind is InterventionKind.COGNITION:
             dimensions, overrides, label = self._cognition_target(visible, base, point)
+        elif base.kind is InterventionKind.CONTEXT:
+            dimensions, overrides, label = self._context_target(
+                visible, base, point, fixture
+            )
         elif base.kind is InterventionKind.REPRESENTATION:
             dimensions, overrides, label = self._representation_target(visible, base, point)
         elif base.kind is InterventionKind.DELIVERY:
-            dimensions, overrides, label = self._delivery_target(visible, base, point)
+            dimensions, overrides, label = self._delivery_target(
+                visible, base, point, fixture
+            )
         else:
-            raise ValueError(f"surface compilation for {base.kind.value} is not implemented")
+            raise ValueError(
+                f"surface compilation is unavailable for mechanism kind {base.kind.value}"
+            )
 
-        changed_dimensions, reduced = self._reduce_to_parent_diff(visible, dimensions, overrides)
+        changed_dimensions, reduced = self._reduce_to_parent_diff(
+            visible, dimensions, overrides
+        )
         if not changed_dimensions:
             raise ValueError("surface point is the parent baseline and must be reused, not replayed")
         envelopes = visible.get("request_envelopes")
