@@ -91,12 +91,12 @@ jobs:
       - name: Resolve historical Stage-6 prerequisites with zero model calls
         shell: bash
         run: |
-          python -m inverted.capability_ratchet.cli plan-surface \
+          python -m inverted.capability_ratchet.cli plan-mutations \
             --replay-root /tmp/v3-stage6-completion/replay \
             --causal-root /tmp/v3-stage6-completion/causal \
             --surface-root /tmp/v3-stage6-completion/surface \
+            --mutation-root /tmp/v3-stage6-completion/mutation \
             --auto-eligible \
-            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
             > /tmp/v3-stage6-completion/historical-stage6-prerequisites.json
 
       - name: Enforce Stage-6 completion invariants
@@ -138,6 +138,8 @@ jobs:
           assert audit['stage6_synthetic_fresh_sealed_count'] == 0
           assert audit['stage6_certified_event_count'] == 0
           assert audit['stage6_zero_call_plan_contract'] is True
+          assert audit['stage6_auto_plan_contract'] is True
+          assert audit['stage6_protected_failure_veto_contract'] is True
           assert audit['stage6_registered_mutation_fixtures'] == 0
 
           # Historical evidence has no durable MOVEMENT mechanism on which Stage 6 may
@@ -148,6 +150,9 @@ jobs:
           assert historical['status'] in {'NO_ELIGIBLE_MECHANISMS', 'NO_MUTATION_TEMPLATE'}
           if historical['status'] == 'NO_ELIGIBLE_MECHANISMS':
               assert historical['eligible_mechanisms'] == []
+              assert historical['plans'] == []
+          if historical['status'] == 'NO_MUTATION_TEMPLATE':
+              assert historical['eligible_mechanisms']
               assert historical['plans'] == []
 
           assert privacy['privacy_ok'] is True
@@ -167,6 +172,8 @@ jobs:
               'stage6_synthetic_fresh_sealed_count': audit['stage6_synthetic_fresh_sealed_count'],
               'stage6_certified_event_count': audit['stage6_certified_event_count'],
               'stage6_zero_call_plan_contract': audit['stage6_zero_call_plan_contract'],
+              'stage6_auto_plan_contract': audit['stage6_auto_plan_contract'],
+              'stage6_protected_failure_veto_contract': audit['stage6_protected_failure_veto_contract'],
               'historical_stage6_status': historical['status'],
               'privacy_matches': privacy['total_matches'],
           }
