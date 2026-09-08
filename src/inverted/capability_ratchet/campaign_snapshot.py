@@ -73,14 +73,22 @@ class ReplayFailureSnapshotter:
         forensic = self._plain(evidence.forensic_payload, name="forensic_payload")
         oracle = self._plain(evidence.oracle_payload, name="oracle_payload")
         profile = self._plain(evidence.inference_profile, name="inference_profile")
+        retry = context.retry_ingredient
+        retry_intervention = (
+            None
+            if retry is None
+            else self._plain(retry.to_payload(), name="retry_intervention")
+        )
 
         for label, payload in (
             ("model_visible", visible),
             ("forensic", forensic),
             ("oracle", oracle),
             ("inference_profile", profile),
+            ("retry_intervention", retry_intervention),
         ):
-            _scan_secrets(payload, label=label)
+            if payload is not None:
+                _scan_secrets(payload, label=label)
 
         visible_sha = self._store.put_asset(visible)
         forensic_sha = self._store.put_asset(forensic)
@@ -97,7 +105,6 @@ class ReplayFailureSnapshotter:
                 raise ValueError("retry snapshot requires the preceding failed attempt")
             parent_id, parent_hash = parent
 
-        retry = context.retry_ingredient
         identity = {
             "source_campaign_id": self._source_campaign_id,
             "model_id": context.model_id,
@@ -106,6 +113,7 @@ class ReplayFailureSnapshotter:
             "attempt_stage": context.stage,
             "attempt_index": context.attempt_index,
             "retry_ingredient_id": None if retry is None else retry.ingredient_id,
+            "retry_intervention": retry_intervention,
             "state_hash": visible_sha,
             "failure_classes": list(outcome.failure_classes),
             "failure_subtypes": list(outcome.failure_subtypes),
@@ -148,6 +156,7 @@ class ReplayFailureSnapshotter:
                 "attempt_index": context.attempt_index,
                 "retry_ingredient_id": None if retry is None else retry.ingredient_id,
                 "retry_ingredient_description": None if retry is None else retry.description,
+                "retry_intervention": retry_intervention,
                 "failure_subtypes": outcome.failure_subtypes,
                 "forensic_asset_sha256": forensic_sha,
                 "oracle_asset_sha256": oracle_sha,
