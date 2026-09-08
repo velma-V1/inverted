@@ -149,6 +149,10 @@ class MutationPolicy:
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
+        if self.max_protected_failures != 0:
+            raise ValueError(
+                "max_protected_failures must be 0; protected negative transfer always vetoes Stage-6 promotion"
+            )
         if not isinstance(self.min_success_rate, (int, float)) or isinstance(self.min_success_rate, bool):
             raise TypeError("min_success_rate must be numeric")
         if not 0.0 <= float(self.min_success_rate) <= 1.0:
