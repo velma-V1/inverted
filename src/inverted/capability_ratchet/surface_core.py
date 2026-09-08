@@ -253,11 +253,11 @@ class SurfacePoint:
             "partition": study.partition.value,
             "axis": axis.value,
             "value": frozen_value,
-            "protected_exploration": protected_exploration,
         }
         return cls(
             surface_point_id=_stable_id("surface-point", identity),
             decision_id=decision_id,
+            protected_exploration=protected_exploration,
             **identity,
         )
 

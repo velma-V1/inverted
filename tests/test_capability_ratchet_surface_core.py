@@ -224,3 +224,16 @@ def test_surface_point_identity_is_independent_of_decision_label() -> None:
     )
     assert d3.surface_point_id == d4.surface_point_id
     assert d3.decision_id != d4.decision_id
+
+
+def test_surface_point_identity_is_independent_of_exploration_label() -> None:
+    surface_study = _study()
+    ordinary = SurfacePoint.create(
+        study=surface_study, axis=SurfaceAxis.REASONING_BUDGET, value=2048,
+        decision_id="D3", protected_exploration=False,
+    )
+    protected = SurfacePoint.create(
+        study=surface_study, axis=SurfaceAxis.REASONING_BUDGET, value=2048,
+        decision_id="D3", protected_exploration=True,
+    )
+    assert ordinary.surface_point_id == protected.surface_point_id
