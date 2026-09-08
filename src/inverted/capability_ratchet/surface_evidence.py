@@ -18,6 +18,19 @@ from .surface_core import (
 from .surface_store import SurfaceEvidenceStore
 
 
+_BASELINE_ALIASES: dict[SurfaceAxis, tuple[Any, ...]] = {
+    SurfaceAxis.CONTEXT_DOSE: (1, 1.0, "FULL"),
+    SurfaceAxis.CONTEXT_POSITION: ("INLINE", "BASE", "ORIGINAL"),
+    SurfaceAxis.DELIVERY_MODE: ("STATIC", "BASE", "ORIGINAL"),
+    SurfaceAxis.REPRESENTATION: ("PROSE", "BASE", "ORIGINAL"),
+    SurfaceAxis.ORDER: ("ORIGINAL", "BASE"),
+    SurfaceAxis.PLACEMENT: ("ORIGINAL", "BASE"),
+    SurfaceAxis.RECURRENCE: (1,),
+    SurfaceAxis.TIMING: ("EARLY", "UPFRONT", "BASE", "ORIGINAL"),
+    SurfaceAxis.TRIGGER_MODE: ("ALWAYS", "BASE", "ORIGINAL"),
+}
+
+
 class SurfaceEvidenceCompiler:
     """Reuse canonical same-state evidence and import V2 observations as priors."""
 
@@ -46,6 +59,33 @@ class SurfaceEvidenceCompiler:
             and record.mechanism_id == study.mechanism_id
             and record.parent_state_hash == study.parent_state_hash
         )
+
+    def _mechanism_intervention_ids(self, study: SurfaceStudy) -> frozenset[str]:
+        return frozenset(
+            intervention_id
+            for record in self.replay_store.records()
+            if isinstance(record, MechanismLabel)
+            and record.failure_snapshot_id == study.failure_snapshot_id
+            and record.mechanism_id == study.mechanism_id
+            and record.parent_state_hash == study.parent_state_hash
+            for intervention_id in record.intervention_ids
+        )
+
+    @staticmethod
+    def _same_value(value: Any, alias: Any) -> bool:
+        if value == alias:
+            return True
+        if isinstance(value, str) and isinstance(alias, str):
+            return value.upper() == alias.upper()
+        return False
+
+    @classmethod
+    def _registered_baseline(cls, study: SurfaceStudy, axis: SurfaceAxis) -> Any | None:
+        aliases = _BASELINE_ALIASES.get(axis, ())
+        for value in study.axis_values[axis.value]:
+            if any(cls._same_value(value, alias) for alias in aliases):
+                return value
+        return None
 
     @staticmethod
     def _baseline_value(study: SurfaceStudy, axis: SurfaceAxis, profile: Any) -> Any | None:
@@ -76,7 +116,7 @@ class SurfaceEvidenceCompiler:
                 matches.append(request.overrides[dimension])
         if not matches:
             return None
-        unique = []
+        unique: list[Any] = []
         for value in matches:
             if value not in unique:
                 unique.append(value)
@@ -90,6 +130,43 @@ class SurfaceEvidenceCompiler:
         request: ReplayRequest,
         axis: SurfaceAxis,
     ) -> SurfacePoint | None:
+        protected = False
+        if request.intervention_id:
+            try:
+                protected = self.causal_store.get_intervention(
+                    request.intervention_id
+                ).protected_exploration
+            except (KeyError, ValueError):
+                protected = False
+
+        # Stage-5 generated replays carry the stable point identity in their
+        # request ID. This makes every registered axis recoverable after a
+        # crash without reverse-engineering arbitrary message transformations.
+        for registered_value in study.axis_values[axis.value]:
+            candidate = SurfacePoint.create(
+                study=study,
+                axis=axis,
+                value=registered_value,
+                decision_id=request.decision_id,
+                protected_exploration=protected,
+            )
+            if request.replay_request_id == f"surface-replay-{candidate.surface_point_id}":
+                return candidate
+
+        # A successful Plan-2 mechanism replay is already the same-parent
+        # baseline for non-cognition geometry. Reuse it instead of paying for
+        # a redundant Stage-5 baseline call.
+        if request.intervention_id in self._mechanism_intervention_ids(study):
+            baseline = self._registered_baseline(study, axis)
+            if baseline is not None:
+                return SurfacePoint.create(
+                    study=study,
+                    axis=axis,
+                    value=baseline,
+                    decision_id=request.decision_id,
+                    protected_exploration=protected,
+                )
+
         fixture = self.replay_store.get_failure(study.failure_snapshot_id)
         value = (
             self._baseline_value(study, axis, fixture.inference_profile)
@@ -98,12 +175,6 @@ class SurfaceEvidenceCompiler:
         )
         if value is None or value not in study.axis_values[axis.value]:
             return None
-        protected = False
-        if request.intervention_id:
-            try:
-                protected = self.causal_store.get_intervention(request.intervention_id).protected_exploration
-            except (KeyError, ValueError):
-                protected = False
         return SurfacePoint.create(
             study=study,
             axis=axis,
@@ -171,7 +242,12 @@ class SurfaceEvidenceCompiler:
                 )
                 self.surface_store.append_observation(observation)
                 rows.append(observation)
-        return tuple(sorted(rows, key=lambda item: (item.axis.value, repr(item.value), item.observation_id)))
+        return tuple(
+            sorted(
+                rows,
+                key=lambda item: (item.axis.value, repr(item.value), item.observation_id),
+            )
+        )
 
     @staticmethod
     def _trial_id(observation: Any, row: dict[str, Any]) -> str | None:
@@ -222,7 +298,9 @@ class SurfaceEvidenceCompiler:
         fixture = self.replay_store.get_failure(study.failure_snapshot_id)
         loaded = source.load()
         rows: list[SurfaceObservation] = []
-        for observation, raw_row in zip(loaded.observations, loaded.observation_rows, strict=True):
+        for observation, raw_row in zip(
+            loaded.observations, loaded.observation_rows, strict=True
+        ):
             if observation.family != fixture.family:
                 continue
             trial_id = self._trial_id(observation, raw_row)
@@ -269,7 +347,25 @@ class SurfaceEvidenceCompiler:
                 )
                 self.surface_store.append_observation(prior)
                 rows.append(prior)
-        return tuple(sorted(rows, key=lambda item: (item.axis.value, repr(item.value), item.observation_id)))
+        return tuple(
+            sorted(
+                rows,
+                key=lambda item: (item.axis.value, repr(item.value), item.observation_id),
+            )
+        )
+
+    def point_physical_calls(self, study: SurfaceStudy, point: SurfacePoint) -> int:
+        """Return exact physical-call geometry from the frozen replay fixture."""
+        if not isinstance(study, SurfaceStudy) or not isinstance(point, SurfacePoint):
+            raise TypeError("study and point must be surface contracts")
+        if point.study_id != study.study_id:
+            raise ValueError("surface point belongs to a different study")
+        fixture = self.replay_store.get_failure(study.failure_snapshot_id)
+        visible = self.replay_store.read_asset(fixture.model_visible_asset_sha256)
+        envelopes = visible.get("request_envelopes") if isinstance(visible, dict) else None
+        if not isinstance(envelopes, list) or not envelopes:
+            raise ValueError("surface fixture has no executable request envelopes")
+        return len(envelopes)
 
     def answered_points(self, study: SurfaceStudy) -> frozenset[str]:
         """Return all same-state points already answered, discovering canonical replays first."""
