@@ -318,4 +318,3 @@ class InterventionDefinition:
             ablates=ablates,
             protected_exploration=protected_exploration,
         )
-
