@@ -149,3 +149,22 @@ def select_failures(store: ReplayStore, selector: ReplaySelector) -> tuple[Failu
             continue
         selected.append(fixture)
     return tuple(selected)
+
+
+def select_surface_study(surface_store, *, study_id: str | None = None, mechanism_id: str | None = None):
+    """Resolve exactly one Stage-5 study without silently choosing among ambiguous matches."""
+    if (study_id is None) == (mechanism_id is None):
+        raise ValueError("surface study selection requires exactly one selector")
+    if study_id is not None:
+        if not isinstance(study_id, str) or not study_id.strip():
+            raise ValueError("study_id must be non-blank")
+        matches = tuple(item for item in surface_store.studies() if item.study_id == study_id)
+    else:
+        if not isinstance(mechanism_id, str) or not mechanism_id.strip():
+            raise ValueError("mechanism_id must be non-blank")
+        matches = tuple(surface_store.studies(mechanism_id))
+    if not matches:
+        raise ValueError("surface study selector matched no studies")
+    if len(matches) != 1:
+        raise ValueError("surface study selector is ambiguous; multiple studies matched")
+    return matches[0]
