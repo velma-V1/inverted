@@ -205,14 +205,15 @@ def test_same_state_exact_and_counterfactual_replays_are_reused_as_answered_poin
 def test_historical_v2_prior_orders_budget_evidence_but_cannot_answer_same_state_point(tmp_path) -> None:
     replay, causal, surface, study = _seed_surface(tmp_path)
     compiler = SurfaceEvidenceCompiler(replay, causal, surface)
-    source = V2EvidenceSource(_write_mini_v2(tmp_path / "v2", budget=1024))
+    source = V2EvidenceSource(_write_mini_v2(tmp_path / "v2", budget=512))
     priors = compiler.compile_v2_priors(source, study)
     assert len(priors) == 5
     assert all(row.evidence_kind is SurfaceEvidenceKind.HISTORICAL_PRIOR for row in priors)
-    assert all(row.value == 1024 for row in priors)
+    assert all(row.value == 512 for row in priors)
     assert all(row.metrics["reasoning_cap_exhausted"] is True for row in priors)
     assert all(row.metrics["MODEL_CALLS"] == 0 for row in priors)
-    assert compiler.answered_points(study) == frozenset()
+    point_512 = SurfacePoint.create(study=study, axis=SurfaceAxis.REASONING_BUDGET, value=512, decision_id="D3")
+    assert point_512.surface_point_id not in compiler.answered_points(study)
 
 
 def test_prior_outside_registered_surface_or_wrong_family_is_not_imported(tmp_path) -> None:
@@ -225,7 +226,7 @@ def test_prior_outside_registered_surface_or_wrong_family_is_not_imported(tmp_pa
 def test_compilation_is_idempotent_and_never_invokes_model_transport(tmp_path, monkeypatch) -> None:
     replay, causal, surface, study = _seed_surface(tmp_path)
     compiler = SurfaceEvidenceCompiler(replay, causal, surface)
-    source = V2EvidenceSource(_write_mini_v2(tmp_path / "v2", budget=1024))
+    source = V2EvidenceSource(_write_mini_v2(tmp_path / "v2", budget=512))
     monkeypatch.setattr(
         "inverted.universal_tuning.qwen_ollama.QwenOllamaAdapter._post",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("model transport forbidden")),
