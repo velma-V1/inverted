@@ -15,6 +15,7 @@ from .causal_store import CausalEvidenceStore
 from .core import (
     FailureFixture,
     MechanismLabel,
+    MutationFixture,
     Partition,
     PromotionEvent,
     PromotionState,
@@ -35,6 +36,26 @@ from .historical import (
 from .interventions import InterventionGenerator, TailoredInterventionGenerator
 from .lab import FailureLab, FailureResearchProgram, FailureResearchResult
 from .mechanisms import MechanismAssessment, MechanismLocalizer
+from .mutation_analysis import MutationAnalyzer
+from .mutation_core import (
+    GeneralizationClass,
+    GeneralizationProfile,
+    MutationAxis,
+    MutationDirection,
+    MutationOrigin,
+    MutationPolicy,
+    MutationSpec,
+)
+from .mutation_generator import MutationGenerator, MutationTemplate
+from .mutation_lab import MutationLab, MutationStepResult
+from .mutation_planner import MutationPlan, MutationPlanner
+from .mutation_replay import MutationReplayCompiler
+from .mutation_store import (
+    MutationEvidenceStore,
+    MutationOutcome,
+    MutationStoreValidation,
+    MutationStudy,
+)
 from .query import ReplaySelector, select_failures, select_surface_study
 from .qwen_replay import QwenReplayAdapter, V2ReplayScorer
 from .replay import ReplayAdapter, ReplayCompletion, ReplayExecutor, ReplayPlan
@@ -72,6 +93,8 @@ __all__ = [
     "FailureResearchProgram",
     "FailureResearchResult",
     "FirstDivergence",
+    "GeneralizationClass",
+    "GeneralizationProfile",
     "HistoricalSeedResult",
     "HypothesisStatus",
     "InterventionDefinition",
@@ -81,6 +104,24 @@ __all__ = [
     "MechanismLabel",
     "MechanismLocalizer",
     "MechanismRole",
+    "MutationAnalyzer",
+    "MutationAxis",
+    "MutationDirection",
+    "MutationEvidenceStore",
+    "MutationFixture",
+    "MutationGenerator",
+    "MutationLab",
+    "MutationOrigin",
+    "MutationOutcome",
+    "MutationPlan",
+    "MutationPlanner",
+    "MutationPolicy",
+    "MutationReplayCompiler",
+    "MutationSpec",
+    "MutationStepResult",
+    "MutationStoreValidation",
+    "MutationStudy",
+    "MutationTemplate",
     "OperatingSurfaceLab",
     "OperatingSurfaceProfile",
     "Partition",
