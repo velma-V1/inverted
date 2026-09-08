@@ -26,13 +26,43 @@ class SurfaceStub:
         return SimpleNamespace(ok=True)
 
 
+def _baseline_failure(replay: ReplayStore) -> FailureFixture:
+    fixture = FailureFixture(
+        failure_snapshot_id="failure-stage6-bootstrap-baseline",
+        source_campaign_id="campaign",
+        source_trial_id="trial-baseline",
+        focus_observation_id="observation-baseline",
+        focus_task_id="task",
+        batch_task_ids=("task",),
+        family="PLANNING",
+        failure_classes=("SEMANTIC_FAIL",),
+        source_model_id="fake-model",
+        source_model_digest="fake-digest",
+        source_runtime={"provider": "fake"},
+        inference_profile={"temperature": 0},
+        inference_seed=7,
+        partition=Partition.DEVELOPMENT,
+        model_visible_asset_sha256=replay.put_asset(
+            {"request_envelopes": [{"model": "fake-model", "messages": []}]}
+        ),
+        state_hash="b" * 64,
+        oracle_ref="oracle:baseline",
+        expected_contract="answer",
+        source_evidence_refs=("source:baseline",),
+    )
+    replay.append(fixture)
+    return fixture
+
+
 def _store(tmp_path) -> tuple[ReplayStore, MutationEvidenceStore]:
     replay = ReplayStore(tmp_path / "replay")
+    _baseline_failure(replay)
     mutation = MutationEvidenceStore(
         tmp_path / "mutation",
         replay_store=replay,
         surface_store=SurfaceStub(),
     )
+    assert replay.validate().ok
     return replay, mutation
 
 
