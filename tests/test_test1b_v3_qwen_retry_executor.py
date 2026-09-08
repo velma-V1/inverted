@@ -55,7 +55,7 @@ def _task() -> AtomicTask:
         family="LOGIC",
         difficulty=4,
         prompt="Return the only valid assignment as an answer object.",
-        expected={"answer": "B"},
+        expected="B",
         scorer="exact_value",
         contract="answer_object",
     )
