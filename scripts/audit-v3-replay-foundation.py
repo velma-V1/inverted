@@ -16,11 +16,18 @@ from inverted.capability_ratchet.snapshot import _scan_secrets
 
 
 REQUIRED_EXPORTS = {
-    "FailureFixture", "HistoricalSeedResult", "Partition", "PromotionState",
-    "QwenReplayAdapter", "ReplayAdapter", "ReplayCompletion", "ReplayExecutor",
-    "ReplayMode", "ReplayPlan", "ReplayRecord", "ReplayRecordType",
-    "ReplayRequest", "ReplayResult", "ReplaySelector", "ReplayStore",
-    "ReplayValidation", "SupersessionRecord", "V2EvidenceSource", "V2ReplayScorer",
+    "ArchitectureOwner", "AutopsyReport", "CausalEvidenceStore", "CausalHypothesis",
+    "DivergenceClass", "FailureAutopsy", "FailureFixture", "FailureLab",
+    "FailureResearchProgram", "FailureResearchResult", "FirstDivergence",
+    "HistoricalSeedResult", "HypothesisStatus", "InterventionDefinition",
+    "InterventionGenerator", "InterventionKind", "MechanismAssessment",
+    "MechanismLabel", "MechanismLocalizer", "MechanismRole", "Partition",
+    "PromotionEvent", "PromotionState", "QwenReplayAdapter", "ReplayAdapter",
+    "ReplayCompletion", "ReplayExecutor", "ReplayMode", "ReplayPlan", "ReplayRecord",
+    "ReplayRecordType", "ReplayRequest", "ReplayResult", "ReplaySelector",
+    "ReplayStore", "ReplayValidation", "SupersessionRecord",
+    "TailoredInterventionGenerator", "TournamentBranch", "TournamentPlan",
+    "TournamentPlanner", "V2EvidenceSource", "V2ReplayScorer", "build_ablations",
     "build_failure_fixture", "from_payload", "preview_v2_failures",
     "seed_v2_failures", "select_failures", "to_payload",
 }
@@ -32,6 +39,13 @@ REQUIRED_FILES = (
     "src/inverted/capability_ratchet/qwen_replay.py",
     "src/inverted/capability_ratchet/historical.py",
     "src/inverted/capability_ratchet/query.py",
+    "src/inverted/capability_ratchet/causal_core.py",
+    "src/inverted/capability_ratchet/causal_store.py",
+    "src/inverted/capability_ratchet/autopsy.py",
+    "src/inverted/capability_ratchet/interventions.py",
+    "src/inverted/capability_ratchet/tournament.py",
+    "src/inverted/capability_ratchet/mechanisms.py",
+    "src/inverted/capability_ratchet/lab.py",
     "src/inverted/capability_ratchet/cli.py",
     "scripts/run-test-replay.ps1",
     "tests/test_capability_ratchet_core.py",
@@ -41,6 +55,13 @@ REQUIRED_FILES = (
     "tests/test_capability_ratchet_qwen_replay.py",
     "tests/test_capability_ratchet_historical.py",
     "tests/test_capability_ratchet_query_cli.py",
+    "tests/test_capability_ratchet_autopsy.py",
+    "tests/test_capability_ratchet_interventions.py",
+    "tests/test_capability_ratchet_tournament.py",
+    "tests/test_capability_ratchet_mechanisms.py",
+    "tests/test_capability_ratchet_lab.py",
+    "tests/test_capability_ratchet_lab_cli.py",
+    "tests/test_capability_ratchet_causal_preflight.py",
 )
 
 
@@ -113,7 +134,10 @@ def main(argv: list[str] | None = None) -> int:
          f"missing public exports: {sorted(REQUIRED_EXPORTS - set(cr.__all__))}")
     missing_files = [path for path in REQUIRED_FILES if not (repo / path).is_file()]
     _add(findings, bool(missing_files), f"missing required replay files: {missing_files}")
-    required_commands = {"validate", "list", "show", "seed-v2", "plan-replay", "execute-replay"}
+    required_commands = {
+        "validate", "list", "show", "seed-v2", "plan-replay", "execute-replay",
+        "autopsy", "plan-lab", "show-lab", "run-lab",
+    }
     _add(findings, _cli_commands() != required_commands,
          f"CLI command surface mismatch: {sorted(_cli_commands())}")
     placeholder_hits = _placeholder_hits(repo)
