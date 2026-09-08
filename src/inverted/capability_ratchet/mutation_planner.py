@@ -152,13 +152,12 @@ class MutationPlanner:
             else 0.0
         )
 
-        protected_ok = len(profile.protected_failures) <= policy.max_protected_failures
         if (
             successes >= policy.min_promotion_successes
             and axes >= policy.min_promotion_axes
             and harder >= policy.min_harder_successes
             and optimistic_rate >= policy.min_success_rate
-            and protected_ok
+            and not profile.protected_failures
         ):
             return GeneralizationClass.PROMOTION_CANDIDATE
         if (
@@ -277,13 +276,10 @@ class MutationPlanner:
                     reused=reused,
                     reason="mutation evidence already reaches PROMOTION_CANDIDATE; no further Stage-6 probe can move D12",
                 )
-            if (
-                current.classification is GeneralizationClass.CROSS_REGION_MECHANISM
-                and len(current.protected_failures) > current.policy.max_protected_failures
-            ):
+            if current.protected_failures:
                 return self._stopped(
                     reused=reused,
-                    reason="protected mutation failure blocks promotion under the registered policy; additional Stage-6 averaging is forbidden",
+                    reason="protected mutation failure is an absolute Stage-6 promotion veto; additional averaging is forbidden",
                 )
             optimistic = self._optimistic_classification(current, unresolved)
             if _CLASS_RANK[optimistic] <= _CLASS_RANK[current.classification]:
