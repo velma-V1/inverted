@@ -31,7 +31,8 @@ class DependencyAdapter:
 
     def execute_fixture(self, fixture, visible_payload, request):
         self.calls += 1
-        content = visible_payload["request_envelopes"][0]["messages"][-1]["content"]
+        envelope = visible_payload["request_envelopes"][0]
+        content = envelope["messages"][-1]["content"]
         if self.mode == "always-pass":
             passed = True
         elif self.mode == "always-fail":
@@ -43,7 +44,7 @@ class DependencyAdapter:
             semantic_pass=passed,
             contract_pass=True,
             output_payload={"passed": passed, "request_id": request.replay_request_id},
-            raw_calls=({"request": {"id": request.replay_request_id}, "response": {"passed": passed}},),
+            raw_calls=({"request": envelope, "response": {"passed": passed}},),
             failure_classes=() if passed else ("SEMANTIC_FAIL",),
             metrics={"physical_calls": 1, "adapter": "fake"},
         )
