@@ -21,6 +21,11 @@ from .parameter_screening import (
     plan_behavior_screen,
     screen_profile_parameters,
 )
+from .thinking_curve import (
+    ThinkingBudgetPoint,
+    ThinkingCurveResult,
+    analyze_thinking_curve,
+)
 
 __all__ = [
     "AtomicScore",
@@ -32,6 +37,9 @@ __all__ = [
     "ParameterScreenResult",
     "Profile",
     "ProfileScreenCandidate",
+    "ThinkingBudgetPoint",
+    "ThinkingCurveResult",
+    "analyze_thinking_curve",
     "parameter_catalog",
     "parameter_screen_call_geometry",
     "plan_behavior_screen",
