@@ -229,9 +229,6 @@ class MutationOutcome:
                 raise TypeError(f"{name} must be boolean")
         if not isinstance(self.metadata, Mapping):
             raise TypeError("metadata must be a mapping")
-        bad = _contains_raw_metadata(self.metadata)
-        if bad is not None:
-            raise ValueError(f"Stage-6 metadata may not duplicate raw model payload field {bad}")
         object.__setattr__(self, "metadata", _freeze(self.metadata))
 
 
@@ -572,6 +569,9 @@ class MutationEvidenceStore:
         return matches[0]
 
     def _require_outcome_lineage(self, outcome: MutationOutcome) -> None:
+        bad = _contains_raw_metadata(outcome.metadata)
+        if bad is not None:
+            raise ValueError(f"Stage-6 metadata may not duplicate raw model payload field {bad}")
         studies = {item.study_id: item for item in self.studies()}
         study = studies.get(outcome.study_id)
         if study is None:
