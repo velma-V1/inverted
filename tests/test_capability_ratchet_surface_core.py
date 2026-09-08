@@ -197,3 +197,18 @@ def test_operating_surface_profile_is_capped_at_movement() -> None:
             call_geometry=SurfaceCallGeometry(2, 4, 8, 1),
             promotion_ceiling=PromotionState.TIER_CANDIDATE,
         )
+
+
+def test_surface_observation_retains_reconstructable_point_coordinates() -> None:
+    point = SurfacePoint.create(
+        study=_study(), axis=SurfaceAxis.REASONING_BUDGET, value=512, decision_id="D3"
+    )
+    observation = SurfaceObservation.create(
+        point=point,
+        evidence_kind=SurfaceEvidenceKind.HISTORICAL_PRIOR,
+        source_evidence_refs=("v2:row",),
+    )
+    assert observation.axis is SurfaceAxis.REASONING_BUDGET
+    assert observation.value == 512
+    assert observation.decision_id == "D3"
+    assert observation.protected_exploration is False

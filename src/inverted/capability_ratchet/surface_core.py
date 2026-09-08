@@ -267,6 +267,10 @@ class SurfaceObservation:
     failure_snapshot_id: str
     mechanism_id: str
     parent_state_hash: str
+    axis: SurfaceAxis
+    value: Any
+    decision_id: str
+    protected_exploration: bool
     evidence_kind: SurfaceEvidenceKind
     replay_result_ids: tuple[str, ...] = ()
     source_evidence_refs: tuple[str, ...] = ()
@@ -276,6 +280,12 @@ class SurfaceObservation:
         for name in ("observation_id", "surface_point_id", "study_id", "failure_snapshot_id", "mechanism_id"):
             _required(name, getattr(self, name))
         _sha256("parent_state_hash", self.parent_state_hash)
+        if not isinstance(self.axis, SurfaceAxis):
+            object.__setattr__(self, "axis", SurfaceAxis(self.axis))
+        object.__setattr__(self, "value", _surface_value(self.value))
+        _required("decision_id", self.decision_id)
+        if type(self.protected_exploration) is not bool:
+            raise TypeError("protected_exploration must be boolean")
         if not isinstance(self.evidence_kind, SurfaceEvidenceKind):
             object.__setattr__(self, "evidence_kind", SurfaceEvidenceKind(self.evidence_kind))
         replay_ids = _strings("replay_result_ids", self.replay_result_ids, allow_empty=True)
@@ -308,6 +318,10 @@ class SurfaceObservation:
             "failure_snapshot_id": point.failure_snapshot_id,
             "mechanism_id": point.mechanism_id,
             "parent_state_hash": point.parent_state_hash,
+            "axis": point.axis.value,
+            "value": point.value,
+            "decision_id": point.decision_id,
+            "protected_exploration": point.protected_exploration,
             "evidence_kind": SurfaceEvidenceKind(evidence_kind).value,
             "replay_result_ids": list(replay_result_ids),
             "source_evidence_refs": list(source_evidence_refs),
