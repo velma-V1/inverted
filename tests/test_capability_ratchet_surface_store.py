@@ -10,6 +10,8 @@ from inverted.capability_ratchet.causal_core import (
     CausalHypothesis,
     DivergenceClass,
     FirstDivergence,
+    InterventionDefinition,
+    InterventionKind,
     MechanismRole,
 )
 from inverted.capability_ratchet.causal_store import CausalEvidenceStore
@@ -43,7 +45,14 @@ MECHANISM_ID = "mechanism-surface"
 
 def _seed_lineage(tmp_path):
     replay = ReplayStore(tmp_path / "replay")
-    visible = replay.put_asset({"request_envelopes": [{"model": "model", "messages": []}]})
+    visible = replay.put_asset({
+        "request_envelopes": [{
+            "model": "model",
+            "messages": [],
+            "think": False,
+            "options": {"num_predict": 128, "temperature": 0.7},
+        }]
+    })
     output = replay.put_asset({"output": "ok"})
     raw = replay.put_asset({"request": {}, "response": {}})
     fixture = FailureFixture(
@@ -86,6 +95,18 @@ def _seed_lineage(tmp_path):
         falsifier="bounded cognition does not improve the same state",
     )
     causal.append_hypothesis(hypothesis)
+    intervention = InterventionDefinition.create(
+        hypothesis_id=hypothesis.hypothesis_id,
+        failure_snapshot_id=fixture.failure_snapshot_id,
+        parent_state_hash=fixture.state_hash,
+        kind=InterventionKind.COGNITION,
+        label="bounded reasoning",
+        changed_dimensions=("request_envelopes.0.think",),
+        overrides={"request_envelopes.0.think": True},
+        expected_causal_implication="bounded cognition repairs the failure",
+        projected_physical_calls=1,
+    )
+    causal.register_intervention(intervention)
 
     request = ReplayRequest.for_exact(
         fixture,
@@ -119,7 +140,7 @@ def _seed_lineage(tmp_path):
         parent_state_hash=fixture.state_hash,
         mechanism_id=MECHANISM_ID,
         hypothesis_id=hypothesis.hypothesis_id,
-        intervention_ids=("intervention-surface",),
+        intervention_ids=(intervention.intervention_id,),
         role=MechanismRole.REQUIRED,
         evidence_replay_result_ids=(result.replay_result_id,),
         confidence=0.9,
