@@ -36,6 +36,15 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _canonical_lfs_pointer(data: bytes) -> bytes:
+    """Return the canonical basic Git LFS pointer naming these payload bytes."""
+    return (
+        "version https://git-lfs.github.com/spec/v1\n"
+        f"oid sha256:{_sha256_bytes(data)}\n"
+        f"size {len(data)}\n"
+    ).encode("ascii")
+
+
 def _source_map(provenance: dict[str, Any]) -> dict[str, dict[str, Any]]:
     rows = provenance.get("sources")
     if not isinstance(rows, list):
@@ -72,16 +81,24 @@ def _validated_original_bytes(
 ) -> tuple[bytes | None, str]:
     """Resolve bytes proven by the pre-commit hash manifest.
 
-    Git commonly canonicalizes CRLF text to LF in repository blobs. We never
-    accept that transformation by assumption. Exact checkout bytes are tried
-    first; if they fail, a deterministic LF->CRLF reconstruction is accepted
-    only when BOTH the original byte count and SHA-256 match the frozen
-    pre-commit manifest exactly.
+    Exact checkout bytes are tried first. If Git LFS has replaced a frozen
+    pointer with its payload, the payload is accepted only when its canonical
+    pointer has BOTH the frozen pointer byte count and SHA-256. Git CRLF-to-LF
+    canonicalization is likewise reversed only when the reconstructed original
+    bytes match BOTH frozen values. No unproven checkout transformation is
+    accepted.
     """
     data = path.read_bytes()
     expected_hash = expected_sha256.lower()
     if len(data) == expected_size and _sha256_bytes(data).lower() == expected_hash:
         return data, "exact"
+
+    # A materialized LFS payload is cryptographically named by its canonical
+    # pointer. Accept it only when that pointer itself is exactly the frozen
+    # outer-manifest object.
+    pointer = _canonical_lfs_pointer(data)
+    if len(pointer) == expected_size and _sha256_bytes(pointer).lower() == expected_hash:
+        return data, "git_lfs_materialized"
 
     # Only attempt text newline rehydration. NUL is a conservative binary guard.
     if b"\x00" not in data and b"\n" in data:
@@ -217,9 +234,10 @@ def verify_repo_evidence(
 ) -> list[str]:
     """Return evidence contract failures without mutating source data.
 
-    A Git LF-canonicalized checkout is valid only if the exact original Windows
-    bytes can be reconstructed and proven against the frozen outer SHA-256
-    manifest. No unproven normalization is accepted.
+    Git checkout transformations are valid only when the recovered bytes are
+    cryptographically linked to the frozen outer manifest: exact bytes, exact
+    CRLF reconstruction, or a materialized LFS payload whose canonical pointer
+    is the frozen object. No unproven normalization is accepted.
     """
     root = Path(evidence_root)
     errors: list[str] = []
@@ -293,7 +311,7 @@ def verify_repo_evidence(
             expected_sha256=expected_hash,
         )
         if mode == "mismatch":
-            errors.append(f"Original-byte SHA-256 mismatch after Git newline recovery: {rel}")
+            errors.append(f"Original-byte SHA-256 mismatch after Git checkout recovery: {rel}")
 
     return errors
 
@@ -306,10 +324,12 @@ def materialize_repo_empirical_sources(
 
     Source bytes are selected only when proven by evidence/FILES-SHA256.csv.
     This reverses Git newline canonicalization where the frozen hash proves the
-    original CRLF form. If a privacy-safe repository transformation left an old
-    inner bundle manifest stale, only the temporary copy's inner manifest is
-    re-sealed over the same historical inventory after all payload bytes have
-    passed the outer seal. The committed checkout itself is never modified.
+    original CRLF form and preserves materialized Git LFS payloads only when the
+    frozen manifest exactly names their canonical pointer. If a privacy-safe
+    repository transformation left an old inner bundle manifest stale, only the
+    temporary copy's inner manifest is re-sealed over the same historical inventory
+    after all payload bytes have passed the outer seal. The committed checkout itself
+    is never modified.
     """
     root = Path(evidence_root)
     destination = Path(destination_root)
@@ -331,6 +351,7 @@ def materialize_repo_empirical_sources(
     unverified: list[str] = []
     exact_count = 0
     rehydrated_count = 0
+    lfs_materialized_count = 0
 
     for source_id in ("test1", "test2-tier-a"):
         source = sources.get(source_id)
@@ -376,8 +397,12 @@ def materialize_repo_empirical_sources(
 
             if mode == "exact":
                 exact_count += 1
-            else:
+            elif mode == "git_lf_to_crlf_rehydrated":
                 rehydrated_count += 1
+            elif mode == "git_lfs_materialized":
+                lfs_materialized_count += 1
+            else:
+                raise AssertionError(f"Unexpected verified checkout mode: {mode}")
             file_report.append({
                 "source_id": source_id,
                 "path": relative_source.as_posix(),
@@ -385,6 +410,8 @@ def materialize_repo_empirical_sources(
                 "verification_mode": mode,
                 "sha256": expected_hash,
                 "bytes": expected_size,
+                "materialized_sha256": _sha256_bytes(original),
+                "materialized_bytes": len(original),
             })
 
     if unverified:
@@ -399,9 +426,10 @@ def materialize_repo_empirical_sources(
             integrity_reseals.append(reseal)
 
     report = {
-        "verification_policy": "exact_bytes_or_hash_proven_git_lf_to_crlf_rehydration_with_temporary_outer_sealed_inner_reseal",
+        "verification_policy": "exact_bytes_or_hash_proven_git_lf_to_crlf_rehydration_or_hash_proven_git_lfs_materialization_with_temporary_outer_sealed_inner_reseal",
         "exact_files": exact_count,
         "git_newline_rehydrated_files": rehydrated_count,
+        "git_lfs_materialized_files": lfs_materialized_count,
         "unverified_files": [],
         "integrity_resealed_sources": [item["source_id"] for item in integrity_reseals],
         "integrity_reseals": integrity_reseals,
