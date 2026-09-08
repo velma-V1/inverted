@@ -88,7 +88,7 @@ class MutationAnalyzer:
             and len(axis_counts) >= policy.min_promotion_axes
             and harder_successes >= policy.min_harder_successes
             and success_rate >= policy.min_success_rate
-            and len(protected_failures) <= policy.max_protected_failures
+            and not protected_failures
         )
         cross_region = (
             len(successful) >= policy.min_cross_region_successes
@@ -206,8 +206,8 @@ class MutationAnalyzer:
             raise ValueError("Stage 6 permits only MOVEMENT -> TIER_CANDIDATE")
         if profile.classification is not GeneralizationClass.PROMOTION_CANDIDATE:
             raise ValueError("only PROMOTION_CANDIDATE profiles may be promoted")
-        if len(profile.protected_failures) > profile.policy.max_protected_failures:
-            raise ValueError("protected negative transfer exceeds the registered promotion policy")
+        if profile.protected_failures:
+            raise ValueError("protected negative transfer is an absolute Stage-6 promotion veto")
         root = self.replay_store.get_failure(profile.failure_snapshot_id)
         if root.partition.value in {"FRESH", "SEALED"}:
             raise ValueError("Stage 6 cannot promote from FRESH or SEALED development evidence")
@@ -257,6 +257,8 @@ class MutationAnalyzer:
         stored = {item.profile_id: item for item in self.mutation_store.profiles(profile.study_id)}
         if stored.get(profile.profile_id) != profile:
             raise ValueError("profile is not the canonical stored generalization profile")
+        if profile.protected_failures:
+            return None
         if profile.classification is not GeneralizationClass.PROMOTION_CANDIDATE:
             return None
         current = self._current_state(profile.failure_snapshot_id, profile.mechanism_id)
