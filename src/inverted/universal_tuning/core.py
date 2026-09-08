@@ -37,6 +37,23 @@ class Profile:
     min_p: float | None = None
     presence_penalty: float | None = None
     repeat_penalty: float | None = None
+    typical_p: float | None = None
+    repeat_last_n: int | None = None
+    frequency_penalty: float | None = None
+    num_keep: int | None = None
+    num_ctx: int = 8192
+    num_batch: int | None = None
+    num_gpu: int | None = None
+    main_gpu: int | None = None
+    use_mmap: bool | None = None
+    num_thread: int | None = None
+    draft_num_predict: int | None = None
+    final_max_tokens: int = 768
+    stop: tuple[str, ...] = ()
+    truncate: bool | None = None
+    shift: bool | None = None
+    logprobs: bool | None = None
+    top_logprobs: int | None = None
 
     @property
     def thinking(self) -> bool:
