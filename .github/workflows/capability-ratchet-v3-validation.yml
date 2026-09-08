@@ -1,0 +1,21 @@
+name: capability-ratchet-v3-validation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  capability-ratchet-model-free:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: V3 capability ratchet focused suite
+        run: python -m pytest tests/test_capability_ratchet_*.py -q
