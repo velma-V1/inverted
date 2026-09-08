@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, TypeAlias
 
 from .causal_core import MechanismRole
+from .mutation_core import MutationAxis, MutationDirection, MutationOrigin
 
 
 class ReplayRecordType(str, Enum):
@@ -202,6 +203,117 @@ class FailureFixture:
         object.__setattr__(self, "source_evidence_refs", source_evidence_refs)
         for name in ("source_runtime", "inference_profile", "metadata"):
             _freeze_mapping(self, name)
+
+
+@dataclass(frozen=True)
+class MutationFixture:
+    mutation_fixture_id: str
+    failure_snapshot_id: str
+    source_failure_snapshot_id: str
+    source_state_hash: str
+    mechanism_id: str
+    mutation_axis: MutationAxis
+    mutation_direction: MutationDirection
+    mutation_value: Any
+    structural_region_id: str
+    model_visible_asset_sha256: str
+    oracle_asset_sha256: str
+    semantic_contract_hash: str
+    partition: Partition
+    origin: MutationOrigin
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    record_id: str | None = None
+    record_type: ReplayRecordType = field(default=ReplayRecordType.MUTATION_FIXTURE, init=False)
+
+    def __post_init__(self) -> None:
+        _coerce_enum(self, "mutation_axis", MutationAxis)
+        _coerce_enum(self, "mutation_direction", MutationDirection)
+        _coerce_enum(self, "partition", Partition)
+        _coerce_enum(self, "origin", MutationOrigin)
+        for name in (
+            "mutation_fixture_id",
+            "failure_snapshot_id",
+            "source_failure_snapshot_id",
+            "mechanism_id",
+            "structural_region_id",
+        ):
+            _required(name, getattr(self, name))
+        for name in (
+            "source_state_hash",
+            "model_visible_asset_sha256",
+            "oracle_asset_sha256",
+            "semantic_contract_hash",
+        ):
+            _sha256(name, getattr(self, name))
+        _sha256("record_id", self.record_id, optional=True)
+        _freeze_field(self, "mutation_value")
+        _freeze_mapping(self, "metadata")
+        if self.origin is MutationOrigin.SYNTHETIC_NEIGHBORHOOD and self.partition in {
+            Partition.FRESH,
+            Partition.SEALED,
+        }:
+            raise ValueError("synthetic mutation fixtures cannot use FRESH or SEALED partitions")
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        failure_snapshot_id: str,
+        source_failure_snapshot_id: str,
+        source_state_hash: str,
+        mechanism_id: str,
+        mutation_axis: MutationAxis,
+        mutation_direction: MutationDirection,
+        mutation_value: Any,
+        structural_region_id: str,
+        model_visible_asset_sha256: str,
+        oracle_asset_sha256: str,
+        semantic_contract_hash: str,
+        partition: Partition,
+        origin: MutationOrigin,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> MutationFixture:
+        axis = mutation_axis if isinstance(mutation_axis, MutationAxis) else MutationAxis(mutation_axis)
+        direction = mutation_direction if isinstance(mutation_direction, MutationDirection) else MutationDirection(mutation_direction)
+        part = partition if isinstance(partition, Partition) else Partition(partition)
+        source_origin = origin if isinstance(origin, MutationOrigin) else MutationOrigin(origin)
+        frozen_value = _freeze(mutation_value)
+        identity = {
+            "failure_snapshot_id": failure_snapshot_id,
+            "source_failure_snapshot_id": source_failure_snapshot_id,
+            "source_state_hash": source_state_hash,
+            "mechanism_id": mechanism_id,
+            "mutation_axis": axis,
+            "mutation_direction": direction,
+            "mutation_value": frozen_value,
+            "structural_region_id": structural_region_id,
+            "model_visible_asset_sha256": model_visible_asset_sha256,
+            "oracle_asset_sha256": oracle_asset_sha256,
+            "semantic_contract_hash": semantic_contract_hash,
+            "partition": part,
+            "origin": source_origin,
+        }
+        encoded = json.dumps(
+            _json_value(identity), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        ).encode("utf-8")
+        mutation_fixture_id = f"mutation-{hashlib.sha256(encoded).hexdigest()[:20]}"
+        return cls(
+            mutation_fixture_id=mutation_fixture_id,
+            failure_snapshot_id=failure_snapshot_id,
+            source_failure_snapshot_id=source_failure_snapshot_id,
+            source_state_hash=source_state_hash,
+            mechanism_id=mechanism_id,
+            mutation_axis=axis,
+            mutation_direction=direction,
+            mutation_value=frozen_value,
+            structural_region_id=structural_region_id,
+            model_visible_asset_sha256=model_visible_asset_sha256,
+            oracle_asset_sha256=oracle_asset_sha256,
+            semantic_contract_hash=semantic_contract_hash,
+            partition=part,
+            origin=source_origin,
+            metadata={} if metadata is None else metadata,
+        )
 
 
 @dataclass(frozen=True)
@@ -420,7 +532,7 @@ class PromotionEvent:
         _sha256("record_id", self.record_id, optional=True)
 
 
-ReplayRecord: TypeAlias = FailureFixture | ReplayRequest | ReplayResult | MechanismLabel | PromotionEvent
+ReplayRecord: TypeAlias = FailureFixture | MutationFixture | ReplayRequest | ReplayResult | MechanismLabel | PromotionEvent
 
 
 def to_payload(value: ReplayRecord) -> dict[str, Any]:
@@ -454,6 +566,26 @@ def to_payload(value: ReplayRecord) -> dict[str, Any]:
             "promotion_state": value.promotion_state,
             "parent_failure_snapshot_id": value.parent_failure_snapshot_id,
             "parent_state_hash": value.parent_state_hash,
+            "record_id": value.record_id,
+        }
+    elif isinstance(value, MutationFixture):
+        payload = {
+            "record_type": value.record_type,
+            "mutation_fixture_id": value.mutation_fixture_id,
+            "failure_snapshot_id": value.failure_snapshot_id,
+            "source_failure_snapshot_id": value.source_failure_snapshot_id,
+            "source_state_hash": value.source_state_hash,
+            "mechanism_id": value.mechanism_id,
+            "mutation_axis": value.mutation_axis,
+            "mutation_direction": value.mutation_direction,
+            "mutation_value": value.mutation_value,
+            "structural_region_id": value.structural_region_id,
+            "model_visible_asset_sha256": value.model_visible_asset_sha256,
+            "oracle_asset_sha256": value.oracle_asset_sha256,
+            "semantic_contract_hash": value.semantic_contract_hash,
+            "partition": value.partition,
+            "origin": value.origin,
+            "metadata": value.metadata,
             "record_id": value.record_id,
         }
     elif isinstance(value, ReplayRequest):
@@ -551,6 +683,8 @@ def from_payload(payload: Mapping[str, Any]) -> ReplayRecord:
 
     if record_type is ReplayRecordType.FAILURE_FIXTURE:
         return FailureFixture(**raw)
+    if record_type is ReplayRecordType.MUTATION_FIXTURE:
+        return MutationFixture(**raw)
     if record_type is ReplayRecordType.REPLAY_REQUEST:
         return ReplayRequest(**raw)
     if record_type is ReplayRecordType.REPLAY_RESULT:
