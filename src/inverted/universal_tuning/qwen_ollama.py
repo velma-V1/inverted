@@ -76,22 +76,58 @@ class QwenOllamaAdapter:
         ]
 
     @staticmethod
-    def _direct_options(seed: int) -> dict[str, Any]:
-        return {
-            "temperature": 0.7, "top_p": 0.8, "top_k": 20,
-            "min_p": 0.0, "presence_penalty": 1.5, "repeat_penalty": 1.0,
-            "seed": int(seed), "num_ctx": NUM_CTX, "num_predict": FINAL_MAX_TOKENS,
+    def _profile_options(
+        tasks: tuple[AtomicTask, ...], profile: Profile, seed: int, *,
+        num_predict: int, thinking_phase: bool,
+    ) -> dict[str, Any]:
+        precise = all(task.family in {"CODING_GENERATION", "DEBUGGING_REVIEW"} for task in tasks)
+        options: dict[str, Any] = {
+            "temperature": float(profile.temperature),
+            "top_p": float(profile.top_p) if profile.top_p is not None else (0.95 if thinking_phase else 0.8),
+            "top_k": int(profile.top_k) if profile.top_k is not None else 20,
+            "min_p": float(profile.min_p) if profile.min_p is not None else 0.0,
+            "presence_penalty": (
+                float(profile.presence_penalty)
+                if profile.presence_penalty is not None
+                else (0.0 if thinking_phase and precise else 1.5)
+            ),
+            "repeat_penalty": float(profile.repeat_penalty) if profile.repeat_penalty is not None else 1.0,
+            "seed": int(seed),
+            "num_ctx": int(profile.num_ctx),
+            "num_predict": int(num_predict),
         }
+        optional = (
+            ("typical_p", profile.typical_p, float),
+            ("repeat_last_n", profile.repeat_last_n, int),
+            ("frequency_penalty", profile.frequency_penalty, float),
+            ("num_keep", profile.num_keep, int),
+            ("num_batch", profile.num_batch, int),
+            ("num_gpu", profile.num_gpu, int),
+            ("main_gpu", profile.main_gpu, int),
+            ("num_thread", profile.num_thread, int),
+            ("draft_num_predict", profile.draft_num_predict, int),
+        )
+        for key, value, cast in optional:
+            if value is not None:
+                options[key] = cast(value)
+        if profile.use_mmap is not None:
+            options["use_mmap"] = bool(profile.use_mmap)
+        if profile.stop:
+            options["stop"] = list(profile.stop)
+        return options
 
     @staticmethod
-    def _thinking_options(tasks: tuple[AtomicTask, ...], profile: Profile, seed: int) -> dict[str, Any]:
-        precise = all(task.family in {"CODING_GENERATION", "DEBUGGING_REVIEW"} for task in tasks)
-        return {
-            "temperature": float(profile.temperature), "top_p": 0.95, "top_k": 20,
-            "min_p": 0.0, "presence_penalty": 0.0 if precise else 1.5,
-            "repeat_penalty": 1.0, "seed": int(seed), "num_ctx": NUM_CTX,
-            "num_predict": int(profile.thinking_budget),
-        }
+    def _request_controls(profile: Profile) -> dict[str, Any]:
+        controls: dict[str, Any] = {}
+        if profile.truncate is not None:
+            controls["truncate"] = bool(profile.truncate)
+        if profile.shift is not None:
+            controls["shift"] = bool(profile.shift)
+        if profile.logprobs is not None:
+            controls["logprobs"] = bool(profile.logprobs)
+        if profile.top_logprobs is not None:
+            controls["top_logprobs"] = int(profile.top_logprobs)
+        return controls
 
     @staticmethod
     def _split_batch_response(text: str, tasks: tuple[AtomicTask, ...]) -> tuple[str, ...]:
@@ -136,10 +172,15 @@ class QwenOllamaAdapter:
         if not tasks:
             raise ValueError("Qwen batch requires tasks")
         messages = self._batch_messages(tasks)
+        request_controls = self._request_controls(profile)
         if not profile.thinking:
             request_payload = {
                 "model": self.model_id, "messages": messages, "stream": False,
-                "think": False, "options": self._direct_options(seed),
+                "think": False,
+                "options": self._profile_options(
+                    tasks, profile, seed, num_predict=profile.final_max_tokens, thinking_phase=False,
+                ),
+                **request_controls,
             }
             raw, elapsed = self._post(request_payload)
             content = str((raw.get("message") or {}).get("content") or "")
@@ -152,7 +193,11 @@ class QwenOllamaAdapter:
 
         first_request = {
             "model": self.model_id, "messages": messages, "stream": False,
-            "think": True, "options": self._thinking_options(tasks, profile, seed),
+            "think": True,
+            "options": self._profile_options(
+                tasks, profile, seed, num_predict=profile.thinking_budget, thinking_phase=True,
+            ),
+            **request_controls,
         }
         first, first_elapsed = self._post(first_request)
         first_message = first.get("message") or {}
@@ -164,7 +209,11 @@ class QwenOllamaAdapter:
         ]
         second_request = {
             "model": self.model_id, "messages": carried, "stream": False,
-            "think": False, "options": self._direct_options(seed),
+            "think": False,
+            "options": self._profile_options(
+                tasks, profile, seed, num_predict=profile.final_max_tokens, thinking_phase=False,
+            ),
+            **request_controls,
         }
         second, second_elapsed = self._post(second_request)
         content = str((second.get("message") or {}).get("content") or "")
