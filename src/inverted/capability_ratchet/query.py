@@ -133,14 +133,14 @@ def select_failures(store: ReplayStore, selector: ReplaySelector) -> tuple[Failu
             continue
         if promotion is not None:
             current_promotion = promotion_by_snapshot.get(
-                root_id, active_by_id[root_id].promotion_state
+                fixture.failure_snapshot_id, fixture.promotion_state
             )
             if current_promotion is not promotion:
                 continue
         if (
             selector.mechanism is not None
             and selector.mechanism
-            not in mechanisms_by_snapshot.get(root_id, set())
+            not in mechanisms_by_snapshot.get(fixture.failure_snapshot_id, set())
         ):
             continue
         if snapshots and fixture.failure_snapshot_id not in snapshots:
