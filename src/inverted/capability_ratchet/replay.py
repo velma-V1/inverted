@@ -8,8 +8,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .core import FailureFixture, ReplayMode, ReplayRequest, ReplayResult
-from .replay_store import ReplayStore
+from .core import (
+    FailureFixture,
+    MutationFixture,
+    MutationOrigin,
+    ReplayMode,
+    ReplayRequest,
+    ReplayResult,
+)
+from .replay_store import ReplayStore, SupersessionRecord
 
 
 def _json_value(value: Any) -> Any:
@@ -77,6 +84,7 @@ class ReplayPlan:
     runtime_provenance: Mapping[str, Any]
     adapter_changes: Mapping[str, Any]
     changed_values: Mapping[str, tuple[Any, Any]]
+    mutation_fixture: MutationFixture | None = None
 
 
 def _failure_classes(completion: ReplayCompletion) -> tuple[str, ...]:
@@ -169,6 +177,28 @@ def _root_failure_id(store: ReplayStore, fixture: FailureFixture) -> str:
     return current.failure_snapshot_id
 
 
+_MUTATION_METADATA_KEYS = (
+    "mutation_fixture_id",
+    "mutation_axis",
+    "mutation_direction",
+    "structural_region_id",
+    "synthetic_neighborhood",
+    "operating_surface_profile_id",
+    "mechanism_id",
+    "mechanism_label_id",
+    "mechanism_intervention_ids",
+    "execution_intervention_id",
+)
+
+
+def _mutation_result_metadata(request: ReplayRequest) -> dict[str, Any]:
+    return {
+        key: request.metadata[key]
+        for key in _MUTATION_METADATA_KEYS
+        if key in request.metadata
+    }
+
+
 class ReplayExecutor:
     def __init__(self, store: ReplayStore, adapters: Mapping[str, ReplayAdapter]) -> None:
         if not isinstance(store, ReplayStore):
@@ -196,10 +226,58 @@ class ReplayExecutor:
             raise ValueError("replay request source identity mismatch")
         return parent
 
+    def _validated_mutation(
+        self, request: ReplayRequest, parent: FailureFixture
+    ) -> MutationFixture | None:
+        mutation_id = request.metadata.get("mutation_fixture_id")
+        if mutation_id is None:
+            return None
+        if not isinstance(mutation_id, str) or not mutation_id.strip():
+            raise ValueError("mutation_fixture_id metadata must be non-blank")
+        if request.mode is not ReplayMode.COUNTERFACTUAL:
+            raise ValueError("registered mutation fixtures require COUNTERFACTUAL replay")
+
+        records = self.store.records()
+        superseded = {
+            record.old_record_id
+            for record in records
+            if isinstance(record, SupersessionRecord)
+        }
+        matches = [
+            record
+            for record in records
+            if isinstance(record, MutationFixture)
+            and record.mutation_fixture_id == mutation_id
+            and record.record_id not in superseded
+        ]
+        if len(matches) != 1:
+            raise ValueError("mutation replay fixture is not uniquely active")
+        mutation = matches[0]
+        if (
+            mutation.failure_snapshot_id != request.failure_snapshot_id
+            or mutation.source_failure_snapshot_id != parent.failure_snapshot_id
+            or mutation.source_state_hash != parent.state_hash
+            or mutation.partition != request.partition
+        ):
+            raise ValueError("mutation replay fixture lineage mismatch")
+        if request.metadata.get("mechanism_id") != mutation.mechanism_id:
+            raise ValueError("mutation replay mechanism metadata mismatch")
+        if request.metadata.get("mutation_axis") != mutation.mutation_axis.value:
+            raise ValueError("mutation replay axis metadata mismatch")
+        if request.metadata.get("mutation_direction") != mutation.mutation_direction.value:
+            raise ValueError("mutation replay direction metadata mismatch")
+        if request.metadata.get("structural_region_id") != mutation.structural_region_id:
+            raise ValueError("mutation replay structural-region metadata mismatch")
+        expected_synthetic = mutation.origin is MutationOrigin.SYNTHETIC_NEIGHBORHOOD
+        if request.metadata.get("synthetic_neighborhood") is not expected_synthetic:
+            raise ValueError("mutation replay origin metadata mismatch")
+        return mutation
+
     def plan(self, request: ReplayRequest) -> ReplayPlan:
         if not isinstance(request, ReplayRequest):
             raise TypeError("request must be a ReplayRequest")
         fixture = self._validated_parent(request)
+        mutation = self._validated_mutation(request, fixture)
         try:
             adapter = self.adapters[request.target_model_id]
         except KeyError as exc:
@@ -211,7 +289,12 @@ class ReplayExecutor:
             if request.mode is ReplayMode.EXACT:
                 raise ValueError("exact replay provenance mismatch")
             raise ValueError("target replay provenance mismatch")
-        visible = self.store.read_asset(fixture.model_visible_asset_sha256)
+        visible_sha = (
+            mutation.model_visible_asset_sha256
+            if mutation is not None
+            else fixture.model_visible_asset_sha256
+        )
+        visible = self.store.read_asset(visible_sha)
         if not isinstance(visible, dict) or not isinstance(visible.get("request_envelopes"), list):
             raise ValueError("replay fixture model-visible asset is invalid")
         payload = _json_copy(visible, name="replay model-visible payload")
@@ -238,6 +321,7 @@ class ReplayExecutor:
         return ReplayPlan(
             fixture=fixture, request=request, visible_payload=payload, adapter=adapter,
             runtime_provenance=runtime, adapter_changes=adapter_changes, changed_values=changed,
+            mutation_fixture=mutation,
         )
 
     def execute(self, request: ReplayRequest) -> ReplayResult:
@@ -280,6 +364,11 @@ class ReplayExecutor:
             adapter_changes.update(_leaf_diff(
                 plan.visible_payload["request_envelopes"], actual_requests, path="request_envelopes"
             ))
+        metadata = {
+            "intervention_id": request.intervention_id,
+            "counterfactual_group_id": request.counterfactual_group_id,
+        }
+        metadata.update(_mutation_result_metadata(request))
         result = ReplayResult(
             replay_result_id=result_id, replay_request_id=request.replay_request_id,
             failure_snapshot_id=request.failure_snapshot_id,
@@ -291,8 +380,7 @@ class ReplayExecutor:
             output_asset_sha256=output_digest, raw_call_asset_sha256=raw_digest,
             failure_classes=failures, child_failure_snapshot_id=child_id,
             adapter_changes=adapter_changes, metrics=completion.metrics,
-            metadata={"intervention_id": request.intervention_id,
-                      "counterfactual_group_id": request.counterfactual_group_id},
+            metadata=metadata,
         )
         self.store.append(result)
         return result
@@ -347,6 +435,20 @@ class ReplayExecutor:
         seed = options.get("seed", parent.inference_seed)
         if not isinstance(seed, int) or isinstance(seed, bool):
             seed = parent.inference_seed
+        evidence_refs = tuple(parent.source_evidence_refs) + (
+            f"replay-request:{request.replay_request_id}",
+            f"raw-call-asset:{raw_digest}",
+        )
+        if plan.mutation_fixture is not None:
+            evidence_refs += (
+                f"mutation-fixture:{plan.mutation_fixture.mutation_fixture_id}",
+            )
+        metadata = {
+            "originating_replay_request_id": request.replay_request_id,
+            "intervention_id": request.intervention_id,
+            "counterfactual_group_id": request.counterfactual_group_id,
+        }
+        metadata.update(_mutation_result_metadata(request))
         child = FailureFixture(
             failure_snapshot_id=child_id,
             source_campaign_id=parent.source_campaign_id,
@@ -359,14 +461,14 @@ class ReplayExecutor:
             inference_seed=seed, partition=request.partition,
             model_visible_asset_sha256=visible_digest, state_hash=visible_digest,
             oracle_ref=parent.oracle_ref, expected_contract=parent.expected_contract,
-            source_evidence_refs=tuple(parent.source_evidence_refs) + (
-                f"replay-request:{request.replay_request_id}", f"raw-call-asset:{raw_digest}",
-            ),
+            source_evidence_refs=evidence_refs,
             forensic_asset_sha256=raw_digest,
-            oracle_asset_sha256=parent.oracle_asset_sha256,
-            metadata={"originating_replay_request_id": request.replay_request_id,
-                      "intervention_id": request.intervention_id,
-                      "counterfactual_group_id": request.counterfactual_group_id},
+            oracle_asset_sha256=(
+                plan.mutation_fixture.oracle_asset_sha256
+                if plan.mutation_fixture is not None
+                else parent.oracle_asset_sha256
+            ),
+            metadata=metadata,
             parent_failure_snapshot_id=parent.failure_snapshot_id,
             parent_state_hash=parent.state_hash,
         )
