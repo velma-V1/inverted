@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import socket
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -63,16 +66,30 @@ class SurfaceStub:
 
 
 class FakeAdapter:
-    def __init__(self, *, fail_context_pressure: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fail_context_pressure: int | None = None,
+        fail_depth: int | None = None,
+        fail_distractors: list[str] | None = None,
+    ) -> None:
         self.fail_context_pressure = fail_context_pressure
+        self.fail_depth = fail_depth
+        self.fail_distractors = fail_distractors
         self.calls: list[str] = []
 
     def runtime_provenance(self):
         return {"provider": "fake", "model": "fake-model", "model_digest": "fake-digest"}
 
     def execute_fixture(self, fixture, visible_payload, request):
-        pressure = visible_payload["task"]["context_pressure"]
-        passed = pressure != self.fail_context_pressure
+        task = visible_payload["task"]
+        passed = True
+        if self.fail_context_pressure is not None and task["context_pressure"] == self.fail_context_pressure:
+            passed = False
+        if self.fail_depth is not None and task["depth"] == self.fail_depth:
+            passed = False
+        if self.fail_distractors is not None and task["distractors"] == self.fail_distractors:
+            passed = False
         self.calls.append(request.metadata["mutation_fixture_id"])
         calls = tuple(
             {"request": envelope, "response": {"passed": passed}}
@@ -125,6 +142,7 @@ def _local_specs() -> tuple[MutationSpec, ...]:
     return (
         _spec(MutationAxis.DEPENDENCY_DEPTH, MutationDirection.LATERAL, 3),
         _spec(MutationAxis.DEPENDENCY_DEPTH, MutationDirection.HARDER, 4),
+        _spec(MutationAxis.DISTRACTORS, MutationDirection.LATERAL, ["local-negative"]),
     )
 
 
@@ -368,17 +386,48 @@ def _run_all(env: Preflight, adapter: FakeAdapter):
     return last
 
 
+def test_planted_instance_patch_fails_first_lateral_neighbor_and_creates_child(tmp_path) -> None:
+    env = _environment(tmp_path, _instance_specs())
+    result = _run_all(env, FakeAdapter(fail_depth=3))
+
+    assert result.profile.classification is GeneralizationClass.INSTANCE_PATCH
+    assert len(result.profile.failed_mutation_fixture_ids) == 1
+    assert not result.profile.successful_mutation_fixture_ids
+    assert any("DEPENDENCY_DEPTH" in item for item in result.profile.unresolved_boundaries)
+    children = [
+        row for row in env.replay.records()
+        if isinstance(row, FailureFixture) and row.parent_failure_snapshot_id is not None
+    ]
+    assert len(children) == 1
+    assert children[0].parent_failure_snapshot_id == env.source.failure_snapshot_id
+    assert result.model_calls_are_fake_only is True
+
+
+def test_planted_local_mechanism_survives_same_axis_but_fails_another_axis(tmp_path) -> None:
+    env = _environment(tmp_path, _local_specs())
+    result = _run_all(env, FakeAdapter(fail_distractors=["local-negative"]))
+
+    assert result.profile.classification is GeneralizationClass.LOCAL_MECHANISM
+    assert result.profile.axis_successes[MutationAxis.DEPENDENCY_DEPTH.value] == 2
+    assert len(result.profile.failed_mutation_fixture_ids) == 1
+    assert any("DISTRACTORS" in item for item in result.profile.unresolved_boundaries)
+    children = [
+        row for row in env.replay.records()
+        if isinstance(row, FailureFixture) and row.parent_failure_snapshot_id is not None
+    ]
+    assert len(children) == 1
+    assert result.model_calls_are_fake_only is True
+
+
 @pytest.mark.parametrize(
     ("specs", "expected"),
     (
-        (_instance_specs(), GeneralizationClass.INSTANCE_PATCH),
-        (_local_specs(), GeneralizationClass.LOCAL_MECHANISM),
         (_region_specs(), GeneralizationClass.REGION_MECHANISM),
         (_cross_region_specs(), GeneralizationClass.CROSS_REGION_MECHANISM),
         (_promotion_specs(), GeneralizationClass.PROMOTION_CANDIDATE),
     ),
 )
-def test_planted_preflight_distinguishes_all_five_generalization_classes(
+def test_planted_preflight_distinguishes_broad_generalization_classes(
     tmp_path, specs, expected
 ) -> None:
     env = _environment(tmp_path / expected.value, specs)
@@ -465,14 +514,48 @@ def test_real_transport_constructor_is_unreachable_without_explicit_gate(tmp_pat
     assert "--allow-model-calls" in captured.err
 
 
+def test_zero_call_mutation_planning_never_constructs_qwen_or_network(tmp_path, monkeypatch, capsys) -> None:
+    import inverted.universal_tuning.qwen_ollama as qwen_module
+
+    env = _environment(tmp_path, _instance_specs())
+
+    class ForbiddenTransport:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("real Qwen/Ollama transport constructed during Stage-6 planning")
+
+    def forbidden_network(*args, **kwargs):
+        raise AssertionError("network constructor reached during Stage-6 planning")
+
+    monkeypatch.setattr(qwen_module, "QwenOllamaAdapter", ForbiddenTransport)
+    monkeypatch.setattr(qwen_module, "urlopen", forbidden_network)
+    monkeypatch.setattr(urllib.request, "urlopen", forbidden_network)
+    monkeypatch.setattr(socket, "create_connection", forbidden_network)
+
+    rc = main([
+        "plan-mutations",
+        "--replay-root", str(tmp_path / "replay"),
+        "--causal-root", str(tmp_path / "causal"),
+        "--surface-root", str(tmp_path / "surface"),
+        "--mutation-root", str(tmp_path / "mutation"),
+        "--auto-eligible",
+    ])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.err
+    payload = json.loads(captured.out)
+    assert payload["MODEL_CALLS"] == 0
+    assert payload["status"] == "MUTATION_PLAN_READY"
+    assert payload["eligible_mechanisms"] == ["preflight-mechanism"]
+    assert env.replay.validate().ok
+
+
 def test_stage6_public_contracts_audit_and_completion_workflow_are_present() -> None:
     required_exports = {
         "GeneralizationClass", "GeneralizationProfile", "MutationAnalyzer",
-        "MutationAxis", "MutationDirection", "MutationEvidenceStore", "MutationFixture",
-        "MutationGenerator", "MutationLab", "MutationOrigin", "MutationOutcome",
-        "MutationPlan", "MutationPlanner", "MutationPolicy", "MutationReplayCompiler",
-        "MutationSpec", "MutationStepResult", "MutationStoreValidation", "MutationStudy",
-        "MutationTemplate",
+        "MutationAxis", "MutationBootstrapPlan", "MutationBootstrapResult", "MutationDirection",
+        "MutationEvidenceStore", "MutationFixture", "MutationGenerator", "MutationLab",
+        "MutationOrigin", "MutationOutcome", "MutationPlan", "MutationPlanner", "MutationPolicy",
+        "MutationReplayCompiler", "MutationSpec", "MutationStepResult", "MutationStoreValidation",
+        "MutationStudy", "MutationTemplate", "plan_eligible_mutations",
     }
     assert required_exports.issubset(set(cr.__all__))
 
@@ -483,6 +566,8 @@ def test_stage6_public_contracts_audit_and_completion_workflow_are_present() -> 
         "stage6_synthetic_fresh_sealed_count",
         "stage6_certified_event_count",
         "stage6_zero_call_plan_contract",
+        "stage6_auto_plan_contract",
+        "stage6_protected_failure_veto_contract",
     ):
         assert token in audit
 
@@ -492,6 +577,8 @@ def test_stage6_public_contracts_audit_and_completion_workflow_are_present() -> 
     assert "tests/test_capability_ratchet_mutation_*.py" in text
     assert "tests/test_capability_ratchet_*.py" in text
     assert "audit-v3-replay-foundation.py" in text
+    assert "python -m inverted.capability_ratchet.cli plan-mutations" in text
+    assert "--auto-eligible" in text
     assert "MODEL_CALLS" in text
     assert "NO_ELIGIBLE_MECHANISMS" in text
     assert "NO_MUTATION_TEMPLATE" in text
