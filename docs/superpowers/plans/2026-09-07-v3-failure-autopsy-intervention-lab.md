@@ -1,4 +1,4 @@
-﻿# V3 Failure Autopsy & Intervention Laboratory Implementation Plan
+# V3 Failure Autopsy & Intervention Laboratory Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -510,4 +510,3 @@ Plan 2 is complete only when all are true:
 ## Deliberate Scope Boundary
 
 Plan 2 does **not** implement Stage 5 operating-surface deepening, Stage 6 failure mutation/generalization, Stage 7 tool/skill/recovery tomography, Stage 8 capability compilation, production routing/controller training, or fine-tuning. Those become Plan 3+ only after the causal laboratory can recover a planted mechanism, reject its sham, preserve lineage, and convert failed treatments into new reusable research fixtures.
-
