@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any
 
@@ -30,6 +31,14 @@ class _Response:
 
     def read(self) -> bytes:
         return json.dumps(self.payload).encode("utf-8")
+
+
+def _plain(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    return value
 
 
 def _executor_cls():
@@ -166,7 +175,7 @@ def test_preserve_class_only_repair_changes_the_physical_qwen_request() -> None:
     assert "SEMANTIC_FAIL" in retry_text
     assert "Repair only the failed constraint; preserve valid work." in retry_text
     assert ORACLE_SECRET not in json.dumps(payload)
-    assert tuple(outcome.evidence.request_envelopes) == tuple(payloads)
+    assert _plain(outcome.evidence.request_envelopes) == payloads
     assert outcome.evidence.inference_profile["temperature"] == 0.2
     assert outcome.evidence.inference_profile["top_p"] == 0.91
 
@@ -267,9 +276,9 @@ def test_thinking_retry_evidence_is_exactly_the_two_physical_calls_and_exposed_o
     assert payloads[0]["options"]["num_predict"] == 64
     assert payloads[1]["think"] is False
     assert payloads[1]["options"]["num_predict"] == 222
-    assert tuple(outcome.evidence.request_envelopes) == tuple(payloads)
+    assert _plain(outcome.evidence.request_envelopes) == payloads
     raw_calls = outcome.evidence.forensic_payload["raw_calls"]
-    assert tuple(call["request"] for call in raw_calls) == tuple(payloads)
+    assert _plain(tuple(call["request"] for call in raw_calls)) == payloads
     assert raw_calls[0]["response"]["message"]["thinking"] == "EXPOSED_OLLAMA_THINKING"
     assert outcome.evidence.forensic_payload["telemetry"]["thinking_tokens"] == 64
     assert "chain_of_thought" not in repr(outcome.evidence.forensic_payload)
