@@ -21,6 +21,11 @@ from .orchestration import (
     RetryIngredient,
 )
 from .qwen_retry import QwenRetryAttemptExecutor
+from .three_model_session import (
+    QueuedFailureReplay,
+    ThreeModelSessionOrchestrator,
+    ThreeModelSessionResult,
+)
 
 __all__ = [
     "AttemptEvidence",
@@ -29,6 +34,7 @@ __all__ = [
     "FailureFixture",
     "Partition",
     "PromotionState",
+    "QueuedFailureReplay",
     "QwenRetryAttemptExecutor",
     "ReplayFailureSnapshotter",
     "ReplayMode",
@@ -38,6 +44,8 @@ __all__ = [
     "ReplayResult",
     "RetryCampaignOrchestrator",
     "RetryIngredient",
+    "ThreeModelSessionOrchestrator",
+    "ThreeModelSessionResult",
     "derive_capability_boundaries",
     "from_payload",
     "to_payload",
