@@ -112,8 +112,9 @@ def test_default_dry_run_routes_to_v2_without_model_calls():
     payload = json.loads(completed.stdout.strip().splitlines()[-1])
     assert payload["protocol_version"] == 2
     assert payload["task_families"] == 12
-    assert payload["tasks_per_family"] == 600
-    assert payload["frozen_atomic_tasks"] == 7200
+    assert payload["tasks_per_family"] == 720
+    assert payload["frozen_atomic_tasks"] == 8640
+    assert payload["parameter_screen_enabled"] is True
     assert payload["atomic_batch_size"] == 5
     assert payload["checkpoints"] == [40, 60, 80, 120]
 

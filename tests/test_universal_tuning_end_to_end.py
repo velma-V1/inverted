@@ -51,6 +51,7 @@ def _spec(**overrides):
         families=("ARITHMETIC",), hard_call_ceiling=2500,
         coarse_temperatures=(0.2, 0.4, 0.6, 0.8, 1.0, 1.2),
         budget_candidates=(256, 512, 1024, 2048),
+        tasks_per_family=600, parameter_screen_enabled=False,
     )
     values.update(overrides)
     return ExperimentSpec(**values)
