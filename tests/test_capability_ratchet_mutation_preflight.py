@@ -435,9 +435,9 @@ def test_answered_mutation_is_reused_before_any_new_physical_call(tmp_path) -> N
     env = _environment(tmp_path, _local_specs())
     adapter = FakeAdapter()
     first = env.lab.prepare(env.study.study_id, max_new_mutations=1)
-    first_result = env.lab.execute(first, {"fake-model": adapter})
+    env.lab.execute(first, {"fake-model": adapter})
     assert len(adapter.calls) == 1
-    second = first_result.next_plan
+    second = env.lab.prepare(env.study.study_id, max_new_mutations=1)
     assert second.reused_fixture_ids
     env.lab.execute(second, {"fake-model": adapter})
     assert len(adapter.calls) == 2
