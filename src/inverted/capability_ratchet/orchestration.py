@@ -36,6 +36,7 @@ _FAILURE_FEEDBACK_MODES = frozenset({
     "STRUCTURED_PACKET",
 })
 _RESPONSE_MODES = frozenset({"REPAIR", "REGENERATE"})
+_RETRY_STRATEGIES = frozenset({_RETRY_A, _RETRY_B})
 
 
 def _required(name: str, value: str) -> None:
@@ -162,7 +163,12 @@ class AttemptOutcome:
 
 @dataclass(frozen=True)
 class AttemptContext:
-    """System-owned context for exactly one physical/logical campaign attempt."""
+    """System-owned context for exactly one physical/logical campaign attempt.
+
+    For retries, ``stage`` is the strategy identity (RETRY_A or RETRY_B) while
+    ``attempt_index`` is the retry position. They are intentionally independent so
+    retry order can be counterbalanced without losing causal strategy identity.
+    """
 
     model_id: str
     task: AtomicTask
@@ -185,9 +191,8 @@ class AttemptContext:
             if self.previous_outcome is not None:
                 raise ValueError("INITIAL attempt cannot contain a previous outcome")
         else:
-            expected_index = 1 if self.stage == _RETRY_A else 2
-            if self.attempt_index != expected_index:
-                raise ValueError("retry stage and attempt_index disagree")
+            if self.attempt_index not in {1, 2}:
+                raise ValueError("retry attempts require attempt_index 1 or 2")
             if not isinstance(self.retry_ingredient, RetryIngredient):
                 raise TypeError("retry attempts require a RetryIngredient")
             if not isinstance(self.previous_outcome, AttemptOutcome):
@@ -203,6 +208,7 @@ class TaskCampaignResult:
     status: str
     attempt_count: int
     failure_snapshot_ids: tuple[str, ...]
+    retry_order: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _required("task_id", self.task_id)
@@ -218,7 +224,15 @@ class TaskCampaignResult:
         snapshots = tuple(self.failure_snapshot_ids)
         if any(not isinstance(item, str) or not item.strip() for item in snapshots):
             raise TypeError("failure_snapshot_ids must contain non-blank strings")
+        retry_order = tuple(self.retry_order)
+        if any(item not in _RETRY_STRATEGIES for item in retry_order):
+            raise ValueError("retry_order may contain only RETRY_A and RETRY_B")
+        if len(retry_order) not in {0, 2}:
+            raise ValueError("retry_order must be empty or contain both retry strategies")
+        if retry_order and set(retry_order) != _RETRY_STRATEGIES:
+            raise ValueError("retry_order must contain RETRY_A and RETRY_B exactly once")
         object.__setattr__(self, "failure_snapshot_ids", snapshots)
+        object.__setattr__(self, "retry_order", retry_order)
 
 
 @dataclass(frozen=True)
@@ -293,6 +307,7 @@ class RetryCampaignOrchestrator:
             raise ValueError("campaign task_ids must be unique")
 
         results: list[TaskCampaignResult] = []
+        failed_initial_ordinal = 0
         for task in task_list:
             snapshots: list[str] = []
 
@@ -312,55 +327,63 @@ class RetryCampaignOrchestrator:
                     status=_FIRST_SHOT_PASS,
                     attempt_count=1,
                     failure_snapshot_ids=(),
+                    retry_order=(),
                 ))
                 continue
             snapshots.append(self._snapshot(initial, initial_outcome))
 
-            retry_a = AttemptContext(
-                model_id=model_id,
-                task=task,
-                stage=_RETRY_A,
-                attempt_index=1,
-                retry_ingredient=self._retry_a,
-                previous_outcome=initial_outcome,
-            )
-            retry_a_outcome = self._execute(retry_a)
-            if retry_a_outcome.passed:
-                results.append(TaskCampaignResult(
-                    task_id=task.task_id,
-                    difficulty=task.difficulty,
-                    status=_RECOVERED_RETRY_A,
-                    attempt_count=2,
-                    failure_snapshot_ids=tuple(snapshots),
-                ))
-                continue
-            snapshots.append(self._snapshot(retry_a, retry_a_outcome))
+            if failed_initial_ordinal % 2 == 0:
+                retry_plan = (
+                    (_RETRY_A, self._retry_a),
+                    (_RETRY_B, self._retry_b),
+                )
+            else:
+                retry_plan = (
+                    (_RETRY_B, self._retry_b),
+                    (_RETRY_A, self._retry_a),
+                )
+            failed_initial_ordinal += 1
+            retry_order = tuple(stage for stage, _ in retry_plan)
 
-            retry_b = AttemptContext(
-                model_id=model_id,
-                task=task,
-                stage=_RETRY_B,
-                attempt_index=2,
-                retry_ingredient=self._retry_b,
-                previous_outcome=retry_a_outcome,
-            )
-            retry_b_outcome = self._execute(retry_b)
-            if retry_b_outcome.passed:
-                results.append(TaskCampaignResult(
-                    task_id=task.task_id,
-                    difficulty=task.difficulty,
-                    status=_RECOVERED_RETRY_B,
-                    attempt_count=3,
-                    failure_snapshot_ids=tuple(snapshots),
-                ))
+            previous_outcome = initial_outcome
+            recovered = False
+            for attempt_index, (stage, ingredient) in enumerate(retry_plan, 1):
+                retry = AttemptContext(
+                    model_id=model_id,
+                    task=task,
+                    stage=stage,
+                    attempt_index=attempt_index,
+                    retry_ingredient=ingredient,
+                    previous_outcome=previous_outcome,
+                )
+                retry_outcome = self._execute(retry)
+                if retry_outcome.passed:
+                    results.append(TaskCampaignResult(
+                        task_id=task.task_id,
+                        difficulty=task.difficulty,
+                        status=(
+                            _RECOVERED_RETRY_A
+                            if stage == _RETRY_A
+                            else _RECOVERED_RETRY_B
+                        ),
+                        attempt_count=attempt_index + 1,
+                        failure_snapshot_ids=tuple(snapshots),
+                        retry_order=retry_order,
+                    ))
+                    recovered = True
+                    break
+                snapshots.append(self._snapshot(retry, retry_outcome))
+                previous_outcome = retry_outcome
+
+            if recovered:
                 continue
-            snapshots.append(self._snapshot(retry_b, retry_b_outcome))
             results.append(TaskCampaignResult(
                 task_id=task.task_id,
                 difficulty=task.difficulty,
                 status=_HARD_FAILURE,
                 attempt_count=3,
                 failure_snapshot_ids=tuple(snapshots),
+                retry_order=retry_order,
             ))
 
         return RetryCampaignResult(model_id=model_id, task_results=tuple(results))

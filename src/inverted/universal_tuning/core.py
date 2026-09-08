@@ -4,7 +4,11 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 import hashlib
 import json
-from typing import Any
+from typing import Any, Literal
+
+
+UNRESTRICTED_THINKING = "unrestricted"
+ThinkingBudget = int | Literal["unrestricted"]
 
 
 class FailureClass(str, Enum):
@@ -32,7 +36,7 @@ class AtomicTask:
 
 @dataclass(frozen=True)
 class Profile:
-    thinking_budget: int
+    thinking_budget: ThinkingBudget
     temperature: float
     top_p: float | None = None
     top_k: int | None = None
@@ -57,9 +61,22 @@ class Profile:
     logprobs: bool | None = None
     top_logprobs: int | None = None
 
+    def __post_init__(self) -> None:
+        budget = self.thinking_budget
+        if budget == UNRESTRICTED_THINKING:
+            return
+        if not isinstance(budget, int) or isinstance(budget, bool):
+            raise TypeError("thinking_budget must be a non-negative integer or unrestricted")
+        if budget < 0:
+            raise ValueError("thinking_budget must be non-negative or unrestricted")
+
+    @property
+    def unrestricted_thinking(self) -> bool:
+        return self.thinking_budget == UNRESTRICTED_THINKING
+
     @property
     def thinking(self) -> bool:
-        return self.thinking_budget > 0
+        return self.unrestricted_thinking or int(self.thinking_budget) > 0
 
 
 def profile_fingerprint(profile: Profile) -> str:

@@ -191,11 +191,16 @@ class QwenOllamaAdapter:
                 raw_calls=({"request": request_payload, "response": raw},),
             )
 
+        thinking_num_predict = (
+            -1 if profile.unrestricted_thinking else int(profile.thinking_budget)
+        )
         first_request = {
             "model": self.model_id, "messages": messages, "stream": False,
             "think": True,
             "options": self._profile_options(
-                tasks, profile, seed, num_predict=profile.thinking_budget, thinking_phase=True,
+                tasks, profile, seed,
+                num_predict=thinking_num_predict,
+                thinking_phase=True,
             ),
             **request_controls,
         }

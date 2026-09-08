@@ -79,6 +79,8 @@ class ReplayFailureSnapshotter:
             if retry is None
             else self._plain(retry.to_payload(), name="retry_intervention")
         )
+        retry_position = None if retry is None else context.attempt_index
+        retry_strategy = None if retry is None else context.stage
 
         for label, payload in (
             ("model_visible", visible),
@@ -112,6 +114,8 @@ class ReplayFailureSnapshotter:
             "task_id": context.task.task_id,
             "attempt_stage": context.stage,
             "attempt_index": context.attempt_index,
+            "retry_position": retry_position,
+            "retry_strategy": retry_strategy,
             "retry_ingredient_id": None if retry is None else retry.ingredient_id,
             "retry_intervention": retry_intervention,
             "state_hash": visible_sha,
@@ -154,6 +158,8 @@ class ReplayFailureSnapshotter:
                 "scorer": context.task.scorer,
                 "attempt_stage": context.stage,
                 "attempt_index": context.attempt_index,
+                "retry_position": retry_position,
+                "retry_strategy": retry_strategy,
                 "retry_ingredient_id": None if retry is None else retry.ingredient_id,
                 "retry_ingredient_description": None if retry is None else retry.description,
                 "retry_intervention": retry_intervention,

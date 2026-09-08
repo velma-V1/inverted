@@ -1,11 +1,13 @@
 """Universal adaptive operating-surface tuner for local and remote models."""
 
 from .core import (
+    UNRESTRICTED_THINKING,
     AtomicScore,
     AtomicTask,
     FailureClass,
     Observation,
     Profile,
+    ThinkingBudget,
     profile_fingerprint,
 )
 from .parameter_catalog import (
@@ -28,6 +30,7 @@ from .thinking_curve import (
 )
 
 __all__ = [
+    "UNRESTRICTED_THINKING",
     "AtomicScore",
     "AtomicTask",
     "FailureClass",
@@ -37,6 +40,7 @@ __all__ = [
     "ParameterScreenResult",
     "Profile",
     "ProfileScreenCandidate",
+    "ThinkingBudget",
     "ThinkingBudgetPoint",
     "ThinkingCurveResult",
     "analyze_thinking_curve",

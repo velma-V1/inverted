@@ -97,6 +97,7 @@ def test_temperature_screen_uses_approved_broad_values_before_refinement() -> No
         4096,
         8192,
         16384,
+        tuning.UNRESTRICTED_THINKING,
     )
 
 

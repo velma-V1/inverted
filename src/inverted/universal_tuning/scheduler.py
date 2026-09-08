@@ -303,6 +303,13 @@ class InteractionDecision:
     changed_by_interaction: bool
 
 
+def _profile_budget_cost(profile: Profile) -> float:
+    """Stable efficiency tie-breaker without treating unrestricted as a numeric cap."""
+    if profile.unrestricted_thinking:
+        return float("inf")
+    return float(int(profile.thinking_budget))
+
+
 def evaluate_holdout(
     baseline: Iterable[float], candidate: Iterable[float], *,
     bootstrap_seed: int = 20260907,
@@ -328,12 +335,21 @@ def select_interaction_profile(
     frozen = {profile: tuple(values) for profile, values in outcomes.items()}
     rates = {profile: _rate(values) for profile, values in frozen.items()}
     ordered = sorted(
-        frozen, key=lambda p: (rates[p], -p.thinking_budget, -abs(p.temperature - 0.8)), reverse=True
+        frozen,
+        key=lambda p: (
+            rates[p],
+            -_profile_budget_cost(p),
+            -abs(p.temperature - 0.8),
+        ),
+        reverse=True,
     )
     best = ordered[0]
     tied = [profile for profile in ordered if rates[profile] == rates[best]]
     if len(tied) > 1:
-        chosen = min(tied, key=lambda p: (p.thinking_budget, abs(p.temperature - 0.8)))
+        chosen = min(
+            tied,
+            key=lambda p: (_profile_budget_cost(p), abs(p.temperature - 0.8)),
+        )
         return InteractionDecision(chosen, "INTERACTION_PLATEAU", False)
     if len(ordered) == 1:
         return InteractionDecision(best, "INTERACTION_UNTESTED", False)

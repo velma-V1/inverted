@@ -4,12 +4,12 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Iterable
 
-from .core import Observation
+from .core import UNRESTRICTED_THINKING, Observation, ThinkingBudget
 
 
 @dataclass(frozen=True)
 class ThinkingBudgetPoint:
-    thinking_budget: int
+    thinking_budget: ThinkingBudget
     n_observations: int
     success_rate: float
     failure_rate: float
@@ -28,6 +28,7 @@ class ThinkingCurveResult:
     status: str
     evidence_sufficient: bool
     points: tuple[ThinkingBudgetPoint, ...]
+    unrestricted_point: ThinkingBudgetPoint | None
     minimum_effective_budget: int | None
     optimum_budget: int | None
     saturation_budget: int | None
@@ -44,7 +45,7 @@ def _mean(values: Iterable[float]) -> float:
 
 
 def _point(
-    budget: int,
+    budget: ThinkingBudget,
     rows: tuple[Observation, ...],
     *,
     min_observations_per_budget: int,
@@ -62,7 +63,7 @@ def _point(
         failure_counts.update(item.value for item in row.failure_classes)
 
     return ThinkingBudgetPoint(
-        thinking_budget=int(budget),
+        thinking_budget=budget,
         n_observations=len(rows),
         success_rate=success_rate,
         failure_rate=(len(rows) - success_count) / len(rows),
@@ -84,12 +85,12 @@ def analyze_thinking_curve(
     min_observations_per_budget: int = 40,
     material_delta: float = 0.05,
 ) -> ThinkingCurveResult:
-    """Characterize a thinking-budget response curve from existing observations only.
+    """Characterize capped budgets and unrestricted thinking from existing evidence.
 
-    This function is intentionally post-hoc: it has no runner, adapter, client, or
-    scheduling dependency and therefore cannot issue model calls. Callers should
-    pass a causally comparable observation slice (same task/profile conditions
-    except for the thinking budget) when using the result for policy decisions.
+    Numeric budgets retain the original minimum/optimum/saturation/degradation curve.
+    True unrestricted thinking is reported as a separate comparator so it cannot be
+    mistaken for a larger measured numeric cap or distort capped-budget arithmetic.
+    This function has no execution dependency and cannot issue model calls.
     """
     if not 0.0 <= float(success_threshold) <= 1.0:
         raise ValueError("success_threshold must be between 0 and 1")
@@ -99,10 +100,17 @@ def analyze_thinking_curve(
         raise ValueError("material_delta must be non-negative")
 
     grouped: dict[int, list[Observation]] = defaultdict(list)
+    unrestricted_rows: list[Observation] = []
     for observation in observations:
         if not isinstance(observation, Observation):
             raise TypeError("analyze_thinking_curve requires Observation values")
-        grouped[int(observation.profile.thinking_budget)].append(observation)
+        budget = observation.profile.thinking_budget
+        if budget == UNRESTRICTED_THINKING:
+            unrestricted_rows.append(observation)
+            continue
+        if not isinstance(budget, int) or isinstance(budget, bool):
+            raise TypeError("thinking observations require numeric or unrestricted budgets")
+        grouped[budget].append(observation)
 
     points = tuple(
         _point(
@@ -112,12 +120,22 @@ def analyze_thinking_curve(
         )
         for budget in sorted(grouped)
     )
+    unrestricted_point = (
+        _point(
+            UNRESTRICTED_THINKING,
+            tuple(unrestricted_rows),
+            min_observations_per_budget=int(min_observations_per_budget),
+        )
+        if unrestricted_rows
+        else None
+    )
     evidence_sufficient = bool(points) and all(
         point.evidence_sufficient for point in points
     )
 
     common = {
         "points": points,
+        "unrestricted_point": unrestricted_point,
         "success_threshold": float(success_threshold),
         "min_observations_per_budget": int(min_observations_per_budget),
         "material_delta": float(material_delta),
@@ -149,7 +167,7 @@ def analyze_thinking_curve(
             **common,
         )
 
-    minimum_effective = min(point.thinking_budget for point in effective)
+    minimum_effective = min(int(point.thinking_budget) for point in effective)
     optimum = max(
         effective,
         key=lambda point: (
@@ -159,12 +177,13 @@ def analyze_thinking_curve(
             point.completion_rate,
             -point.latency_s_mean,
             -point.thinking_tokens_mean,
-            -point.thinking_budget,
+            -int(point.thinking_budget),
         ),
     )
+    optimum_budget = int(optimum.thinking_budget)
 
     larger = tuple(
-        point for point in points if point.thinking_budget > optimum.thinking_budget
+        point for point in points if int(point.thinking_budget) > optimum_budget
     )
     saturation = next(
         (
@@ -187,9 +206,13 @@ def analyze_thinking_curve(
         status="CHARACTERIZED",
         evidence_sufficient=True,
         minimum_effective_budget=minimum_effective,
-        optimum_budget=optimum.thinking_budget,
-        saturation_budget=None if saturation is None else saturation.thinking_budget,
-        degradation_budget=None if degradation is None else degradation.thinking_budget,
+        optimum_budget=optimum_budget,
+        saturation_budget=(
+            None if saturation is None else int(saturation.thinking_budget)
+        ),
+        degradation_budget=(
+            None if degradation is None else int(degradation.thinking_budget)
+        ),
         overthinking_detected=degradation is not None,
         **common,
     )

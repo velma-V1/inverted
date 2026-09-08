@@ -192,8 +192,16 @@ def _validate_first_request_profile(observation: Observation, envelopes: list[di
         raise ValueError("first request thinking profile does not match failed observation")
     if options.get("temperature") != observation.profile.temperature:
         raise ValueError("first request temperature does not match failed observation profile")
-    if observation.profile.thinking and options.get("num_predict") != observation.profile.thinking_budget:
-        raise ValueError("first request thinking budget does not match failed observation profile")
+    if observation.profile.thinking:
+        expected_num_predict = (
+            -1
+            if observation.profile.unrestricted_thinking
+            else int(observation.profile.thinking_budget)
+        )
+        if options.get("num_predict") != expected_num_predict:
+            raise ValueError(
+                "first request thinking budget does not match failed observation profile"
+            )
 
 
 def build_failure_fixture(

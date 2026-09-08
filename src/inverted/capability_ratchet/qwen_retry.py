@@ -435,12 +435,15 @@ class QwenRetryAttemptExecutor:
             assert isinstance(message, Mapping)
             final_content = str(message.get("content") or "")
         else:
+            thinking_num_predict = (
+                -1 if profile.unrestricted_thinking else int(profile.thinking_budget)
+            )
             first_request = self._request(
                 context=context,
                 profile=profile,
                 messages=messages,
                 think=True,
-                num_predict=profile.thinking_budget,
+                num_predict=thinking_num_predict,
                 thinking_phase=True,
             )
             first, first_elapsed, error = self._post_capture(first_request, raw_calls)

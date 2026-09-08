@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
-from .core import Profile
+from .core import UNRESTRICTED_THINKING, Profile
 
 
 _STRATEGIES = frozenset({
@@ -109,8 +109,21 @@ def parameter_catalog() -> tuple[ParameterAxis, ...]:
     return (
         _axis(
             "thinking_budget", "REASONING", "SWEEP",
-            candidates=(0, 256, 512, 1024, 2048, 4096, 8192, 16384),
-            rationale="Measure direct, minimum-effective, saturation, and overthinking regions.",
+            candidates=(
+                0,
+                256,
+                512,
+                1024,
+                2048,
+                4096,
+                8192,
+                16384,
+                UNRESTRICTED_THINKING,
+            ),
+            rationale=(
+                "Measure direct, minimum-effective, saturation, overthinking, and a "
+                "true unrestricted-thinking comparator."
+            ),
         ),
         _axis(
             "temperature", "SAMPLER", "SWEEP",
