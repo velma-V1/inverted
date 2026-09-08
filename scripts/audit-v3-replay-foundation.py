@@ -33,11 +33,11 @@ REQUIRED_EXPORTS = {
     "build_failure_fixture", "from_payload", "preview_v2_failures",
     "seed_v2_failures", "select_failures", "to_payload",
     "OperatingSurfaceLab", "OperatingSurfaceProfile", "SurfaceAnalyzer", "SurfaceAxis",
-    "SurfaceBand", "SurfaceCallGeometry", "SurfaceDisposition", "SurfaceEvidenceCompiler",
-    "SurfaceEvidenceKind", "SurfaceEvidenceStore", "SurfaceInterventionCompiler",
-    "SurfaceObservation", "SurfacePlan", "SurfacePlanner", "SurfacePoint",
-    "SurfaceStepResult", "SurfaceStoreValidation", "SurfaceStudy", "select_surface_study",
-    "semantic_contract_hash",
+    "SurfaceBand", "SurfaceBootstrapPlan", "SurfaceCallGeometry", "SurfaceDisposition",
+    "SurfaceEvidenceCompiler", "SurfaceEvidenceKind", "SurfaceEvidenceStore",
+    "SurfaceInterventionCompiler", "SurfaceObservation", "SurfacePlan", "SurfacePlanner",
+    "SurfacePoint", "SurfaceStepResult", "SurfaceStoreValidation", "SurfaceStudy",
+    "plan_eligible_surfaces", "select_surface_study", "semantic_contract_hash",
 }
 
 EXPECTED_SURFACE_AXES = {
@@ -52,6 +52,17 @@ EXPECTED_SURFACE_AXES = {
     SurfaceAxis.CONTEXT_POSITION,
     SurfaceAxis.DELIVERY_MODE,
     SurfaceAxis.TRIGGER_MODE,
+}
+
+EXPECTED_REPRESENTATION_MODES = {
+    "TYPED_FIELDS",
+    "ORDERED_LIST",
+    "LEDGER",
+    "DECISION_TABLE",
+    "DEPENDENCY_MATRIX",
+    "GRAPH",
+    "COMPACT_SUMMARY",
+    "EXPLICIT_ALTERNATIVES",
 }
 
 REQUIRED_FILES = (
@@ -76,6 +87,7 @@ REQUIRED_FILES = (
     "src/inverted/capability_ratchet/surface_interventions.py",
     "src/inverted/capability_ratchet/surface_analysis.py",
     "src/inverted/capability_ratchet/surface_lab.py",
+    "src/inverted/capability_ratchet/surface_bootstrap.py",
     "src/inverted/capability_ratchet/cli.py",
     "scripts/run-test-replay.ps1",
     "tests/test_capability_ratchet_core.py",
@@ -102,6 +114,8 @@ REQUIRED_FILES = (
     "tests/test_capability_ratchet_surface_cli.py",
     "tests/test_capability_ratchet_surface_preflight.py",
     "tests/test_capability_ratchet_surface_omission_audit.py",
+    "tests/test_capability_ratchet_surface_value_modes.py",
+    "tests/test_capability_ratchet_surface_completion.py",
 )
 
 
@@ -146,6 +160,22 @@ def _cli_commands() -> set[str]:
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
             return set(action.choices)
+    return set()
+
+
+def _cli_options(command: str) -> set[str]:
+    parser = _build_parser()
+    for action in parser._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        selected = action.choices.get(command)
+        if selected is None:
+            return set()
+        return {
+            option
+            for item in selected._actions
+            for option in item.option_strings
+        }
     return set()
 
 
@@ -205,6 +235,12 @@ def _stage5_semantic_checks(repo: Path, findings: list[str]) -> None:
     planner_source = (
         repo / "src/inverted/capability_ratchet/surface_planner.py"
     ).read_text(encoding="utf-8")
+    bootstrap_source = (
+        repo / "src/inverted/capability_ratchet/surface_bootstrap.py"
+    ).read_text(encoding="utf-8")
+    cli_source = (
+        repo / "src/inverted/capability_ratchet/cli.py"
+    ).read_text(encoding="utf-8")
 
     _add(
         findings,
@@ -236,6 +272,67 @@ def _stage5_semantic_checks(repo: Path, findings: list[str]) -> None:
         findings,
         "surface_delivery_events" not in store_source,
         "Stage-5 progressive/trigger studies are not gated by observable delivery events",
+    )
+    missing_representation_modes = sorted(
+        mode for mode in EXPECTED_REPRESENTATION_MODES if mode not in compiler_source
+    )
+    _add(
+        findings,
+        bool(missing_representation_modes),
+        f"Stage-5 registered representation modes are incomplete: {missing_representation_modes}",
+    )
+    _add(
+        findings,
+        "_scaled_context" not in compiler_source or "dose > 32.0" not in compiler_source,
+        "Stage-5 context dose cannot safely probe overload above the proven baseline",
+    )
+    _add(
+        findings,
+        "PRE_DECISION" not in compiler_source or "JUST_IN_TIME" not in compiler_source,
+        "Stage-5 timing lacks preregistered pre-decision/just-in-time delivery modes",
+    )
+    _add(
+        findings,
+        "progressive delivery requires context divisible" not in compiler_source.lower()
+        or "progressive delivery requires registered context divisible" not in store_source.lower(),
+        "Stage-5 progressive delivery lacks compile-time and persistence-time divisibility gates",
+    )
+    bootstrap_requirements = (
+        "PromotionState.MOVEMENT",
+        "compile_v2_priors",
+        "SurfaceEvidenceKind.SAME_STATE_CAUSAL",
+        "lab.prepare",
+    )
+    missing_bootstrap = [token for token in bootstrap_requirements if token not in bootstrap_source]
+    _add(
+        findings,
+        bool(missing_bootstrap),
+        f"Stage-5 zero-call bootstrap contract is incomplete: {missing_bootstrap}",
+    )
+    forbidden_bootstrap = [
+        token
+        for token in ("QwenOllamaAdapter", "ReplayExecutor")
+        if token in bootstrap_source
+    ]
+    _add(
+        findings,
+        bool(forbidden_bootstrap),
+        f"Stage-5 bootstrap contains live execution machinery: {forbidden_bootstrap}",
+    )
+    plan_surface_options = _cli_options("plan-surface")
+    missing_auto_options = sorted(
+        {"--auto-eligible", "--source"} - plan_surface_options
+    )
+    _add(
+        findings,
+        bool(missing_auto_options),
+        f"Stage-5 historical auto-planning CLI options missing: {missing_auto_options}",
+    )
+    _add(
+        findings,
+        "NO_ELIGIBLE_MECHANISMS" not in cli_source
+        or "SURFACE_PLAN_READY" not in cli_source,
+        "Stage-5 auto-planning lacks explicit eligibility status contract",
     )
     incomplete = [
         marker
@@ -424,6 +521,10 @@ def main(argv: list[str] | None = None) -> int:
         "registry_ok": validation.ok,
         "stage5_axis_count": len(EXPECTED_SURFACE_AXES),
         "stage5_compiler_axis_count": len(SUPPORTED_SURFACE_AXES),
+        "stage5_representation_mode_count": len(EXPECTED_REPRESENTATION_MODES),
+        "stage5_auto_plan_contract": (
+            {"--auto-eligible", "--source"}.issubset(_cli_options("plan-surface"))
+        ),
     }
     print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
     return 0 if not findings else 1
