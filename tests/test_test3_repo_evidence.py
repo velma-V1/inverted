@@ -52,6 +52,14 @@ def test_repo_source_specs_bind_exact_frozen_sources_and_generated_model_free(tm
     assert specs[2][2] == generated
 
 
+def _inner_manifest_bytes(entries: dict[str, bytes]) -> bytes:
+    lines = [b"path,sha256,bytes\r\n"]
+    for path, payload in entries.items():
+        digest = hashlib.sha256(payload).hexdigest()
+        lines.append(f"{path},{digest},{len(payload)}\r\n".encode("ascii"))
+    return b"".join(lines)
+
+
 def _write_git_normalized_fixture(tmp_path: Path) -> tuple[Path, dict[str, bytes]]:
     repo = tmp_path / "repo"
     evidence = repo / "evidence"
@@ -88,14 +96,20 @@ def _write_git_normalized_fixture(tmp_path: Path) -> tuple[Path, dict[str, bytes
     provenance_bytes = (json.dumps(provenance, indent=2) + "\n").encode("utf-8")
     (evidence / "PROVENANCE.json").write_bytes(provenance_bytes)
 
+    test1_payloads = {
+        "trials.csv": b"task,ok\r\na,1\r\n",
+        "events.jsonl": b'{"event":"x"}\r\n',
+        "model_calls.jsonl": b'{"call":1}\r\n',
+    }
+    test2_payloads = {
+        "00-MASTER-INDEX.json": b'{\r\n  "run": "two"\r\n}\r\n',
+        "model_calls.jsonl": b'{"call":2}\r\n',
+    }
     originals: dict[str, bytes] = {
-        "test1/run1/SHA256SUMS.csv": b"path,sha256,bytes\r\ntrials.csv,dummy,12\r\n",
-        "test1/run1/trials.csv": b"task,ok\r\na,1\r\n",
-        "test1/run1/events.jsonl": b'{"event":"x"}\r\n',
-        "test1/run1/model_calls.jsonl": b'{"call":1}\r\n',
-        "test2/tier-a/run2/SHA256SUMS.csv": b"path,sha256,bytes\r\nmodel_calls.jsonl,dummy,12\r\n",
-        "test2/tier-a/run2/00-MASTER-INDEX.json": b'{\r\n  "run": "two"\r\n}\r\n',
-        "test2/tier-a/run2/model_calls.jsonl": b'{"call":2}\r\n',
+        "test1/run1/SHA256SUMS.csv": _inner_manifest_bytes(test1_payloads),
+        **{f"test1/run1/{path}": payload for path, payload in test1_payloads.items()},
+        "test2/tier-a/run2/SHA256SUMS.csv": _inner_manifest_bytes(test2_payloads),
+        **{f"test2/tier-a/run2/{path}": payload for path, payload in test2_payloads.items()},
     }
 
     # Simulate what Git stores/checks out on Linux after Windows CRLF text was added:
