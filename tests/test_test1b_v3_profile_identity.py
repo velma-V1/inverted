@@ -9,6 +9,9 @@ from inverted.universal_tuning.scheduler import AdaptiveScheduler, ModelMetadata
 from inverted.universal_tuning.tasks import TaskPool
 
 
+FAMILY = "LOGIC_CONSTRAINTS"
+
+
 def _api():
     assert hasattr(tuning, "profile_fingerprint")
     return tuning.profile_fingerprint
@@ -102,7 +105,7 @@ def _pool() -> TaskPool:
     tasks = tuple(
         AtomicTask(
             task_id=f"logic-{index:03d}",
-            family="LOGIC",
+            family=FAMILY,
             difficulty=1,
             prompt="Return B.",
             expected="B",
@@ -122,7 +125,7 @@ def test_scheduler_trial_ids_include_full_profile_identity() -> None:
     candidate_b = Profile(0, 0.7, top_p=0.6)
 
     trials_a = scheduler.paired_trials(
-        family="LOGIC",
+        family=FAMILY,
         stage="gate",
         baseline=baseline,
         candidate=candidate_a,
@@ -131,7 +134,7 @@ def test_scheduler_trial_ids_include_full_profile_identity() -> None:
         decision_reason="PROFILE_IDENTITY_A",
     )
     trials_b = scheduler.paired_trials(
-        family="LOGIC",
+        family=FAMILY,
         stage="gate",
         baseline=baseline,
         candidate=candidate_b,
