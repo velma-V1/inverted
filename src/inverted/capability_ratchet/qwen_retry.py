@@ -9,9 +9,11 @@ by the canonical TEST_REPLAY store without a parallel evidence path.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Mapping
 from dataclasses import asdict, fields, replace
 from typing import Any
+from urllib.error import URLError
 
 from inverted.universal_tuning.core import Profile
 from inverted.universal_tuning.qwen_ollama import QwenOllamaAdapter
@@ -129,6 +131,14 @@ def _failure_feedback(context: AttemptContext) -> dict[str, Any] | str | None:
     raise ValueError(f"unsupported failure feedback mode: {mode}")
 
 
+def _error_packet(failure_class: str, error_type: str, message: str) -> dict[str, str]:
+    return {
+        "class": failure_class,
+        "type": error_type,
+        "message": message,
+    }
+
+
 class QwenRetryAttemptExecutor:
     """Execute one Test1B-v3 attempt using the declared causal intervention."""
 
@@ -229,6 +239,146 @@ class QwenRetryAttemptExecutor:
             **self._adapter._request_controls(profile),
         }
 
+    @staticmethod
+    def _malformed_message(raw: Mapping[str, Any]) -> dict[str, str] | None:
+        message = raw.get("message")
+        if not isinstance(message, Mapping):
+            return _error_packet(
+                "MALFORMED_RESPONSE",
+                "ResponseShapeError",
+                "Ollama response message must be an object",
+            )
+        content = message.get("content")
+        if content is not None and not isinstance(content, str):
+            return _error_packet(
+                "MALFORMED_RESPONSE",
+                "ResponseShapeError",
+                "Ollama response message.content must be a string when present",
+            )
+        thinking = message.get("thinking")
+        if thinking is not None and not isinstance(thinking, str):
+            return _error_packet(
+                "MALFORMED_RESPONSE",
+                "ResponseShapeError",
+                "Ollama response message.thinking must be a string when present",
+            )
+        return None
+
+    @staticmethod
+    def _eval_count(raw: Mapping[str, Any]) -> tuple[int, dict[str, str] | None]:
+        value = raw.get("eval_count", 0)
+        if value is None:
+            return 0, None
+        if isinstance(value, bool):
+            return 0, _error_packet(
+                "MALFORMED_RESPONSE",
+                "ResponseShapeError",
+                "Ollama response eval_count must be an integer",
+            )
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            return 0, _error_packet(
+                "MALFORMED_RESPONSE",
+                "ResponseShapeError",
+                "Ollama response eval_count must be an integer",
+            )
+        if count < 0:
+            return 0, _error_packet(
+                "MALFORMED_RESPONSE",
+                "ResponseShapeError",
+                "Ollama response eval_count must be non-negative",
+            )
+        return count, None
+
+    def _post_capture(
+        self,
+        request: dict[str, Any],
+        raw_calls: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any] | None, float, dict[str, str] | None]:
+        call: dict[str, Any] = {"request": request}
+        raw_calls.append(call)
+        started = time.perf_counter()
+        try:
+            raw, elapsed = self._adapter.post_chat_payload(request)
+        except TimeoutError as exc:
+            elapsed = max(0.0, time.perf_counter() - started)
+            error = _error_packet("TIMEOUT", type(exc).__name__, str(exc))
+            call["error"] = error
+            return None, elapsed, error
+        except URLError as exc:
+            elapsed = max(0.0, time.perf_counter() - started)
+            failure_class = "TIMEOUT" if isinstance(exc.reason, TimeoutError) else "TRANSPORT"
+            error = _error_packet(failure_class, type(exc).__name__, str(exc))
+            call["error"] = error
+            return None, elapsed, error
+        except (ConnectionError, OSError) as exc:
+            elapsed = max(0.0, time.perf_counter() - started)
+            error = _error_packet("TRANSPORT", type(exc).__name__, str(exc))
+            call["error"] = error
+            return None, elapsed, error
+        except (ValueError, UnicodeError) as exc:
+            elapsed = max(0.0, time.perf_counter() - started)
+            error = _error_packet("MALFORMED_RESPONSE", type(exc).__name__, str(exc))
+            call["error"] = error
+            return None, elapsed, error
+
+        call["response"] = raw
+        return raw, elapsed, None
+
+    def _execution_failure_outcome(
+        self,
+        *,
+        context: AttemptContext,
+        profile: Profile,
+        raw_calls: list[dict[str, Any]],
+        total_latency: float,
+        output_tokens: int,
+        thinking_tokens: int,
+        error: dict[str, str],
+    ) -> AttemptOutcome:
+        score_payload = {
+            "completed": False,
+            "semantic_pass": False,
+            "contract_pass": False,
+            "semantic_quality": 0.0,
+            "contract_quality": 0.0,
+            "failure_classes": [error["class"]],
+            "normalized_answer": None,
+            "reason": error["class"],
+        }
+        evidence = AttemptEvidence(
+            request_envelopes=tuple(call["request"] for call in raw_calls),
+            forensic_payload={
+                "raw_calls": tuple(raw_calls),
+                "execution_error": error,
+                "telemetry": {
+                    "latency_s": total_latency,
+                    "output_tokens": output_tokens,
+                    "thinking_tokens": thinking_tokens,
+                    "physical_calls": len(raw_calls),
+                },
+            },
+            oracle_payload={
+                "task_id": context.task.task_id,
+                "expected": context.task.expected,
+                "contract": context.task.contract,
+                "scorer": context.task.scorer,
+                "score": score_payload,
+            },
+            inference_profile=asdict(profile),
+            inference_seed=self._seed,
+            source_evidence_refs=(
+                f"test1b-v3:{context.model_id}:{context.task.task_id}:{context.stage}",
+            ),
+        )
+        return AttemptOutcome(
+            passed=False,
+            failure_classes=(error["class"],),
+            failure_subtypes=(error["type"],),
+            evidence=evidence,
+        )
+
     def __call__(self, context: AttemptContext) -> AttemptOutcome:
         if not isinstance(context, AttemptContext):
             raise TypeError("context must be an AttemptContext")
@@ -253,11 +403,37 @@ class QwenRetryAttemptExecutor:
                 num_predict=profile.final_max_tokens,
                 thinking_phase=False,
             )
-            raw, elapsed = self._adapter.post_chat_payload(request)
-            raw_calls.append({"request": request, "response": raw})
+            raw, elapsed, error = self._post_capture(request, raw_calls)
             total_latency += elapsed
-            output_tokens += int(raw.get("eval_count", 0) or 0)
-            final_content = str((raw.get("message") or {}).get("content") or "")
+            if error is not None:
+                return self._execution_failure_outcome(
+                    context=context,
+                    profile=profile,
+                    raw_calls=raw_calls,
+                    total_latency=total_latency,
+                    output_tokens=output_tokens,
+                    thinking_tokens=thinking_tokens,
+                    error=error,
+                )
+            assert raw is not None
+            malformed = self._malformed_message(raw)
+            token_count, token_error = self._eval_count(raw)
+            malformed = malformed or token_error
+            if malformed is not None:
+                raw_calls[-1]["error"] = malformed
+                return self._execution_failure_outcome(
+                    context=context,
+                    profile=profile,
+                    raw_calls=raw_calls,
+                    total_latency=total_latency,
+                    output_tokens=output_tokens,
+                    thinking_tokens=thinking_tokens,
+                    error=malformed,
+                )
+            output_tokens += token_count
+            message = raw["message"]
+            assert isinstance(message, Mapping)
+            final_content = str(message.get("content") or "")
         else:
             first_request = self._request(
                 context=context,
@@ -267,14 +443,38 @@ class QwenRetryAttemptExecutor:
                 num_predict=profile.thinking_budget,
                 thinking_phase=True,
             )
-            first, first_elapsed = self._adapter.post_chat_payload(first_request)
-            raw_calls.append({"request": first_request, "response": first})
+            first, first_elapsed, error = self._post_capture(first_request, raw_calls)
             total_latency += first_elapsed
-            first_tokens = int(first.get("eval_count", 0) or 0)
+            if error is not None:
+                return self._execution_failure_outcome(
+                    context=context,
+                    profile=profile,
+                    raw_calls=raw_calls,
+                    total_latency=total_latency,
+                    output_tokens=output_tokens,
+                    thinking_tokens=thinking_tokens,
+                    error=error,
+                )
+            assert first is not None
+            malformed = self._malformed_message(first)
+            first_tokens, token_error = self._eval_count(first)
+            malformed = malformed or token_error
+            if malformed is not None:
+                raw_calls[-1]["error"] = malformed
+                return self._execution_failure_outcome(
+                    context=context,
+                    profile=profile,
+                    raw_calls=raw_calls,
+                    total_latency=total_latency,
+                    output_tokens=output_tokens,
+                    thinking_tokens=thinking_tokens,
+                    error=malformed,
+                )
             thinking_tokens = first_tokens
             output_tokens += first_tokens
 
-            first_message = first.get("message") or {}
+            first_message = first["message"]
+            assert isinstance(first_message, Mapping)
             exposed_thinking = str(first_message.get("thinking") or "")
             partial_content = str(first_message.get("content") or "")
             carried = list(messages) + [
@@ -299,12 +499,37 @@ class QwenRetryAttemptExecutor:
                 num_predict=profile.final_max_tokens,
                 thinking_phase=False,
             )
-            second, second_elapsed = self._adapter.post_chat_payload(second_request)
-            raw_calls.append({"request": second_request, "response": second})
+            second, second_elapsed, error = self._post_capture(second_request, raw_calls)
             total_latency += second_elapsed
-            second_tokens = int(second.get("eval_count", 0) or 0)
+            if error is not None:
+                return self._execution_failure_outcome(
+                    context=context,
+                    profile=profile,
+                    raw_calls=raw_calls,
+                    total_latency=total_latency,
+                    output_tokens=output_tokens,
+                    thinking_tokens=thinking_tokens,
+                    error=error,
+                )
+            assert second is not None
+            malformed = self._malformed_message(second)
+            second_tokens, token_error = self._eval_count(second)
+            malformed = malformed or token_error
+            if malformed is not None:
+                raw_calls[-1]["error"] = malformed
+                return self._execution_failure_outcome(
+                    context=context,
+                    profile=profile,
+                    raw_calls=raw_calls,
+                    total_latency=total_latency,
+                    output_tokens=output_tokens,
+                    thinking_tokens=thinking_tokens,
+                    error=malformed,
+                )
             output_tokens += second_tokens
-            final_content = str((second.get("message") or {}).get("content") or "")
+            second_message = second["message"]
+            assert isinstance(second_message, Mapping)
+            final_content = str(second_message.get("content") or "")
 
         normalized_response = self._adapter._split_batch_response(
             final_content, (context.task,)
