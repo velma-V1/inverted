@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import threading
+from collections.abc import Mapping as ABCMapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,9 +26,22 @@ from .surface_core import (
     SurfacePoint,
     SurfaceStudy,
 )
+from .surface_planner import SurfacePlanner
 
 
 T = TypeVar("T")
+
+_BASELINE_ALIASES: dict[SurfaceAxis, tuple[Any, ...]] = {
+    SurfaceAxis.CONTEXT_DOSE: (1, 1.0, "FULL"),
+    SurfaceAxis.CONTEXT_POSITION: ("INLINE", "BASE", "ORIGINAL"),
+    SurfaceAxis.DELIVERY_MODE: ("STATIC", "BASE", "ORIGINAL"),
+    SurfaceAxis.REPRESENTATION: ("PROSE", "BASE", "ORIGINAL"),
+    SurfaceAxis.ORDER: ("ORIGINAL", "BASE"),
+    SurfaceAxis.PLACEMENT: ("ORIGINAL", "BASE"),
+    SurfaceAxis.RECURRENCE: (1,),
+    SurfaceAxis.TIMING: ("EARLY", "UPFRONT", "BASE", "ORIGINAL"),
+    SurfaceAxis.TRIGGER_MODE: ("ALWAYS", "BASE", "ORIGINAL"),
+}
 
 
 def _json_value(value: Any) -> Any:
@@ -211,7 +225,9 @@ class SurfaceEvidenceStore:
         self.profile_manifest_path = self.root / "operating-surface-profiles.sha256"
         self.lock_path = self.root / ".surface-evidence.lock"
         with _LOCKS_GUARD:
-            self._lock = _PROCESS_LOCKS.setdefault(str(self.root.resolve()), threading.RLock())
+            self._lock = _PROCESS_LOCKS.setdefault(
+                str(self.root.resolve()), threading.RLock()
+            )
 
     @contextmanager
     def _transaction_lock(self) -> Iterator[None]:
@@ -225,9 +241,11 @@ class SurfaceEvidenceStore:
                 handle.seek(0)
                 if os.name == "nt":
                     import msvcrt
+
                     msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
                 else:
                     import fcntl
+
                     fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
                 try:
                     yield
@@ -260,10 +278,15 @@ class SurfaceEvidenceStore:
 
     def _write_manifest(self, source: Path, manifest: Path) -> None:
         encoded = source.read_bytes() if source.exists() else b""
-        self._write_atomic(manifest, hashlib.sha256(encoded).hexdigest().encode("ascii") + b"\n")
+        self._write_atomic(
+            manifest,
+            hashlib.sha256(encoded).hexdigest().encode("ascii") + b"\n",
+        )
 
     @staticmethod
-    def _rows(path: Path, decoder: Callable[[Mapping[str, Any]], T]) -> list[tuple[str, bytes, T]]:
+    def _rows(
+        path: Path, decoder: Callable[[Mapping[str, Any]], T]
+    ) -> list[tuple[str, bytes, T]]:
         if not path.exists():
             return []
         encoded = path.read_bytes()
@@ -277,9 +300,14 @@ class SurfaceEvidenceStore:
             if line != _canonical(payload):
                 raise ValueError(f"{path.name}:{number} is not canonical JSON")
             value = decoder(payload)
-            logical_id = getattr(value, "study_id", None) if isinstance(value, SurfaceStudy) else (
-                getattr(value, "observation_id", None) if isinstance(value, SurfaceObservation)
-                else getattr(value, "profile_id")
+            logical_id = (
+                getattr(value, "study_id", None)
+                if isinstance(value, SurfaceStudy)
+                else (
+                    getattr(value, "observation_id", None)
+                    if isinstance(value, SurfaceObservation)
+                    else getattr(value, "profile_id")
+                )
             )
             rows.append((logical_id, line, value))
         return rows
@@ -300,7 +328,9 @@ class SurfaceEvidenceStore:
             if matches:
                 if any(existing != line for existing in matches):
                     raise ValueError("existing logical ID has different canonical content")
-                expected = hashlib.sha256(path.read_bytes()).hexdigest().encode("ascii") + b"\n"
+                expected = (
+                    hashlib.sha256(path.read_bytes()).hexdigest().encode("ascii") + b"\n"
+                )
                 if not manifest.exists() or manifest.read_bytes() != expected:
                     self._write_atomic(manifest, expected)
                 return logical_id
@@ -312,6 +342,72 @@ class SurfaceEvidenceStore:
             self._write_manifest(path, manifest)
         return logical_id
 
+    @staticmethod
+    def _same_value(value: Any, alias: Any) -> bool:
+        if value == alias:
+            return True
+        if isinstance(value, str) and isinstance(alias, str):
+            return value.upper() == alias.upper()
+        return False
+
+    @classmethod
+    def _has_baseline(cls, study: SurfaceStudy, axis: SurfaceAxis) -> bool:
+        aliases = _BASELINE_ALIASES.get(axis)
+        if aliases is None:
+            return True
+        return any(
+            cls._same_value(value, alias)
+            for value in study.axis_values[axis.value]
+            for alias in aliases
+        )
+
+    @staticmethod
+    def _event_indices(fixture, event: str) -> tuple[int, ...]:
+        raw = fixture.metadata.get("surface_delivery_events", ())
+        rows = raw if isinstance(raw, (tuple, list)) else ()
+        found: list[int] = []
+        for item in rows:
+            if not isinstance(item, ABCMapping):
+                continue
+            if str(item.get("event", "")).upper() != event:
+                continue
+            index = item.get("envelope_index")
+            if isinstance(index, int) and not isinstance(index, bool) and index > 0:
+                found.append(index)
+        return tuple(found)
+
+    def _require_event(self, fixture, event: str, envelope_count: int) -> None:
+        matches = self._event_indices(fixture, event)
+        noun = "state transition" if event == "STATE_TRANSITION" else "trigger"
+        if len(matches) != 1:
+            raise ValueError(
+                f"{noun} surface requires exactly one preregistered observable {event} event"
+            )
+        if matches[0] >= envelope_count:
+            raise ValueError(f"{noun} references unavailable request envelope")
+
+    def _require_delivery_geometry(self, fixture, study: SurfaceStudy) -> None:
+        visible = self.replay_store.read_asset(fixture.model_visible_asset_sha256)
+        envelopes = visible.get("request_envelopes") if isinstance(visible, dict) else None
+        if not isinstance(envelopes, list) or not envelopes:
+            raise ValueError("surface fixture has no executable request envelopes")
+        envelope_count = len(envelopes)
+
+        if SurfaceAxis.DELIVERY_MODE in study.axes:
+            names = {str(value).upper() for value in study.axis_values[SurfaceAxis.DELIVERY_MODE.value]}
+            if "PROGRESSIVE" in names:
+                self._require_event(fixture, "STATE_TRANSITION", envelope_count)
+        if SurfaceAxis.TRIGGER_MODE in study.axes:
+            names = {str(value).upper() for value in study.axis_values[SurfaceAxis.TRIGGER_MODE.value]}
+            if "FAILURE_TRIGGERED" in names:
+                self._require_event(fixture, "FAILURE", envelope_count)
+            if "VERIFIER_TRIGGERED" in names:
+                self._require_event(fixture, "VERIFIER", envelope_count)
+        if SurfaceAxis.TIMING in study.axes:
+            names = {str(value).upper() for value in study.axis_values[SurfaceAxis.TIMING.value]}
+            if "LATE" in names and envelope_count < 2:
+                raise ValueError("late timing surface requires multiple frozen request envelopes")
+
     def _require_study_lineage(self, study: SurfaceStudy) -> None:
         try:
             fixture = self.replay_store.get_failure(study.failure_snapshot_id)
@@ -319,8 +415,10 @@ class SurfaceEvidenceStore:
             raise ValueError("surface study references an unknown replay failure") from exc
         if fixture.state_hash != study.parent_state_hash or fixture.partition != study.partition:
             raise ValueError("surface study failure state/partition does not match replay lineage")
+
         labels = [
-            record for record in self.replay_store.records()
+            record
+            for record in self.replay_store.records()
             if isinstance(record, MechanismLabel)
             and record.failure_snapshot_id == study.failure_snapshot_id
             and record.mechanism_id == study.mechanism_id
@@ -328,19 +426,69 @@ class SurfaceEvidenceStore:
         ]
         if not labels:
             raise ValueError("surface study mechanism is not registered in canonical replay evidence")
-        hypothesis_ids = {item.hypothesis_id for item in self.causal_store.hypotheses(study.failure_snapshot_id)}
-        if not any(label.hypothesis_id in hypothesis_ids for label in labels):
+
+        hypotheses = {
+            item.hypothesis_id: item
+            for item in self.causal_store.hypotheses(study.failure_snapshot_id)
+        }
+        matching = [label for label in labels if label.hypothesis_id in hypotheses]
+        if not matching:
             raise ValueError("surface study mechanism has no matching causal hypothesis")
+
+        eligible_axes: set[SurfaceAxis] = set()
+        registered_interventions = 0
+        for label in matching:
+            hypothesis = hypotheses[label.hypothesis_id]
+            for intervention_id in label.intervention_ids:
+                try:
+                    intervention = self.causal_store.get_intervention(intervention_id)
+                except (KeyError, ValueError):
+                    continue
+                registered_interventions += 1
+                eligible_axes.update(
+                    SurfacePlanner.eligible_axes(
+                        label,
+                        hypothesis,
+                        intervention,
+                        cognition_relevant=(
+                            study.promotion_state is PromotionState.MOVEMENT
+                        ),
+                    )
+                )
+        if registered_interventions == 0:
+            raise ValueError(
+                "surface study mechanism has no registered originating intervention"
+            )
+        unsupported = tuple(
+            axis.value for axis in study.axes if axis not in eligible_axes
+        )
+        if unsupported:
+            raise ValueError(
+                "surface study axis is not owned by originating mechanism/intervention: "
+                f"{unsupported}"
+            )
+
+        for axis in study.axes:
+            if not self._has_baseline(study, axis):
+                raise ValueError(
+                    f"surface study {axis.value} requires a registered mechanism baseline value"
+                )
+
+        self._require_delivery_geometry(fixture, study)
+
         if study.promotion_state is PromotionState.MOVEMENT:
             movements = [
-                record for record in self.replay_store.records()
+                record
+                for record in self.replay_store.records()
                 if isinstance(record, PromotionEvent)
                 and record.failure_snapshot_id == study.failure_snapshot_id
                 and record.mechanism_id == study.mechanism_id
                 and record.to_state is PromotionState.MOVEMENT
             ]
             if not movements:
-                raise ValueError("surface study MOVEMENT is not backed by a canonical promotion event")
+                raise ValueError(
+                    "surface study MOVEMENT is not backed by a canonical promotion event"
+                )
 
     def append_study(self, study: SurfaceStudy) -> str:
         if not isinstance(study, SurfaceStudy):
@@ -356,7 +504,9 @@ class SurfaceEvidenceStore:
 
     def studies(self, mechanism_id: str | None = None) -> tuple[SurfaceStudy, ...]:
         with self._transaction_lock():
-            values = tuple(row[2] for row in self._rows(self.study_path, _study_from_payload))
+            values = tuple(
+                row[2] for row in self._rows(self.study_path, _study_from_payload)
+            )
         if mechanism_id is None:
             return values
         return tuple(item for item in values if item.mechanism_id == mechanism_id)
@@ -390,14 +540,18 @@ class SurfaceEvidenceStore:
             for result_id in observation.replay_result_ids:
                 result = results.get(result_id)
                 if result is None:
-                    raise ValueError(f"surface observation references missing replay result {result_id}")
+                    raise ValueError(
+                        f"surface observation references missing replay result {result_id}"
+                    )
                 if (
                     result.failure_snapshot_id != study.failure_snapshot_id
                     or result.parent_failure_snapshot_id != study.failure_snapshot_id
                     or result.parent_state_hash != study.parent_state_hash
                     or result.partition != study.partition
                 ):
-                    raise ValueError("surface observation replay result is not same-state causal evidence")
+                    raise ValueError(
+                        "surface observation replay result is not same-state causal evidence"
+                    )
 
     def append_observation(self, observation: SurfaceObservation) -> str:
         if not isinstance(observation, SurfaceObservation):
@@ -413,7 +567,10 @@ class SurfaceEvidenceStore:
 
     def observations(self, study_id: str | None = None) -> tuple[SurfaceObservation, ...]:
         with self._transaction_lock():
-            values = tuple(row[2] for row in self._rows(self.observation_path, _observation_from_payload))
+            values = tuple(
+                row[2]
+                for row in self._rows(self.observation_path, _observation_from_payload)
+            )
         if study_id is None:
             return values
         return tuple(item for item in values if item.study_id == study_id)
@@ -430,7 +587,9 @@ class SurfaceEvidenceStore:
             or profile.partition != study.partition
         ):
             raise ValueError("surface profile lineage differs from its study")
-        observations = {item.observation_id: item for item in self.observations(profile.study_id)}
+        observations = {
+            item.observation_id: item for item in self.observations(profile.study_id)
+        }
         for ref in profile.evidence_refs:
             if ref not in observations:
                 raise ValueError(f"surface profile references missing observation {ref}")
@@ -449,7 +608,9 @@ class SurfaceEvidenceStore:
 
     def profiles(self, mechanism_id: str | None = None) -> tuple[OperatingSurfaceProfile, ...]:
         with self._transaction_lock():
-            values = tuple(row[2] for row in self._rows(self.profile_path, _profile_from_payload))
+            values = tuple(
+                row[2] for row in self._rows(self.profile_path, _profile_from_payload)
+            )
         if mechanism_id is None:
             return values
         return tuple(item for item in values if item.mechanism_id == mechanism_id)
@@ -473,9 +634,24 @@ class SurfaceEvidenceStore:
         profiles: tuple[OperatingSurfaceProfile, ...] = ()
 
         specs = (
-            (self.study_path, self.study_manifest_path, _study_from_payload, "study_id"),
-            (self.observation_path, self.observation_manifest_path, _observation_from_payload, "observation_id"),
-            (self.profile_path, self.profile_manifest_path, _profile_from_payload, "profile_id"),
+            (
+                self.study_path,
+                self.study_manifest_path,
+                _study_from_payload,
+                "study_id",
+            ),
+            (
+                self.observation_path,
+                self.observation_manifest_path,
+                _observation_from_payload,
+                "observation_id",
+            ),
+            (
+                self.profile_path,
+                self.profile_manifest_path,
+                _profile_from_payload,
+                "profile_id",
+            ),
         )
         decoded: list[tuple[Any, ...]] = []
         with self._transaction_lock():
