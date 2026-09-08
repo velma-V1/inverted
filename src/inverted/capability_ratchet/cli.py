@@ -16,6 +16,12 @@ from .historical import V2EvidenceSource, preview_v2_failures, seed_v2_failures
 from .interventions import InterventionGenerator
 from .lab import FailureLab, FailureResearchProgram
 from .mechanisms import MechanismLocalizer
+from .mutation_analysis import MutationAnalyzer
+from .mutation_generator import MutationGenerator
+from .mutation_lab import MutationLab
+from .mutation_planner import MutationPlanner
+from .mutation_replay import MutationReplayCompiler
+from .mutation_store import MutationEvidenceStore
 from .query import ReplaySelector, select_failures, select_surface_study
 from .replay_store import ReplayStore
 from .surface_analysis import SurfaceAnalyzer
@@ -117,6 +123,16 @@ def _add_surface_args(
         parser.add_argument("--allow-model-calls", action="store_true")
 
 
+def _add_mutation_args(parser: argparse.ArgumentParser, *, executable: bool = False) -> None:
+    parser.add_argument("--replay-root", required=True)
+    parser.add_argument("--causal-root", required=True)
+    parser.add_argument("--surface-root", required=True)
+    parser.add_argument("--mutation-root", required=True)
+    parser.add_argument("--study-id", required=True)
+    if executable:
+        parser.add_argument("--allow-model-calls", action="store_true")
+
+
 def _replay_counts(store: ReplayStore) -> dict[str, int]:
     counts: dict[str, int] = {}
     for record in store.records():
@@ -194,6 +210,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run_surface = sub.add_parser("run-surface")
     _add_surface_args(run_surface, executable=True)
+
+    plan_mutations = sub.add_parser("plan-mutations")
+    _add_mutation_args(plan_mutations)
+
+    show_mutations = sub.add_parser("show-mutations")
+    _add_mutation_args(show_mutations)
+
+    run_mutations = sub.add_parser("run-mutations")
+    _add_mutation_args(run_mutations, executable=True)
     return parser
 
 
@@ -256,6 +281,39 @@ def _build_surface_lab(store: ReplayStore, causal_root: Path, surface_root: Path
         SurfacePlanner(surface, evidence),
         SurfaceInterventionCompiler(store, causal),
         SurfaceAnalyzer(surface),
+    )
+
+
+def _build_mutation_stores(
+    store: ReplayStore,
+    causal_root: Path,
+    surface_root: Path,
+    mutation_root: Path,
+):
+    causal = CausalEvidenceStore(causal_root, replay_store=store)
+    surface = SurfaceEvidenceStore(surface_root, replay_store=store, causal_store=causal)
+    mutation = MutationEvidenceStore(mutation_root, replay_store=store, surface_store=surface)
+    return causal, surface, mutation
+
+
+def _build_mutation_lab(
+    store: ReplayStore,
+    causal_root: Path,
+    surface_root: Path,
+    mutation_root: Path,
+) -> MutationLab:
+    causal, _surface, mutation = _build_mutation_stores(
+        store, causal_root, surface_root, mutation_root
+    )
+    return MutationLab(
+        store,
+        causal,
+        mutation,
+        templates={},
+        generator=MutationGenerator(store),
+        planner=MutationPlanner(mutation),
+        replay_compiler=MutationReplayCompiler(store, causal),
+        analyzer=MutationAnalyzer(store, mutation),
     )
 
 
@@ -447,6 +505,92 @@ def _surface_study(lab: OperatingSurfaceLab, args: argparse.Namespace):
     )
 
 
+def _mutation_study(mutation_store: MutationEvidenceStore, study_id: str):
+    matches = tuple(item for item in mutation_store.studies() if item.study_id == study_id)
+    if len(matches) != 1:
+        raise ValueError("mutation study must resolve to exactly one stored study")
+    return matches[0]
+
+
+def _mutation_spec_payload(spec) -> dict[str, Any]:
+    return {
+        "spec_id": spec.spec_id,
+        "axis": spec.axis.value,
+        "direction": spec.direction.value,
+        "value": spec.value,
+        "structural_region_id": spec.structural_region_id,
+        "decision_id": spec.decision_id,
+        "protected": spec.protected,
+    }
+
+
+def _mutation_study_payload(study) -> dict[str, Any]:
+    return {
+        "study_id": study.study_id,
+        "failure_snapshot_id": study.failure_snapshot_id,
+        "mechanism_id": study.mechanism_id,
+        "source_failure_snapshot_id": study.source_failure_snapshot_id,
+        "source_state_hash": study.source_state_hash,
+        "operating_surface_profile_id": study.operating_surface_profile_id,
+        "policy": study.policy.to_payload(),
+        "decision_id": study.decision_id,
+        "candidate_specs": [_mutation_spec_payload(item) for item in study.candidate_specs],
+        "protected_spec_ids": list(study.protected_spec_ids),
+        "decision_critical_reason": study.decision_critical_reason,
+        "synthetic": study.synthetic,
+    }
+
+
+def _mutation_plan_payload(study, plan) -> dict[str, Any]:
+    return {
+        "study_id": study.study_id,
+        "failure_snapshot_id": study.failure_snapshot_id,
+        "mechanism_id": study.mechanism_id,
+        "specs": [_mutation_spec_payload(item) for item in plan.specs],
+        "reused_fixture_ids": list(plan.reused_fixture_ids),
+        "decision_reason": plan.decision_reason,
+        "stop_reason": plan.stop_reason,
+        "call_geometry": {
+            "minimum": plan.minimum_physical_calls,
+            "expected": plan.expected_physical_calls,
+            "worst_case": plan.worst_case_physical_calls,
+            "protected_challenges": plan.protected_challenge_calls,
+        },
+        "MODEL_CALLS": 0,
+    }
+
+
+def _mutation_outcome_payload(outcome) -> dict[str, Any]:
+    return {
+        "outcome_id": outcome.outcome_id,
+        "mutation_fixture_id": outcome.mutation_fixture_id,
+        "replay_result_id": outcome.replay_result_id,
+        "axis": outcome.axis.value,
+        "direction": outcome.direction.value,
+        "structural_region_id": outcome.structural_region_id,
+        "protected": outcome.protected,
+        "semantic_pass": outcome.semantic_pass,
+        "contract_pass": outcome.contract_pass,
+        "metadata": dict(outcome.metadata),
+    }
+
+
+def _mutation_profile_payload(profile) -> dict[str, Any]:
+    return {
+        "profile_id": profile.profile_id,
+        "study_id": profile.study_id,
+        "failure_snapshot_id": profile.failure_snapshot_id,
+        "mechanism_id": profile.mechanism_id,
+        "classification": profile.classification.value,
+        "success_rate": profile.success_rate,
+        "axis_successes": dict(profile.axis_successes),
+        "region_successes": dict(profile.region_successes),
+        "harder_successes": profile.harder_successes,
+        "protected_failures": list(profile.protected_failures),
+        "unresolved_boundaries": list(profile.unresolved_boundaries),
+    }
+
+
 def _execute_qwen_replay(store: ReplayStore, args: argparse.Namespace) -> dict[str, Any]:
     """Construct live model machinery only after the explicit CLI safety gate."""
     try:
@@ -560,12 +704,50 @@ def _execute_qwen_surface(
     }
 
 
+def _execute_qwen_mutations(
+    store: ReplayStore,
+    causal_root: Path,
+    surface_root: Path,
+    mutation_root: Path,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Construct live mutation adapters only after ``run-mutations`` passes its gate."""
+    lab = _build_mutation_lab(store, causal_root, surface_root, mutation_root)
+    study = _mutation_study(lab.mutation_store, args.study_id)
+    plan = lab.prepare(study.study_id)
+    if not plan.specs:
+        return _mutation_plan_payload(study, plan)
+    source = store.get_failure(study.source_failure_snapshot_id)
+
+    from inverted.universal_tuning.qwen_ollama import QwenOllamaAdapter
+    from .qwen_replay import QwenReplayAdapter, V2ReplayScorer
+
+    qwen = QwenOllamaAdapter(model_id=source.source_model_id)
+    adapter = QwenReplayAdapter(qwen, scorer=V2ReplayScorer(store))
+    result = lab.execute(plan, adapters={source.source_model_id: adapter})
+    physical_calls = sum(int(item.metrics.get("physical_calls", 0) or 0) for item in result.replay_results)
+    return {
+        "study_id": study.study_id,
+        "mechanism_id": study.mechanism_id,
+        "replay_result_ids": [item.replay_result_id for item in result.replay_results],
+        "child_failure_snapshot_ids": list(result.child_failure_snapshot_ids),
+        "outcomes": [_mutation_outcome_payload(item) for item in result.outcomes],
+        "profile": _mutation_profile_payload(result.profile),
+        "promotion_event_id": (
+            None if result.promotion_event is None else result.promotion_event.promotion_event_id
+        ),
+        "next_plan": _mutation_plan_payload(study, result.next_plan),
+        "MODEL_CALLS": physical_calls,
+    }
+
+
 def main(
     argv: list[str] | None = None,
     *,
     live_executor=None,
     live_lab_executor=None,
     live_surface_executor=None,
+    live_mutation_executor=None,
 ) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -578,6 +760,9 @@ def main(
         return 2
     if args.command == "run-surface" and not args.allow_model_calls:
         print("run-surface requires explicit --allow-model-calls", file=sys.stderr)
+        return 2
+    if args.command == "run-mutations" and not args.allow_model_calls:
+        print("run-mutations requires explicit --allow-model-calls", file=sys.stderr)
         return 2
 
     if args.command == "validate":
@@ -708,6 +893,51 @@ def main(
         runner = _execute_qwen_surface if live_surface_executor is None else live_surface_executor
         try:
             payload = runner(store, causal_root, surface_root, args)
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        _print(payload)
+        return 0
+    if args.command in {"plan-mutations", "show-mutations"}:
+        causal_root = Path(args.causal_root)
+        surface_root = Path(args.surface_root)
+        mutation_root = Path(args.mutation_root)
+        try:
+            causal, surface, mutation = _build_mutation_stores(
+                store, causal_root, surface_root, mutation_root
+            )
+            study = _mutation_study(mutation, args.study_id)
+            if args.command == "plan-mutations":
+                payload = _mutation_plan_payload(study, MutationPlanner(mutation).plan_next(study))
+            else:
+                payload = {
+                    "study": _mutation_study_payload(study),
+                    "outcomes": [
+                        _mutation_outcome_payload(row)
+                        for row in mutation.outcomes(study.study_id)
+                    ],
+                    "profiles": [
+                        _mutation_profile_payload(row)
+                        for row in mutation.profiles(study.study_id)
+                    ],
+                    "replay_store_valid": store.validate().ok,
+                    "causal_store_valid": causal.validate().ok,
+                    "surface_store_valid": surface.validate().ok,
+                    "mutation_store_valid": mutation.validate().ok,
+                    "MODEL_CALLS": 0,
+                }
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        _print(payload)
+        return 0
+    if args.command == "run-mutations":
+        causal_root = Path(args.causal_root)
+        surface_root = Path(args.surface_root)
+        mutation_root = Path(args.mutation_root)
+        runner = _execute_qwen_mutations if live_mutation_executor is None else live_mutation_executor
+        try:
+            payload = runner(store, causal_root, surface_root, mutation_root, args)
         except (KeyError, TypeError, ValueError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
