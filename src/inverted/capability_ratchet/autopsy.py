@@ -12,7 +12,7 @@ from .causal_core import (
     FirstDivergence,
 )
 from .causal_store import CausalEvidenceStore
-from .core import FailureFixture
+from .core import FailureFixture, to_payload
 from .replay_store import ReplayStore
 
 
@@ -54,6 +54,12 @@ def _hypothesis(
         falsifier=falsifier,
         protected_exploration=protected,
     )
+
+
+def _scientific_fixture_payload(fixture: FailureFixture) -> dict[str, Any]:
+    payload = to_payload(fixture)
+    payload.pop("record_id", None)
+    return payload
 
 
 class DeterministicHypothesisGenerator:
@@ -277,8 +283,9 @@ class FailureAutopsy:
         if not validation.ok:
             raise ValueError("replay store integrity validation failed")
         current = self.replay_store.get_failure(fixture.failure_snapshot_id)
-        if current != fixture:
+        if _scientific_fixture_payload(current) != _scientific_fixture_payload(fixture):
             raise ValueError("autopsy fixture is not the active canonical replay failure")
+        fixture = current
 
         forensic = self._forensic(fixture)
         observation = self._observation(fixture, forensic)
