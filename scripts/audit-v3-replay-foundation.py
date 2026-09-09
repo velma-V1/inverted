@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import io
 import json
-import re
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -80,10 +80,8 @@ EXPECTED_TOMOGRAPHY_COMMANDS = {
     "show-tomography-assessment",
 }
 
-# These are inherited permanent-audit contracts, not comments. The wrapper
-# verifies every token is still present in the byte-preserved Stage-5/6 audit.
-# Keeping them visible here also preserves the historical audit module's public
-# source surface for tests and downstream tooling that inspect this file.
+# Inherited permanent-audit contracts. These remain visible in this wrapper
+# because older tests and downstream tooling inspect the current audit source.
 LEGACY_AUDIT_CONTRACT_TOKENS = (
     "plan-surface",
     "show-surface",
@@ -108,6 +106,9 @@ LEGACY_AUDIT_CONTRACT_TOKENS = (
     "stage6_protected_failure_veto_contract",
 )
 
+_FORBIDDEN_NETWORK_ROOTS = frozenset({"httpx", "requests", "socket", "urllib"})
+_FORBIDDEN_ADAPTER_NAMES = frozenset({"QwenOllamaAdapter", "QwenReplayAdapter"})
+
 
 def _load_legacy_module():
     spec = importlib.util.spec_from_file_location("_inverted_v3_legacy_audit", LEGACY_AUDIT)
@@ -118,14 +119,13 @@ def _load_legacy_module():
     return module
 
 
-# Preserve and extend the permanent audit module's historical public constants.
 _LEGACY_CONTRACT = _load_legacy_module()
 REQUIRED_EXPORTS = frozenset((*_LEGACY_CONTRACT.REQUIRED_EXPORTS, *REQUIRED_STAGE7_EXPORTS))
 REQUIRED_FILES = tuple(dict.fromkeys((*_LEGACY_CONTRACT.REQUIRED_FILES, *REQUIRED_STAGE7_FILES)))
 
 
 def _run_legacy(argv: list[str], repo: Path) -> tuple[int, dict[str, Any]]:
-    """Run the byte-preserved Stage-5/6 audit while redirecting its old CLI source check."""
+    """Run the byte-preserved Stage-5/6 audit against its original CLI source."""
     module = _load_legacy_module()
     original_read_text = Path.read_text
     legacy_cli = repo / "src/inverted/capability_ratchet/cli_legacy.py"
@@ -175,6 +175,36 @@ def _read(repo: Path, relative: str) -> str:
     return (repo / relative).read_text(encoding="utf-8")
 
 
+def _forbidden_live_code_refs(source: str) -> tuple[str, ...]:
+    """Return live transport references from Python syntax, ignoring prose/comments."""
+    tree = ast.parse(source)
+    hits: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                if root in _FORBIDDEN_NETWORK_ROOTS:
+                    hits.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            root = module.split(".", 1)[0]
+            if root in _FORBIDDEN_NETWORK_ROOTS:
+                hits.add(module or root)
+        elif isinstance(node, ast.Name) and node.id in _FORBIDDEN_ADAPTER_NAMES:
+            hits.add(node.id)
+    return tuple(sorted(hits))
+
+
+def _has_independent_tomography_executor(source: str) -> bool:
+    tree = ast.parse(source)
+    return any(
+        isinstance(node, ast.ClassDef)
+        and node.name.startswith("Tomography")
+        and node.name.endswith("Executor")
+        for node in ast.walk(tree)
+    )
+
+
 def _stage7_semantic_checks(repo: Path, replay_root: Path) -> tuple[list[str], dict[str, Any]]:
     findings: list[str] = []
 
@@ -214,35 +244,46 @@ def _stage7_semantic_checks(repo: Path, replay_root: Path) -> tuple[list[str], d
     if not stage7_cli_surface_contract:
         findings.append(f"Stage-7 safe CLI surface mismatch: commands={sorted(commands)} options={options}")
 
-    forbidden_live_tokens = (
-        "QwenOllamaAdapter",
-        "QwenReplayAdapter",
-        "httpx",
-        "requests.",
-        "urllib.request",
-        "socket.",
+    zero_call_sources = (cli_source, eligibility_source, planner_source)
+    zero_call_forbidden = tuple(
+        sorted({ref for source in zero_call_sources for ref in _forbidden_live_code_refs(source)})
     )
-    zero_call_sources = cli_source + eligibility_source + planner_source
     stage7_zero_call_plan_contract = (
         "MODEL_CALLS" in cli_source
         and "model_calls != 0" in planner_source
-        and not any(token in zero_call_sources for token in forbidden_live_tokens)
-        and "ReplayExecutor(" not in zero_call_sources
+        and not zero_call_forbidden
+        and all("ReplayExecutor(" not in source for source in zero_call_sources)
     )
     if not stage7_zero_call_plan_contract:
-        findings.append("Stage-7 scan/plan path can no longer be proven zero-call")
+        findings.append(
+            "Stage-7 scan/plan path can no longer be proven zero-call"
+            + (f": live refs={list(zero_call_forbidden)}" if zero_call_forbidden else "")
+        )
 
-    all_stage7_sources = "\n".join(
-        (core_source, eligibility_source, planner_source, replay_source, analysis_source, lab_source, store_source, cli_source)
+    all_stage7_sources = (
+        core_source,
+        eligibility_source,
+        planner_source,
+        replay_source,
+        analysis_source,
+        lab_source,
+        store_source,
+        cli_source,
     )
-    independent_executor = re.search(r"class\s+Tomography\w*Executor\b", all_stage7_sources)
+    stage7_live_refs = tuple(
+        sorted({ref for source in all_stage7_sources for ref in _forbidden_live_code_refs(source)})
+    )
+    independent_executor = any(_has_independent_tomography_executor(source) for source in all_stage7_sources)
     stage7_no_independent_executor_contract = (
-        independent_executor is None
+        not independent_executor
         and "ReplayExecutor(self.replay_store, adapters)" in lab_source
-        and not any(token in all_stage7_sources for token in forbidden_live_tokens)
+        and not stage7_live_refs
     )
     if not stage7_no_independent_executor_contract:
-        findings.append("Stage-7 introduced or can construct an independent/live executor or transport")
+        findings.append(
+            "Stage-7 introduced or can construct an independent/live executor or transport"
+            f": independent_executor={independent_executor}, live_refs={list(stage7_live_refs)}"
+        )
 
     stage7_canonical_replay_contract = (
         "ReplayRequest" in replay_source
