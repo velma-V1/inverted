@@ -80,6 +80,34 @@ EXPECTED_TOMOGRAPHY_COMMANDS = {
     "show-tomography-assessment",
 }
 
+# These are inherited permanent-audit contracts, not comments. The wrapper
+# verifies every token is still present in the byte-preserved Stage-5/6 audit.
+# Keeping them visible here also preserves the historical audit module's public
+# source surface for tests and downstream tooling that inspect this file.
+LEGACY_AUDIT_CONTRACT_TOKENS = (
+    "plan-surface",
+    "show-surface",
+    "run-surface",
+    "surface_core.py",
+    "surface_store.py",
+    "surface_evidence.py",
+    "surface_planner.py",
+    "surface_interventions.py",
+    "surface_analysis.py",
+    "surface_lab.py",
+    "MutationBootstrapPlan",
+    "MutationBootstrapResult",
+    "plan_eligible_mutations",
+    "mutation_bootstrap.py",
+    "stage6_axis_count",
+    "stage6_mutation_fixture_roundtrip",
+    "stage6_synthetic_fresh_sealed_count",
+    "stage6_certified_event_count",
+    "stage6_zero_call_plan_contract",
+    "stage6_auto_plan_contract",
+    "stage6_protected_failure_veto_contract",
+)
+
 
 def _load_legacy_module():
     spec = importlib.util.spec_from_file_location("_inverted_v3_legacy_audit", LEGACY_AUDIT)
@@ -88,6 +116,12 @@ def _load_legacy_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+# Preserve and extend the permanent audit module's historical public constants.
+_LEGACY_CONTRACT = _load_legacy_module()
+REQUIRED_EXPORTS = frozenset((*_LEGACY_CONTRACT.REQUIRED_EXPORTS, *REQUIRED_STAGE7_EXPORTS))
+REQUIRED_FILES = tuple(dict.fromkeys((*_LEGACY_CONTRACT.REQUIRED_FILES, *REQUIRED_STAGE7_FILES)))
 
 
 def _run_legacy(argv: list[str], repo: Path) -> tuple[int, dict[str, Any]]:
@@ -143,6 +177,12 @@ def _read(repo: Path, relative: str) -> str:
 
 def _stage7_semantic_checks(repo: Path, replay_root: Path) -> tuple[list[str], dict[str, Any]]:
     findings: list[str] = []
+
+    legacy_source = LEGACY_AUDIT.read_text(encoding="utf-8")
+    missing_legacy_tokens = [token for token in LEGACY_AUDIT_CONTRACT_TOKENS if token not in legacy_source]
+    if missing_legacy_tokens:
+        findings.append(f"inherited Stage-5/6 audit contract missing: {missing_legacy_tokens}")
+
     missing_exports = sorted(REQUIRED_STAGE7_EXPORTS - set(cr.__all__))
     if missing_exports:
         findings.append(f"Stage-7 public exports missing: {missing_exports}")
