@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import Mapping
 
 from .causal_core import InterventionDefinition
-from .core import FailureFixture, ReplayResult
+from .core import FailureFixture, Partition, ReplayResult
 from .replay import ReplayAdapter, ReplayExecutor
 from .replay_store import ReplayStore
 from .tomography_analysis import TomographyAnalyzer
@@ -78,14 +76,31 @@ class TomographyLab:
         *,
         skill_related_success_count: int = 0,
         external_supports_exhausted: bool = False,
+        evidence_status_by_probe: Mapping[str, str] | None = None,
+        evidence_provenance_refs_by_probe: Mapping[str, tuple[str, ...]] | None = None,
     ) -> TomographyStepResult:
         if not isinstance(study, TomographyStudy):
             raise TypeError("study must be TomographyStudy")
+        if study.partition in {Partition.FRESH, Partition.SEALED}:
+            raise ValueError("fresh/sealed tomography execution is forbidden")
         probes = tuple(probes)
         if tuple(item.probe_id for item in probes) != study.probe_ids:
             raise ValueError("executable probes must exactly match study probe_ids")
         if not adapters:
             raise ValueError("execute requires injected replay adapters")
+
+        statuses = {} if evidence_status_by_probe is None else dict(evidence_status_by_probe)
+        provenance = (
+            {} if evidence_provenance_refs_by_probe is None
+            else {key: tuple(value) for key, value in evidence_provenance_refs_by_probe.items()}
+        )
+        probe_ids = set(study.probe_ids)
+        unknown_status = set(statuses) - probe_ids
+        unknown_provenance = set(provenance) - probe_ids
+        if unknown_status or unknown_provenance:
+            unknown = tuple(sorted(unknown_status | unknown_provenance))
+            raise ValueError(f"evidence metadata references unknown tomography probes: {unknown}")
+
         if not self.replay_store.validate().ok:
             raise ValueError("replay store integrity validation failed")
         fixture = self.replay_store.get_failure(study.failure_snapshot_id)
@@ -108,6 +123,8 @@ class TomographyLab:
                 source_model_id=fixture.source_model_id,
                 source_model_digest=fixture.source_model_digest,
                 request_id=f"tomography-replay-{probe.probe_id}",
+                evidence_status=statuses.get(probe.probe_id, "NEW"),
+                evidence_provenance_refs=provenance.get(probe.probe_id, ()),
             )
             result = executor.execute(request)
             results.append(result)
