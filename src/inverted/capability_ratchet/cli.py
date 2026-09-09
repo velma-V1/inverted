@@ -31,6 +31,16 @@ def _parser(adders) -> argparse.ArgumentParser:
     return parser
 
 
+def _build_tomography_parser() -> argparse.ArgumentParser:
+    """Compatibility wrapper retained for the permanent Stage-7 audit contract."""
+    return _parser(add_tomography_parsers)
+
+
+def _build_compilation_parser() -> argparse.ArgumentParser:
+    """Compatibility wrapper retained for the permanent Stage-8 audit contract."""
+    return _parser(add_compilation_parsers)
+
+
 def main(
     argv: list[str] | None = None,
     *,
