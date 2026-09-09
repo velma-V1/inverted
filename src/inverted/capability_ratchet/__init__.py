@@ -84,6 +84,13 @@ from .tomography_core import (
     TomographyStopReason,
     TomographyStudy,
 )
+from .tomography_eligibility import (
+    TomographyAutoPlanResult,
+    TomographyEligibilityResult,
+    TomographyEligibilityStatus,
+    classify_tomography_eligibility,
+    plan_eligible_tomography,
+)
 from .tomography_lab import TomographyLab, TomographyStepResult
 from .tomography_planner import TomographyPlan, TomographyPlanner
 from .tomography_replay import TomographyReplayCompiler
@@ -109,12 +116,14 @@ __all__ = [
     "SurfaceEvidenceKind", "SurfaceEvidenceStore", "SurfaceInterventionCompiler", "SurfaceObservation",
     "SurfacePlan", "SurfacePlanner", "SurfacePoint", "SurfaceStepResult", "SurfaceStoreValidation",
     "SurfaceStudy", "SupersessionRecord", "TailoredInterventionGenerator", "TomographyAnalyzer",
-    "TomographyAssessment", "TomographyAxis", "TomographyDisposition", "TomographyEvidenceStore",
+    "TomographyAssessment", "TomographyAutoPlanResult", "TomographyAxis", "TomographyDisposition",
+    "TomographyEligibilityResult", "TomographyEligibilityStatus", "TomographyEvidenceStore",
     "TomographyLab", "TomographyOutcome", "TomographyPlan", "TomographyPlanner", "TomographyPolicy",
     "TomographyProbe", "TomographyProbeSpec", "TomographyProfile", "TomographyReplayCompiler",
     "TomographyStatus", "TomographyStepResult", "TomographyStopReason", "TomographyStoreValidation",
     "TomographyStudy", "TournamentBranch", "TournamentPlan", "TournamentPlanner", "V2EvidenceSource",
-    "V2ReplayScorer", "build_ablations", "build_failure_fixture", "from_payload",
-    "plan_eligible_mutations", "plan_eligible_surfaces", "preview_v2_failures", "seed_v2_failures",
-    "select_failures", "select_surface_study", "semantic_contract_hash", "to_payload",
+    "V2ReplayScorer", "build_ablations", "build_failure_fixture", "classify_tomography_eligibility",
+    "from_payload", "plan_eligible_mutations", "plan_eligible_surfaces", "plan_eligible_tomography",
+    "preview_v2_failures", "seed_v2_failures", "select_failures", "select_surface_study",
+    "semantic_contract_hash", "to_payload",
 ]
