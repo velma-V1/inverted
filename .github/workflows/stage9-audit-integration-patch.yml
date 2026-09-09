@@ -1,0 +1,76 @@
+name: stage9-audit-integration-patch
+
+on:
+  push:
+    branches:
+      - build/qwen-thinking-tuning
+    paths:
+      - .github/workflows/stage9-audit-integration-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Integrate Stage-9 audit into permanent replay audit
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/audit-v3-replay-foundation.py')
+          text = path.read_text(encoding='utf-8')
+
+          import_line = 'from inverted.capability_ratchet.stage9_audit import stage9_semantic_checks as _stage9_semantic_checks\n'
+          anchor = 'import inverted.capability_ratchet as cr\n'
+          if import_line not in text:
+              if anchor not in text:
+                  raise SystemExit('Stage-9 audit import anchor missing')
+              text = text.replace(anchor, anchor + import_line, 1)
+
+          contract = '''\n# Stage-9 permanent-audit surface.  These tokens remain in the repository-wide\n# audit so omission tests can detect silent removal without importing helper code.\nSTAGE9_AUDIT_CONTRACT_TOKENS = (\n    "fine_tuning_core.py",\n    "fine_tuning_store.py",\n    "fine_tuning_eligibility.py",\n    "fine_tuning_dataset.py",\n    "fine_tuning_planner.py",\n    "fine_tuning_analysis.py",\n    "fine_tuning_lab.py",\n    "fine_tuning_cli.py",\n    "test_capability_ratchet_fine_tuning_cli.py",\n    ".github/workflows/v3-stage9-completion.yml",\n    "stage9_cli_surface_contract",\n    "stage9_zero_call_contract",\n    "stage9_no_independent_trainer_contract",\n    "stage9_model_internal_owner_contract",\n    "stage9_cheaper_owner_veto_contract",\n    "stage9_recurrence_contract",\n    "stage9_stage8_generalization_gate",\n    "stage9_protected_partition_veto_contract",\n    "stage9_train_eval_disjoint_contract",\n    "stage9_leakage_veto_contract",\n    "stage9_observable_target_contract",\n    "stage9_regression_negative_transfer_contract",\n    "stage9_qualification_not_training_contract",\n    "stage9_not_authorized_contract",\n    "stage9_stage11_confirmation_contract",\n    "stage9_certified_event_count",\n)\n'''
+          contract_anchor = '\nLEGACY_AUDIT = Path(__file__).with_name("audit-v3-replay-foundation-legacy.py")\n'
+          if 'STAGE9_AUDIT_CONTRACT_TOKENS = (' not in text:
+              if contract_anchor not in text:
+                  raise SystemExit('Stage-9 contract anchor missing')
+              text = text.replace(contract_anchor, contract + contract_anchor, 1)
+
+          old = '    stage8_findings, stage8_payload = _stage8_semantic_checks(repo, Path(args.replay_root))\n    legacy_findings = list(payload.get("forgotten_items", ()))\n    combined = legacy_findings + stage7_findings + stage8_findings\n'
+          new = '    stage8_findings, stage8_payload = _stage8_semantic_checks(repo, Path(args.replay_root))\n    stage9_findings, stage9_payload = _stage9_semantic_checks(repo, Path(args.replay_root))\n    legacy_findings = list(payload.get("forgotten_items", ()))\n    combined = legacy_findings + stage7_findings + stage8_findings + stage9_findings\n'
+          if 'stage9_findings, stage9_payload = _stage9_semantic_checks' not in text:
+              if old not in text:
+                  raise SystemExit('Stage-9 main findings anchor missing')
+              text = text.replace(old, new, 1)
+
+          old = '    payload.update(stage7_payload)\n    payload.update(stage8_payload)\n    payload["forgotten_items"] = combined\n'
+          new = '    payload.update(stage7_payload)\n    payload.update(stage8_payload)\n    payload.update(stage9_payload)\n    payload["forgotten_items"] = combined\n'
+          if 'payload.update(stage9_payload)' not in text:
+              if old not in text:
+                  raise SystemExit('Stage-9 payload anchor missing')
+              text = text.replace(old, new, 1)
+
+          old = '    return 0 if legacy_rc == 0 and not stage7_findings and not stage8_findings else 1\n'
+          new = '    return 0 if legacy_rc == 0 and not stage7_findings and not stage8_findings and not stage9_findings else 1\n'
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('Stage-9 return anchor missing')
+
+          path.write_text(text, encoding='utf-8', newline='\n')
+          PY
+
+      - name: Commit permanent audit integration and remove patch workflow
+        shell: bash
+        run: |
+          rm .github/workflows/stage9-audit-integration-patch.yml
+          git config user.name "velma-V1"
+          git config user.email "300250680+velma-V1@users.noreply.github.com"
+          git add scripts/audit-v3-replay-foundation.py .github/workflows/stage9-audit-integration-patch.yml
+          git diff --cached --check
+          git commit -m "test: close Stage-9 permanent scientific audit"
+          git push origin HEAD:build/qwen-thinking-tuning
