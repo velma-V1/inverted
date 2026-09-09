@@ -54,10 +54,9 @@ def outcome(axis=TomographyAxis.TOOL_AVAILABILITY, success=True, **changes):
 
 def test_stage7_contract_has_exact_axes_and_never_certifies():
     assert [x.value for x in TomographyAxis] == [
-        "TOOL_AVAILABILITY", "TOOL_SELECTION", "TOOL_ARGUMENTS", "TOOL_RESULT_INTERPRETATION",
-        "VERIFIER_FEEDBACK", "TARGETED_RECOVERY", "SKILL_TRIGGER", "SKILL_PROCEDURE",
-        "SKILL_EVIDENCE_REQUIREMENT", "SKILL_VERIFICATION_RULE", "GENERIC_RETRY_CONTROL",
-        "STRONGER_MODEL_ESCALATION_CONTROL",
+        "TOOL_AVAILABILITY", "TOOL_SELECTION", "TOOL_ARGUMENTS", "TOOL_EXECUTION_RESULT",
+        "TOOL_RESULT_INTERPRETATION", "VERIFIER_VISIBILITY", "VERIFIER_FEEDBACK", "TARGETED_RECOVERY",
+        "GENERIC_RETRY_CONTROL", "SKILL_PROCEDURE", "SKILL_TRIGGER", "ESCALATION_REFERENCE",
     ]
     with pytest.raises(ValueError, match="cannot certify"):
         TomographyProfile(profile_id="profile-1", study_id="study-1",
