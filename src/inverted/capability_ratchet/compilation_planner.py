@@ -83,10 +83,13 @@ class CompilationPlanner:
         else:
             disposition = CompilationDisposition.COMPILED
 
-        return CompilationPlan.create(
+        plan = CompilationPlan.create(
             candidate_id=candidate.candidate_id,
             selected_kind=selected,
             rejected_cheaper_kinds=rejected_cheaper,
             evidence_refs=candidate.evidence_refs,
             expected_disposition=disposition,
         )
+        if plan.projected_model_calls != 0:
+            raise AssertionError("Stage-8 planner produced a non-zero model-call plan")
+        return plan
