@@ -1,0 +1,231 @@
+name: v3-stage7-completion
+
+on:
+  push:
+    branches:
+      - build/qwen-thinking-tuning
+    paths:
+      - .gitignore
+      - .github/workflows/v3-stage7-completion.yml
+      - docs/superpowers/specs/2026-09-08-v3-stage7-tool-skill-verification-recovery-tomography-design.md
+      - docs/superpowers/plans/2026-09-08-v3-stage7-tool-skill-verification-recovery-tomography.md
+      - src/inverted/capability_ratchet/**
+      - scripts/audit-v3-replay-foundation.py
+      - scripts/audit-v3-replay-foundation-legacy.py
+      - tests/test_capability_ratchet_*.py
+      - tests/test_universal_tuning_*.py
+      - tests/test_qwen_thinking_tuning.py
+      - live-evidence/qwen-thinking-tuning-v2-real-20260907/**
+      - src/inverted/evidence_privacy.py
+      - evidence/PRIVACY-TRACKED-SCAN.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage7-platform-matrix:
+    name: stage7-${{ matrix.os }}-py${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.11"
+          - os: ubuntu-latest
+            python: "3.12"
+          - os: ubuntu-latest
+            python: "3.14"
+          - os: windows-latest
+            python: "3.14"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Run dedicated Stage-7 tomography suite
+        run: python -m pytest tests/test_capability_ratchet_tomography_*.py -q
+      - name: Run full capability-ratchet suite
+        run: python -m pytest tests/test_capability_ratchet_*.py -q
+
+  stage7-zero-call-completion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+
+      - name: Verify tracked evidence privacy
+        run: >-
+          python -m inverted.evidence_privacy check
+          --root evidence
+          --scan-out /tmp/stage7-privacy.json
+
+      - name: Run dedicated Stage-7 tomography suite
+        run: python -m pytest tests/test_capability_ratchet_tomography_*.py -q
+
+      - name: Run full capability-ratchet suite
+        run: python -m pytest tests/test_capability_ratchet_*.py -q
+
+      - name: Run explicit V2 regression suite
+        run: >-
+          python -m pytest
+          tests/test_universal_tuning_end_to_end.py
+          tests/test_universal_tuning_qwen_cli.py
+          tests/test_universal_tuning_runner.py
+          tests/test_universal_tuning_scheduler.py
+          tests/test_universal_tuning_scoring.py
+          tests/test_universal_tuning_statistics.py
+          tests/test_universal_tuning_tasks.py
+          tests/test_universal_tuning_v1_audit.py
+          tests/test_qwen_thinking_tuning.py
+          -q -k
+          "not test_powershell_launcher_dry_run_executes_repo_local_module and not test_powershell_launcher_uses_v2_default_dry_run"
+
+      - name: Run full repository regression on Linux
+        run: >-
+          python -m pytest -q -k
+          "not test_powershell_launcher_dry_run_executes_repo_local_module and not test_powershell_launcher_uses_v2_default_dry_run"
+
+      - name: Seed canonical historical replay corpus with zero inference
+        shell: bash
+        run: |
+          rm -rf /tmp/v3-stage7-completion
+          mkdir -p \
+            /tmp/v3-stage7-completion/replay \
+            /tmp/v3-stage7-completion/causal \
+            /tmp/v3-stage7-completion/tomography
+          python -m inverted.capability_ratchet.cli seed-v2 \
+            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+            --replay-root /tmp/v3-stage7-completion/replay \
+            > /tmp/v3-stage7-completion/seed.json
+
+      - name: Run permanent replay Stage-5/6/7 omission audit
+        shell: bash
+        run: |
+          python scripts/audit-v3-replay-foundation.py \
+            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+            --replay-root /tmp/v3-stage7-completion/replay \
+            > /tmp/v3-stage7-completion/audit.json
+
+      - name: Scan historical Stage-7 eligibility with zero model calls
+        shell: bash
+        run: |
+          python -m inverted.capability_ratchet.cli scan-tomography-eligibility \
+            --replay-root /tmp/v3-stage7-completion/replay \
+            --causal-root /tmp/v3-stage7-completion/causal \
+            --tomography-root /tmp/v3-stage7-completion/tomography \
+            > /tmp/v3-stage7-completion/historical-stage7-scan.json
+
+      - name: Plan historical Stage-7 work with zero model calls
+        shell: bash
+        run: |
+          python -m inverted.capability_ratchet.cli plan-tomography \
+            --replay-root /tmp/v3-stage7-completion/replay \
+            --causal-root /tmp/v3-stage7-completion/causal \
+            --tomography-root /tmp/v3-stage7-completion/tomography \
+            --auto-eligible \
+            > /tmp/v3-stage7-completion/historical-stage7-plan.json
+
+      - name: Enforce Stage-7 completion invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/v3-stage7-completion')
+          seed = json.loads((root / 'seed.json').read_text(encoding='utf-8'))
+          audit = json.loads((root / 'audit.json').read_text(encoding='utf-8'))
+          scan = json.loads((root / 'historical-stage7-scan.json').read_text(encoding='utf-8'))
+          plan = json.loads((root / 'historical-stage7-plan.json').read_text(encoding='utf-8'))
+          privacy = json.loads(Path('/tmp/stage7-privacy.json').read_text(encoding='utf-8'))
+
+          assert seed['MODEL_CALLS'] == 0
+          assert audit['MODEL_CALLS'] == 0
+          assert scan['MODEL_CALLS'] == 0
+          assert plan['MODEL_CALLS'] == 0
+          assert audit['forgotten_count'] == 0, audit.get('forgotten_items')
+          assert audit['orphan_asset_count'] == 0
+          assert audit['stage7_cli_surface_contract'] is True
+          assert audit['stage7_zero_call_plan_contract'] is True
+          assert audit['stage7_no_independent_executor_contract'] is True
+          assert audit['stage7_canonical_replay_contract'] is True
+          assert audit['stage7_generic_third_retry_forbidden'] is True
+          assert audit['stage7_targeted_recovery_state_contract'] is True
+          assert audit['stage7_tool_axis_contract'] is True
+          assert audit['stage7_verifier_recovery_separation'] is True
+          assert audit['stage7_protected_partition_veto_contract'] is True
+          assert audit['stage7_certified_event_count'] == 0
+          assert audit['stage7_disposition_promotion_separation'] is True
+          assert audit['stage7_stage456_feedback_gate'] is True
+          assert privacy['privacy_ok'] is True
+          assert privacy['total_matches'] == 0
+
+          assert scan['status'] == 'TOMOGRAPHY_ELIGIBILITY_SCAN'
+          assert isinstance(scan['rows'], list)
+          assert plan['status'] in {
+              'NO_ELIGIBLE_TOMOGRAPHY_STUDIES',
+              'TOMOGRAPHY_PLAN_READY',
+              'ALL_STAGE7_DECISIONS_ALREADY_ANSWERED',
+              'INSUFFICIENT_REPLAY_STATE',
+              'REQUIRES_PRIOR_LOCALIZATION',
+          }
+
+          summary = {
+              'STAGE7_COMPLETION': 'PASS',
+              'MODEL_CALLS': 0,
+              'eligible_studies': len(scan['rows']),
+              'historical_stage7_status': plan['status'],
+              'stage7_cli_surface_contract': audit['stage7_cli_surface_contract'],
+              'stage7_zero_call_plan_contract': audit['stage7_zero_call_plan_contract'],
+              'stage7_no_independent_executor_contract': audit['stage7_no_independent_executor_contract'],
+              'stage7_canonical_replay_contract': audit['stage7_canonical_replay_contract'],
+              'stage7_generic_third_retry_forbidden': audit['stage7_generic_third_retry_forbidden'],
+              'stage7_targeted_recovery_state_contract': audit['stage7_targeted_recovery_state_contract'],
+              'stage7_tool_axis_contract': audit['stage7_tool_axis_contract'],
+              'stage7_verifier_recovery_separation': audit['stage7_verifier_recovery_separation'],
+              'stage7_protected_partition_veto_contract': audit['stage7_protected_partition_veto_contract'],
+              'stage7_certified_event_count': audit['stage7_certified_event_count'],
+              'stage7_disposition_promotion_separation': audit['stage7_disposition_promotion_separation'],
+              'stage7_stage456_feedback_gate': audit['stage7_stage456_feedback_gate'],
+              'forgotten_count': audit['forgotten_count'],
+              'orphan_assets': audit['orphan_asset_count'],
+              'privacy_matches': privacy['total_matches'],
+          }
+          (root / 'STAGE7-COMPLETION.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(summary, sort_keys=True, separators=(',', ':')))
+          PY
+
+      - name: Verify tracked tree remains clean
+        shell: bash
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          status="$(git status --porcelain)"
+          printf '%s\n' "$status"
+          test -z "$status"
+
+      - name: Upload Stage-7 zero-call completion evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v3-stage7-completion-evidence
+          path: |
+            /tmp/v3-stage7-completion/seed.json
+            /tmp/v3-stage7-completion/audit.json
+            /tmp/v3-stage7-completion/historical-stage7-scan.json
+            /tmp/v3-stage7-completion/historical-stage7-plan.json
+            /tmp/v3-stage7-completion/STAGE7-COMPLETION.json
+            /tmp/stage7-privacy.json
+          if-no-files-found: error
