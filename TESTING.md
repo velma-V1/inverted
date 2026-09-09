@@ -190,3 +190,26 @@ Choose non-saturated cases/regions for uplift measurement. A raw baseline at or 
 Fresh and sealed evidence must remain independent from discovery/tuning. A treatment discovered from historical or development data may use that evidence to choose where to look, but not as its independent confirmation.
 
 A model-specific surface may legitimately produce multiple conditional recipes rather than one winner. Promotion should therefore identify applicability predicates and switch conditions, not force a universal bundle.
+
+### Mandatory attempt-level evidence
+
+Every new model-uplift attempt must preserve enough first-class evidence to determine not only **what happened**, but **what changed, whether the result repeated, what caused the improvement or degradation, and what the recovery/performance cost was**.
+
+At minimum, where applicable, record:
+
+1. **Replication identity** — `trial_group_id` and `replicate_index` or equivalent stable fields tying repeated matched attempts together.
+2. **Attempt lineage** — `parent_attempt_id` or equivalent, with the exact support/intervention delta from the parent attempt.
+3. **Support recipe** — operator/ingredient identity, dose/amount, order/sequence, timing, placement, trigger/state predicate, and whether support was added, removed, refreshed, repeated, or reformulated.
+4. **Comparison/ablation identity** — stable linkage among RAW, supported, reduced-support, counterfactual, and ablation attempts that are intended to support a causal comparison.
+5. **Stage-level timing** — separate queue/scheduling, model inference, tool, verifier/oracle, orchestration, and retry/recovery time where those stages exist; preserve total wall-clock time as well.
+6. **Recovery cost** — additional calls/actions, input/output tokens, elapsed time, retries, and other resource burden incurred after the initial failure or rejection.
+7. **Overall termination reason** — e.g. solved, budget exhausted, timeout, verifier rejection, tool failure, retry limit, policy/authority stop, or other protocol-defined terminal state. A provider/model `finish_reason` alone is insufficient.
+8. **Human intervention events** — any human retry, edit, selection, correction, override, adjudication, approval, or other rescue that could affect the result or autonomy claim.
+9. **Immutable run manifest** — repository commit SHA, frozen config/spec hash, task/fixture version or content hash, exact model artifact/version, runtime/provider version where knowable, and harness/test-runner version.
+10. **Canonical seed bundle** — task/case seed, sampling/generation seed where exposed, injected-fault seed, auditor/router seed, and any other randomization source capable of changing the attempt trajectory.
+
+Experimental designs should also explicitly label and preserve, when they are varied or decision-relevant: error/failure category; latency/token/action-budget condition; context-pressure condition; state/history condition; domain/task family; operator timing/placement; progressive-support state transitions; broader order/dose combinations; cross-context generalization; cross-model transfer; and curriculum/learning-order effects.
+
+These fields are evidence primitives, not a requirement to redundantly persist every derived statistic. Reliability rates, confidence intervals, throughput scores, Pareto surfaces, frontier estimates, and minimum-equivalent-support conclusions should be derived from the preserved attempt evidence whenever practical.
+
+Do not duplicate immutable assets already preserved elsewhere in the evidence architecture. Existing exact model-visible state, forensic original response/raw output, exposed reasoning where available, oracle/scoring material, token/call telemetry, and replay artifacts should be referenced by stable content-addressed identity rather than copied unnecessarily.
