@@ -1,0 +1,273 @@
+name: v3-stage8-completion
+
+on:
+  push:
+    branches:
+      - build/qwen-thinking-tuning
+    paths:
+      - .gitignore
+      - .github/workflows/v3-stage8-completion.yml
+      - docs/superpowers/specs/2026-09-08-v3-stage8-capability-compilation-design.md
+      - docs/superpowers/plans/2026-09-08-v3-stage8-capability-compilation.md
+      - src/inverted/capability_ratchet/**
+      - scripts/audit-v3-replay-foundation.py
+      - scripts/audit-v3-replay-foundation-legacy.py
+      - tests/test_capability_ratchet_*.py
+      - tests/test_universal_tuning_*.py
+      - tests/test_qwen_thinking_tuning.py
+      - live-evidence/qwen-thinking-tuning-v2-real-20260907/**
+      - src/inverted/evidence_privacy.py
+      - evidence/PRIVACY-TRACKED-SCAN.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage8-platform-matrix:
+    name: stage8-${{ matrix.os }}-py${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.11"
+          - os: ubuntu-latest
+            python: "3.12"
+          - os: ubuntu-latest
+            python: "3.14"
+          - os: windows-latest
+            python: "3.14"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+      - name: Run dedicated Stage-8 compilation suite
+        run: python -m pytest tests -q -k compilation
+      - name: Run full capability-ratchet suite
+        run: python -m pytest tests -q -k capability_ratchet
+
+  stage8-zero-call-completion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+
+      - name: Verify tracked evidence privacy
+        run: >-
+          python -m inverted.evidence_privacy check
+          --root evidence
+          --scan-out /tmp/stage8-privacy.json
+
+      - name: Run dedicated Stage-8 compilation suite
+        run: python -m pytest tests/test_capability_ratchet_compilation_*.py -q
+
+      - name: Run full capability-ratchet suite
+        run: python -m pytest tests/test_capability_ratchet_*.py -q
+
+      - name: Run explicit V2 regression suite
+        run: >-
+          python -m pytest
+          tests/test_universal_tuning_end_to_end.py
+          tests/test_universal_tuning_qwen_cli.py
+          tests/test_universal_tuning_runner.py
+          tests/test_universal_tuning_scheduler.py
+          tests/test_universal_tuning_scoring.py
+          tests/test_universal_tuning_statistics.py
+          tests/test_universal_tuning_tasks.py
+          tests/test_universal_tuning_v1_audit.py
+          tests/test_qwen_thinking_tuning.py
+          -q -k
+          "not test_powershell_launcher_dry_run_executes_repo_local_module and not test_powershell_launcher_uses_v2_default_dry_run"
+
+      - name: Run full repository regression on Linux
+        run: >-
+          python -m pytest -q -k
+          "not test_powershell_launcher_dry_run_executes_repo_local_module and not test_powershell_launcher_uses_v2_default_dry_run"
+
+      - name: Seed canonical historical replay corpus with zero inference
+        shell: bash
+        run: |
+          rm -rf /tmp/v3-stage8-completion
+          mkdir -p \
+            /tmp/v3-stage8-completion/replay \
+            /tmp/v3-stage8-completion/causal \
+            /tmp/v3-stage8-completion/surface \
+            /tmp/v3-stage8-completion/mutation \
+            /tmp/v3-stage8-completion/tomography \
+            /tmp/v3-stage8-completion/compilation \
+            /tmp/v3-stage8-completion/catalog
+          python -m inverted.capability_ratchet.cli seed-v2 \
+            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+            --replay-root /tmp/v3-stage8-completion/replay \
+            > /tmp/v3-stage8-completion/seed.json
+
+      - name: Run permanent replay Stage-5/6/7/8 omission audit
+        shell: bash
+        run: |
+          python scripts/audit-v3-replay-foundation.py \
+            --source live-evidence/qwen-thinking-tuning-v2-real-20260907 \
+            --replay-root /tmp/v3-stage8-completion/replay \
+            > /tmp/v3-stage8-completion/audit.json
+
+      - name: Scan historical Stage-8 eligibility with zero model calls
+        shell: bash
+        run: |
+          python -m inverted.capability_ratchet.cli scan-compilation-eligibility \
+            --replay-root /tmp/v3-stage8-completion/replay \
+            --causal-root /tmp/v3-stage8-completion/causal \
+            --surface-root /tmp/v3-stage8-completion/surface \
+            --mutation-root /tmp/v3-stage8-completion/mutation \
+            --tomography-root /tmp/v3-stage8-completion/tomography \
+            --compilation-root /tmp/v3-stage8-completion/compilation \
+            > /tmp/v3-stage8-completion/historical-stage8-scan.json
+
+      - name: Plan historical Stage-8 work with zero model calls
+        shell: bash
+        run: |
+          python -m inverted.capability_ratchet.cli plan-compilation \
+            --replay-root /tmp/v3-stage8-completion/replay \
+            --causal-root /tmp/v3-stage8-completion/causal \
+            --surface-root /tmp/v3-stage8-completion/surface \
+            --mutation-root /tmp/v3-stage8-completion/mutation \
+            --tomography-root /tmp/v3-stage8-completion/tomography \
+            --compilation-root /tmp/v3-stage8-completion/compilation \
+            --auto-eligible \
+            > /tmp/v3-stage8-completion/historical-stage8-plan.json
+
+      - name: Export deterministic Stage-8 capability catalog
+        shell: bash
+        run: |
+          python -m inverted.capability_ratchet.cli export-compiled-capabilities \
+            --replay-root /tmp/v3-stage8-completion/replay \
+            --causal-root /tmp/v3-stage8-completion/causal \
+            --surface-root /tmp/v3-stage8-completion/surface \
+            --mutation-root /tmp/v3-stage8-completion/mutation \
+            --tomography-root /tmp/v3-stage8-completion/tomography \
+            --compilation-root /tmp/v3-stage8-completion/compilation \
+            --output /tmp/v3-stage8-completion/catalog/compiled-capabilities.json \
+            > /tmp/v3-stage8-completion/catalog-command.json
+
+      - name: Enforce Stage-8 completion invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/v3-stage8-completion')
+          seed = json.loads((root / 'seed.json').read_text(encoding='utf-8'))
+          audit = json.loads((root / 'audit.json').read_text(encoding='utf-8'))
+          scan = json.loads((root / 'historical-stage8-scan.json').read_text(encoding='utf-8'))
+          plan = json.loads((root / 'historical-stage8-plan.json').read_text(encoding='utf-8'))
+          catalog_command = json.loads((root / 'catalog-command.json').read_text(encoding='utf-8'))
+          catalog = json.loads((root / 'catalog/compiled-capabilities.json').read_text(encoding='utf-8'))
+          privacy = json.loads(Path('/tmp/stage8-privacy.json').read_text(encoding='utf-8'))
+
+          assert seed['MODEL_CALLS'] == 0
+          assert audit['MODEL_CALLS'] == 0
+          assert scan['MODEL_CALLS'] == 0
+          assert plan['MODEL_CALLS'] == 0
+          assert catalog_command['MODEL_CALLS'] == 0
+          assert catalog['MODEL_CALLS'] == 0
+          assert audit['forgotten_count'] == 0, audit.get('forgotten_items')
+          assert audit['orphan_asset_count'] == 0
+          assert audit['stage8_cli_surface_contract'] is True
+          assert audit['stage8_zero_call_contract'] is True
+          assert audit['stage8_no_independent_executor_contract'] is True
+          assert audit['stage8_owner_order_contract'] is True
+          assert audit['stage8_instance_patch_veto_contract'] is True
+          assert audit['stage8_stage456_feedback_gate'] is True
+          assert audit['stage8_protected_partition_veto_contract'] is True
+          assert audit['stage8_cheapest_owner_contract'] is True
+          assert audit['stage8_observable_trigger_contract'] is True
+          assert audit['stage8_negative_transfer_contract'] is True
+          assert audit['stage8_version_rollback_contract'] is True
+          assert audit['stage8_deployment_veto_contract'] is True
+          assert audit['stage8_deterministic_catalog_contract'] is True
+          assert audit['stage8_source_reference_contract'] is True
+          assert audit['stage8_certified_event_count'] == 0
+          assert privacy['privacy_ok'] is True
+          assert privacy['total_matches'] == 0
+
+          assert scan['status'] == 'COMPILATION_ELIGIBILITY_SCAN'
+          assert isinstance(scan['rows'], list)
+          assert plan['status'] in {
+              'NO_ELIGIBLE_COMPILATION_CANDIDATES',
+              'COMPILATION_PLAN_READY',
+              'ALL_ELIGIBLE_CAPABILITIES_COMPILED',
+              'REQUIRES_STAGE456_FEEDBACK',
+              'INSUFFICIENT_GENERALIZATION_EVIDENCE',
+          }
+          assert isinstance(plan['eligible_candidate_ids'], list)
+          assert isinstance(plan['plans'], list)
+          assert isinstance(catalog['capabilities'], list)
+          assert catalog_command['catalog_hash'] == catalog['catalog_hash']
+          assert isinstance(catalog['catalog_hash'], str) and len(catalog['catalog_hash']) == 64
+
+          summary = {
+              'STAGE8_COMPLETION': 'PASS',
+              'MODEL_CALLS': 0,
+              'eligible_candidates': len(plan['eligible_candidate_ids']),
+              'historical_stage8_status': plan['status'],
+              'compiled_capabilities': len(catalog['capabilities']),
+              'catalog_hash': catalog['catalog_hash'],
+              'stage8_cli_surface_contract': audit['stage8_cli_surface_contract'],
+              'stage8_zero_call_contract': audit['stage8_zero_call_contract'],
+              'stage8_no_independent_executor_contract': audit['stage8_no_independent_executor_contract'],
+              'stage8_owner_order_contract': audit['stage8_owner_order_contract'],
+              'stage8_instance_patch_veto_contract': audit['stage8_instance_patch_veto_contract'],
+              'stage8_stage456_feedback_gate': audit['stage8_stage456_feedback_gate'],
+              'stage8_protected_partition_veto_contract': audit['stage8_protected_partition_veto_contract'],
+              'stage8_cheapest_owner_contract': audit['stage8_cheapest_owner_contract'],
+              'stage8_observable_trigger_contract': audit['stage8_observable_trigger_contract'],
+              'stage8_negative_transfer_contract': audit['stage8_negative_transfer_contract'],
+              'stage8_version_rollback_contract': audit['stage8_version_rollback_contract'],
+              'stage8_deployment_veto_contract': audit['stage8_deployment_veto_contract'],
+              'stage8_deterministic_catalog_contract': audit['stage8_deterministic_catalog_contract'],
+              'stage8_source_reference_contract': audit['stage8_source_reference_contract'],
+              'stage8_certified_event_count': audit['stage8_certified_event_count'],
+              'forgotten_count': audit['forgotten_count'],
+              'orphan_assets': audit['orphan_asset_count'],
+              'privacy_matches': privacy['total_matches'],
+          }
+          (root / 'STAGE8-COMPLETION.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(summary, sort_keys=True, separators=(',', ':')))
+          PY
+
+      - name: Verify tracked tree remains clean
+        shell: bash
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          status="$(git status --porcelain)"
+          printf '%s\n' "$status"
+          test -z "$status"
+
+      - name: Upload Stage-8 zero-call completion evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v3-stage8-completion-evidence
+          path: |
+            /tmp/v3-stage8-completion/seed.json
+            /tmp/v3-stage8-completion/audit.json
+            /tmp/v3-stage8-completion/historical-stage8-scan.json
+            /tmp/v3-stage8-completion/historical-stage8-plan.json
+            /tmp/v3-stage8-completion/catalog-command.json
+            /tmp/v3-stage8-completion/catalog/compiled-capabilities.json
+            /tmp/v3-stage8-completion/STAGE8-COMPLETION.json
+            /tmp/stage8-privacy.json
+          if-no-files-found: error
