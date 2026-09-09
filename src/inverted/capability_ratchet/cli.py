@@ -20,6 +20,13 @@ def __getattr__(name: str):
     return getattr(_legacy, name)
 
 
+def _forward_legacy_overrides() -> None:
+    """Forward test/integration overrides applied through the historical cli module."""
+    for name, value in tuple(globals().items()):
+        if name.startswith("_") and not name.startswith("__") and hasattr(_legacy, name):
+            setattr(_legacy, name, value)
+
+
 def _build_tomography_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="inverted.capability_ratchet")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -37,6 +44,7 @@ def main(
 ) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     if not raw or raw[0] not in TOMOGRAPHY_COMMANDS:
+        _forward_legacy_overrides()
         return _legacy.main(
             argv,
             live_executor=live_executor,
