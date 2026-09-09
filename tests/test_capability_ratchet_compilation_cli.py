@@ -35,8 +35,8 @@ def _roots(tmp_path):
     replay = roots["replay"]
     replay.mkdir(parents=True, exist_ok=True)
     (replay / "TEST_REPLAY.jsonl").write_bytes(b"")
-    (replay / "TEST_REPLAY.sha256").write_text(
-        hashlib.sha256(b"").hexdigest() + "\n", encoding="ascii"
+    (replay / "TEST_REPLAY.sha256").write_bytes(
+        (hashlib.sha256(b"").hexdigest() + "\n").encode("ascii")
     )
     return roots
 
