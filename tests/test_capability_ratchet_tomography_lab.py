@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from inverted.capability_ratchet.causal_core import InterventionDefinition, InterventionKind
-from inverted.capability_ratchet.core import Partition, ReplayMode
+from inverted.capability_ratchet.core import FailureFixture, Partition, ReplayMode
+from inverted.capability_ratchet.replay_store import ReplayStore
 from inverted.capability_ratchet.tomography_core import (
     TomographyAxis,
     TomographyProbe,
@@ -13,37 +14,68 @@ from inverted.capability_ratchet.tomography_core import (
     TomographyStudy,
 )
 from inverted.capability_ratchet.tomography_lab import TomographyLab
+from inverted.capability_ratchet.tomography_store import TomographyEvidenceStore
 
 
 SHA = "a" * 64
 PATH = "request_envelopes.0.tool_result"
 
 
-class ValidStore:
-    def __init__(self):
-        self.outcomes = []
-
-    def validate(self, *args, **kwargs):
-        return SimpleNamespace(ok=True)
-
-    def append_outcome(self, outcome):
-        self.outcomes.append(outcome)
+class FakeAdapter:
+    def runtime_provenance(self):
+        return {"provider": "fake", "model": "fake-model", "model_digest": "fake-digest"}
 
 
 class RecordingExecutor:
     instances = []
     result = None
 
-    def __init__(self, *, store, adapters, snapshot_provider):
+    def __init__(self, store, adapters):
         self.store = store
         self.adapters = adapters
-        self.snapshot_provider = snapshot_provider
         self.requests = []
         type(self).instances.append(self)
 
     def execute(self, request):
         self.requests.append(request)
         return type(self).result
+
+
+def _fixture(replay: ReplayStore, *, partition=Partition.DEVELOPMENT):
+    visible = {
+        "request_envelopes": [{
+            "model": "fake-model",
+            "stream": False,
+            "think": False,
+            "options": {"seed": 7, "num_predict": 64, "temperature": 0.0},
+            "messages": [{"role": "user", "content": "BASE TASK"}],
+        }],
+        "task": {"kind": "stage7-lab"},
+    }
+    fixture = FailureFixture(
+        failure_snapshot_id="failure-lab",
+        source_campaign_id="campaign",
+        source_trial_id="trial",
+        focus_observation_id="obs",
+        focus_task_id="task",
+        batch_task_ids=("task",),
+        family="TOOL_USE",
+        failure_classes=("SEMANTIC_FAIL",),
+        source_model_id="fake-model",
+        source_model_digest="fake-digest",
+        source_runtime={"provider": "fake"},
+        inference_profile={"thinking_budget": 0},
+        inference_seed=7,
+        partition=partition,
+        model_visible_asset_sha256=replay.put_asset(visible),
+        state_hash=SHA,
+        oracle_ref="oracle:stage7-lab",
+        expected_contract="return a valid answer",
+        source_evidence_refs=("evidence:stage7-lab",),
+        oracle_asset_sha256=replay.put_asset({"answer": 42}),
+    )
+    replay.append(fixture)
+    return replay.get_failure(fixture.failure_snapshot_id)
 
 
 def _study(*, axis=TomographyAxis.TOOL_EXECUTION_RESULT, partition=Partition.DEVELOPMENT):
@@ -83,7 +115,7 @@ def _intervention(study, probe):
         failure_snapshot_id=study.failure_snapshot_id,
         parent_state_hash=study.parent_state_hash,
         kind=InterventionKind.TOOL,
-        label="canonical supplied tool result",
+        label="canonical Stage-7 intervention",
         changed_dimensions=probe.changed_dimensions,
         overrides={PATH: {"status": "ok", "value": 42}},
         expected_causal_implication=probe.expected_implication,
@@ -101,105 +133,88 @@ def _intervention(study, probe):
     ), intervention
 
 
-def _lab(monkeypatch):
+def _environment(tmp_path, monkeypatch, *, axis=TomographyAxis.TOOL_EXECUTION_RESULT):
     import inverted.capability_ratchet.tomography_lab as module
 
-    replay = ValidStore()
-    causal = ValidStore()
-    tomography = ValidStore()
-    adapters = {"fake-model": object()}
-    snapshot_provider = object()
+    replay = ReplayStore(tmp_path / "replay")
+    fixture = _fixture(replay)
+    tomography = TomographyEvidenceStore(tmp_path / "tomography")
+    study = _study(axis=axis)
+    probe, intervention = _intervention(study, _probe(axis=axis))
+    tomography.append_study(study)
+    tomography.append_probe(probe)
     RecordingExecutor.instances.clear()
     monkeypatch.setattr(module, "ReplayExecutor", RecordingExecutor)
-    lab = TomographyLab(
-        test_replay=replay,
-        causal=causal,
-        tomography=tomography,
-        snapshot_provider=snapshot_provider,
-        adapters=adapters,
-    )
-    return lab, replay, causal, tomography, adapters, snapshot_provider
+    lab = TomographyLab(replay, tomography)
+    adapters = {"fake-model": FakeAdapter()}
+    return lab, replay, tomography, fixture, study, probe, intervention, adapters
 
 
 def _result(*, success=True):
     return SimpleNamespace(
         replay_result_id="replay-result-lab",
-        failure_snapshot_id="failure-child" if not success else "failure-lab",
-        semantic_success=success,
-        contract_valid=success,
-        score=1.0 if success else 0.0,
-        first_divergence=None if success else "TOOL_EXECUTION_FAILURE",
-        comparison_refs=("replay-baseline",),
+        semantic_pass=success,
+        contract_pass=success,
+        metrics={"score": 1.0 if success else 0.0},
+        failure_classes=() if success else ("TOOL_EXECUTION_FAILURE",),
+        child_failure_snapshot_id=None if success else "failure-child",
     )
 
 
-def test_execute_probe_passes_provenance_through_canonical_replay_executor(monkeypatch):
-    lab, replay, _causal, _tomography, adapters, snapshot_provider = _lab(monkeypatch)
-    study = _study()
-    probe, intervention = _intervention(study, _probe())
+def test_execute_passes_per_probe_provenance_through_canonical_replay_executor(tmp_path, monkeypatch):
+    lab, replay, _tomography, _fixture_row, study, probe, intervention, adapters = _environment(tmp_path, monkeypatch)
     RecordingExecutor.result = _result(success=True)
 
-    run = lab.execute_probe(
-        study=study,
-        probe=probe,
-        intervention=intervention,
-        root_failure_snapshot_id=study.failure_snapshot_id,
-        source_model_id="fake-model",
-        source_model_digest="fake-digest",
-        request_id="request-lab",
-        evidence_status="REUSED",
-        evidence_provenance_refs=("tool-result:canonical-1",),
+    step = lab.execute(
+        study,
+        (probe,),
+        {intervention.intervention_id: intervention},
+        adapters,
+        evidence_status_by_probe={probe.probe_id: "REUSED"},
+        evidence_provenance_refs_by_probe={probe.probe_id: ("tool-result:canonical-1",)},
     )
 
     assert len(RecordingExecutor.instances) == 1
     executor = RecordingExecutor.instances[0]
     assert executor.store is replay
     assert executor.adapters is adapters
-    assert executor.snapshot_provider is snapshot_provider
     assert len(executor.requests) == 1
     request = executor.requests[0]
     assert request.mode is ReplayMode.COUNTERFACTUAL
     assert request.metadata["tomography_evidence_status"] == "REUSED"
     assert request.metadata["tomography_evidence_provenance_refs"] == ("tool-result:canonical-1",)
-    assert run.profile is None
+    assert step.profile.certification_allowed is False
+    assert step.model_calls_are_fake_only is True
 
 
-def test_failed_probe_preserves_child_failure_and_stage7_does_not_promote(monkeypatch):
-    lab, _replay, _causal, tomography, _adapters, _snapshot_provider = _lab(monkeypatch)
-    study = _study(axis=TomographyAxis.TOOL_AVAILABILITY)
-    probe, intervention = _intervention(study, _probe(axis=TomographyAxis.TOOL_AVAILABILITY))
+def test_failed_probe_preserves_child_failure_and_never_certifies(tmp_path, monkeypatch):
+    lab, _replay, tomography, _fixture_row, study, probe, intervention, adapters = _environment(
+        tmp_path, monkeypatch, axis=TomographyAxis.TOOL_AVAILABILITY
+    )
     RecordingExecutor.result = _result(success=False)
 
-    run = lab.execute_probe(
-        study=study,
-        probe=probe,
-        intervention=intervention,
-        root_failure_snapshot_id=study.failure_snapshot_id,
-        source_model_id="fake-model",
-        source_model_digest="fake-digest",
-        request_id="request-failed",
-    )
+    step = lab.execute(study, (probe,), {intervention.intervention_id: intervention}, adapters)
 
-    assert run.outcome.child_failure_snapshot_id == "failure-child"
-    assert tomography.outcomes == [run.outcome]
-    assert run.profile is None
+    assert step.child_failure_snapshot_ids == ("failure-child",)
+    assert step.outcomes[0].child_failure_snapshot_id == "failure-child"
+    assert tomography.outcomes() == step.outcomes
+    assert step.profile.certification_allowed is False
 
 
-def test_protected_partition_is_rejected_before_executor_construction(monkeypatch):
-    lab, _replay, _causal, _tomography, _adapters, _snapshot_provider = _lab(monkeypatch)
+def test_protected_partition_is_rejected_before_executor_construction(tmp_path, monkeypatch):
+    import inverted.capability_ratchet.tomography_lab as module
+
+    replay = ReplayStore(tmp_path / "replay")
+    _fixture(replay, partition=Partition.FRESH)
+    tomography = TomographyEvidenceStore(tmp_path / "tomography")
     study = _study(axis=TomographyAxis.TOOL_AVAILABILITY, partition=Partition.FRESH)
     probe, intervention = _intervention(study, _probe(axis=TomographyAxis.TOOL_AVAILABILITY))
+    RecordingExecutor.instances.clear()
     RecordingExecutor.result = _result(success=True)
+    monkeypatch.setattr(module, "ReplayExecutor", RecordingExecutor)
+    lab = TomographyLab(replay, tomography)
 
     with pytest.raises(ValueError, match="fresh/sealed tomography execution is forbidden"):
-        lab.execute_probe(
-            study=study,
-            probe=probe,
-            intervention=intervention,
-            root_failure_snapshot_id=study.failure_snapshot_id,
-            source_model_id="fake-model",
-            source_model_digest="fake-digest",
-            request_id="request-protected",
-        )
+        lab.execute(study, (probe,), {intervention.intervention_id: intervention}, {"fake-model": FakeAdapter()})
 
     assert RecordingExecutor.instances == []
