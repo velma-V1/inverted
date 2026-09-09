@@ -115,6 +115,8 @@ REQUIRED_STAGE8_FILES = (
     "src/inverted/capability_ratchet/compilation_cli.py",
     "tests/test_capability_ratchet_compilation_cli.py",
     "tests/test_capability_ratchet_compilation_audit_closure.py",
+    "tests/test_capability_ratchet_compilation_workflow_closure.py",
+    ".github/workflows/v3-stage8-completion.yml",
 )
 
 EXPECTED_TOMOGRAPHY_COMMANDS = {
@@ -483,7 +485,7 @@ def _stage8_semantic_checks(repo: Path, replay_root: Path) -> tuple[list[str], d
 
     missing_files = [path for path in REQUIRED_STAGE8_FILES if not (repo / path).is_file()]
     if missing_files:
-        findings.append(f"Stage-8 source/tests missing: {missing_files}")
+        findings.append(f"Stage-8 source/tests/workflow missing: {missing_files}")
     compilation_tests = tuple((repo / "tests").glob("test_capability_ratchet_compilation_*.py"))
     if len(compilation_tests) < 2:
         findings.append("Stage-8 compilation test surface is missing or collapsed")
