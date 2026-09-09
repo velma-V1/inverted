@@ -22,28 +22,31 @@ from .compilation_core import (
     CompilationPolicy,
     CompiledCapability,
 )
-from .compilation_eligibility import (
-    CompilationEligibilityResult,
-    CompilationEligibilityScanner,
-    plan_eligible_compilation,
-)
+from .compilation_eligibility import CompilationEligibilityResult, CompilationEligibilityScanner, plan_eligible_compilation
 from .compilation_planner import CompilationPlanner
 from .compilation_store import CompilationEvidenceStore, CompilationStoreValidation
 from .core import (
-    FailureFixture,
-    MechanismLabel,
-    MutationFixture,
-    Partition,
-    PromotionEvent,
-    PromotionState,
-    ReplayMode,
-    ReplayRecord,
-    ReplayRecordType,
-    ReplayRequest,
-    ReplayResult,
-    from_payload,
-    to_payload,
+    FailureFixture, MechanismLabel, MutationFixture, Partition, PromotionEvent, PromotionState,
+    ReplayMode, ReplayRecord, ReplayRecordType, ReplayRequest, ReplayResult, from_payload, to_payload,
 )
+from .fine_tuning_analysis import FineTuningAnalyzer
+from .fine_tuning_core import (
+    ControlledTuningPlan,
+    DatasetRole,
+    FineTuningCandidate,
+    FineTuningDataset,
+    FineTuningDisposition,
+    FineTuningEligibilityStatus,
+    FineTuningExample,
+    FineTuningPlanStatus,
+    FineTuningPolicy,
+    FineTuningQualification,
+)
+from .fine_tuning_dataset import FineTuningDatasetCompiler
+from .fine_tuning_eligibility import FineTuningEligibilityResult, FineTuningEligibilityScanner, plan_eligible_fine_tuning
+from .fine_tuning_lab import FineTuningLab, FineTuningLabStatus
+from .fine_tuning_planner import FineTuningPlanner
+from .fine_tuning_store import FineTuningEvidenceStore, FineTuningStoreValidation
 from .historical import HistoricalSeedResult, V2EvidenceSource, preview_v2_failures, seed_v2_failures
 from .interventions import InterventionGenerator, TailoredInterventionGenerator
 from .lab import FailureLab, FailureResearchProgram, FailureResearchResult
@@ -51,13 +54,7 @@ from .mechanisms import MechanismAssessment, MechanismLocalizer
 from .mutation_analysis import MutationAnalyzer
 from .mutation_bootstrap import MutationBootstrapPlan, MutationBootstrapResult, plan_eligible_mutations
 from .mutation_core import (
-    GeneralizationClass,
-    GeneralizationProfile,
-    MutationAxis,
-    MutationDirection,
-    MutationOrigin,
-    MutationPolicy,
-    MutationSpec,
+    GeneralizationClass, GeneralizationProfile, MutationAxis, MutationDirection, MutationOrigin, MutationPolicy, MutationSpec,
 )
 from .mutation_generator import MutationGenerator, MutationTemplate
 from .mutation_lab import MutationLab, MutationStepResult
@@ -72,15 +69,8 @@ from .snapshot import build_failure_fixture
 from .surface_analysis import SurfaceAnalyzer
 from .surface_bootstrap import SurfaceBootstrapPlan, plan_eligible_surfaces
 from .surface_core import (
-    OperatingSurfaceProfile,
-    SurfaceAxis,
-    SurfaceBand,
-    SurfaceCallGeometry,
-    SurfaceDisposition,
-    SurfaceEvidenceKind,
-    SurfaceObservation,
-    SurfacePoint,
-    SurfaceStudy,
+    OperatingSurfaceProfile, SurfaceAxis, SurfaceBand, SurfaceCallGeometry, SurfaceDisposition,
+    SurfaceEvidenceKind, SurfaceObservation, SurfacePoint, SurfaceStudy,
 )
 from .surface_evidence import SurfaceEvidenceCompiler
 from .surface_interventions import SurfaceInterventionCompiler, semantic_contract_hash
@@ -89,24 +79,12 @@ from .surface_planner import SurfacePlan, SurfacePlanner
 from .surface_store import SurfaceEvidenceStore, SurfaceStoreValidation
 from .tomography_analysis import TomographyAnalyzer
 from .tomography_core import (
-    TomographyAssessment,
-    TomographyAxis,
-    TomographyDisposition,
-    TomographyOutcome,
-    TomographyPolicy,
-    TomographyProbe,
-    TomographyProbeSpec,
-    TomographyProfile,
-    TomographyStatus,
-    TomographyStopReason,
-    TomographyStudy,
+    TomographyAssessment, TomographyAxis, TomographyDisposition, TomographyOutcome, TomographyPolicy,
+    TomographyProbe, TomographyProbeSpec, TomographyProfile, TomographyStatus, TomographyStopReason, TomographyStudy,
 )
 from .tomography_eligibility import (
-    TomographyAutoPlanResult,
-    TomographyEligibilityResult,
-    TomographyEligibilityStatus,
-    classify_tomography_eligibility,
-    plan_eligible_tomography,
+    TomographyAutoPlanResult, TomographyEligibilityResult, TomographyEligibilityStatus,
+    classify_tomography_eligibility, plan_eligible_tomography,
 )
 from .tomography_lab import TomographyLab, TomographyStepResult
 from .tomography_planner import TomographyPlan, TomographyPlanner
@@ -116,34 +94,31 @@ from .tournament import TournamentBranch, TournamentPlan, TournamentPlanner, bui
 
 __all__ = [
     "ArchitectureOwner", "AutopsyReport", "CapabilityCompiler", "CausalEvidenceStore", "CausalHypothesis",
-    "CompilationCandidate", "CompilationDisposition", "CompilationEligibilityResult",
-    "CompilationEligibilityScanner", "CompilationEligibilityStatus", "CompilationEvidenceStore",
-    "CompilationKind", "CompilationPlan", "CompilationPlanner", "CompilationPolicy",
-    "CompilationStoreValidation", "CompiledCapability", "DivergenceClass", "FailureAutopsy",
-    "FailureFixture", "FailureLab", "FailureResearchProgram", "FailureResearchResult", "FirstDivergence",
-    "GeneralizationClass", "GeneralizationProfile", "HistoricalSeedResult", "HypothesisStatus",
-    "InterventionDefinition", "InterventionGenerator", "InterventionKind", "MechanismAssessment",
-    "MechanismLabel", "MechanismLocalizer", "MechanismRole", "MutationAnalyzer", "MutationAxis",
-    "MutationBootstrapPlan", "MutationBootstrapResult", "MutationDirection", "MutationEvidenceStore",
-    "MutationFixture", "MutationGenerator", "MutationLab", "MutationOrigin", "MutationOutcome",
-    "MutationPlan", "MutationPlanner", "MutationPolicy", "MutationReplayCompiler", "MutationSpec",
-    "MutationStepResult", "MutationStoreValidation", "MutationStudy", "MutationTemplate",
-    "OperatingSurfaceLab", "OperatingSurfaceProfile", "Partition", "PromotionEvent", "PromotionState",
-    "QwenReplayAdapter", "ReplayAdapter", "ReplayCompletion", "ReplayExecutor", "ReplayMode",
-    "ReplayPlan", "ReplayRecord", "ReplayRecordType", "ReplayRequest", "ReplayResult", "ReplaySelector",
-    "ReplayStore", "ReplayValidation", "SurfaceAnalyzer", "SurfaceAxis", "SurfaceBand",
-    "SurfaceBootstrapPlan", "SurfaceCallGeometry", "SurfaceDisposition", "SurfaceEvidenceCompiler",
-    "SurfaceEvidenceKind", "SurfaceEvidenceStore", "SurfaceInterventionCompiler", "SurfaceObservation",
-    "SurfacePlan", "SurfacePlanner", "SurfacePoint", "SurfaceStepResult", "SurfaceStoreValidation",
-    "SurfaceStudy", "SupersessionRecord", "TailoredInterventionGenerator", "TomographyAnalyzer",
-    "TomographyAssessment", "TomographyAutoPlanResult", "TomographyAxis", "TomographyDisposition",
-    "TomographyEligibilityResult", "TomographyEligibilityStatus", "TomographyEvidenceStore",
-    "TomographyLab", "TomographyOutcome", "TomographyPlan", "TomographyPlanner", "TomographyPolicy",
-    "TomographyProbe", "TomographyProbeSpec", "TomographyProfile", "TomographyReplayCompiler",
-    "TomographyStatus", "TomographyStepResult", "TomographyStopReason", "TomographyStoreValidation",
-    "TomographyStudy", "TournamentBranch", "TournamentPlan", "TournamentPlanner", "V2EvidenceSource",
-    "V2ReplayScorer", "build_ablations", "build_failure_fixture", "classify_tomography_eligibility",
-    "from_payload", "plan_eligible_compilation", "plan_eligible_mutations", "plan_eligible_surfaces",
-    "plan_eligible_tomography", "preview_v2_failures", "seed_v2_failures", "select_failures",
-    "select_surface_study", "semantic_contract_hash", "to_payload",
+    "CompilationCandidate", "CompilationDisposition", "CompilationEligibilityResult", "CompilationEligibilityScanner",
+    "CompilationEligibilityStatus", "CompilationEvidenceStore", "CompilationKind", "CompilationPlan", "CompilationPlanner",
+    "CompilationPolicy", "CompilationStoreValidation", "CompiledCapability", "ControlledTuningPlan", "DatasetRole",
+    "DivergenceClass", "FailureAutopsy", "FailureFixture", "FailureLab", "FailureResearchProgram", "FailureResearchResult",
+    "FineTuningAnalyzer", "FineTuningCandidate", "FineTuningDataset", "FineTuningDatasetCompiler", "FineTuningDisposition",
+    "FineTuningEligibilityResult", "FineTuningEligibilityScanner", "FineTuningEligibilityStatus", "FineTuningEvidenceStore",
+    "FineTuningExample", "FineTuningLab", "FineTuningLabStatus", "FineTuningPlanStatus", "FineTuningPlanner",
+    "FineTuningPolicy", "FineTuningQualification", "FineTuningStoreValidation", "FirstDivergence", "GeneralizationClass",
+    "GeneralizationProfile", "HistoricalSeedResult", "HypothesisStatus", "InterventionDefinition", "InterventionGenerator",
+    "InterventionKind", "MechanismAssessment", "MechanismLabel", "MechanismLocalizer", "MechanismRole", "MutationAnalyzer",
+    "MutationAxis", "MutationBootstrapPlan", "MutationBootstrapResult", "MutationDirection", "MutationEvidenceStore",
+    "MutationFixture", "MutationGenerator", "MutationLab", "MutationOrigin", "MutationOutcome", "MutationPlan", "MutationPlanner",
+    "MutationPolicy", "MutationReplayCompiler", "MutationSpec", "MutationStepResult", "MutationStoreValidation", "MutationStudy",
+    "MutationTemplate", "OperatingSurfaceLab", "OperatingSurfaceProfile", "Partition", "PromotionEvent", "PromotionState",
+    "QwenReplayAdapter", "ReplayAdapter", "ReplayCompletion", "ReplayExecutor", "ReplayMode", "ReplayPlan", "ReplayRecord",
+    "ReplayRecordType", "ReplayRequest", "ReplayResult", "ReplaySelector", "ReplayStore", "ReplayValidation", "SurfaceAnalyzer",
+    "SurfaceAxis", "SurfaceBand", "SurfaceBootstrapPlan", "SurfaceCallGeometry", "SurfaceDisposition", "SurfaceEvidenceCompiler",
+    "SurfaceEvidenceKind", "SurfaceEvidenceStore", "SurfaceInterventionCompiler", "SurfaceObservation", "SurfacePlan", "SurfacePlanner",
+    "SurfacePoint", "SurfaceStepResult", "SurfaceStoreValidation", "SurfaceStudy", "SupersessionRecord", "TailoredInterventionGenerator",
+    "TomographyAnalyzer", "TomographyAssessment", "TomographyAutoPlanResult", "TomographyAxis", "TomographyDisposition",
+    "TomographyEligibilityResult", "TomographyEligibilityStatus", "TomographyEvidenceStore", "TomographyLab", "TomographyOutcome",
+    "TomographyPlan", "TomographyPlanner", "TomographyPolicy", "TomographyProbe", "TomographyProbeSpec", "TomographyProfile",
+    "TomographyReplayCompiler", "TomographyStatus", "TomographyStepResult", "TomographyStopReason", "TomographyStoreValidation",
+    "TomographyStudy", "TournamentBranch", "TournamentPlan", "TournamentPlanner", "V2EvidenceSource", "V2ReplayScorer",
+    "build_ablations", "build_failure_fixture", "classify_tomography_eligibility", "from_payload", "plan_eligible_compilation",
+    "plan_eligible_fine_tuning", "plan_eligible_mutations", "plan_eligible_surfaces", "plan_eligible_tomography",
+    "preview_v2_failures", "seed_v2_failures", "select_failures", "select_surface_study", "semantic_contract_hash", "to_payload",
 ]
