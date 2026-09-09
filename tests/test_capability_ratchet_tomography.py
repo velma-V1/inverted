@@ -203,7 +203,10 @@ def test_tomography_store_is_append_only_metadata_and_rejects_duplicate_logical_
     store.append_profile(TomographyAnalyzer().analyze(s, (p,), (o,)))
     report = store.validate()
     assert report.ok and report.record_count == 4
-    text = (tmp_path / "CAPABILITY_RATCHET_V3_TOMOGRAPHY.jsonl").read_text(encoding="utf-8")
+    text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (store.studies_path, store.outcomes_path, store.assessments_path)
+    )
     assert "raw_response" not in text and "exposed_thinking" not in text
     with pytest.raises(ValueError, match="duplicate"):
         store.append_probe(p)
