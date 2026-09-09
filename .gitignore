@@ -7,3 +7,5 @@ __pycache__/
 
 # Editable-install packaging metadata
 *.egg-info/
+
+# Stage-9 completion evidence is emitted to CI temporary storage, not the repo.
