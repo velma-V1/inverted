@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import inverted.capability_ratchet as api
@@ -23,7 +24,7 @@ PUBLIC_NAMES = (
 
 
 def _roots(tmp_path):
-    return {
+    roots = {
         "replay": tmp_path / "replay",
         "causal": tmp_path / "causal",
         "surface": tmp_path / "surface",
@@ -31,6 +32,13 @@ def _roots(tmp_path):
         "tomography": tmp_path / "tomography",
         "compilation": tmp_path / "compilation",
     }
+    replay = roots["replay"]
+    replay.mkdir(parents=True, exist_ok=True)
+    (replay / "TEST_REPLAY.jsonl").write_bytes(b"")
+    (replay / "TEST_REPLAY.sha256").write_text(
+        hashlib.sha256(b"").hexdigest() + "\n", encoding="ascii"
+    )
+    return roots
 
 
 def _argv(command, roots, *extra):
