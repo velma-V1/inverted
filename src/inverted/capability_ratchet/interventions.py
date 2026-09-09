@@ -25,6 +25,19 @@ def _scientific_fixture_payload(fixture: FailureFixture) -> dict[str, Any]:
     return payload
 
 
+def _plain_json(value: Any) -> Any:
+    """Normalize frozen scientific metadata into finite JSON-compatible values."""
+    if isinstance(value, Mapping):
+        return {str(key): _plain_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_json(item) for item in value]
+    try:
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("Stage-7 evidence must contain finite JSON data") from exc
+    return value
+
+
 class InterventionGenerator:
     """Compile one registered causal hypothesis into falsifiable treatments.
 
@@ -109,7 +122,13 @@ class InterventionGenerator:
     @staticmethod
     def _json_text(value: Any, *, name: str) -> str:
         try:
-            return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+            return json.dumps(
+                _plain_json(value),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
         except (TypeError, ValueError, OverflowError) as exc:
             raise ValueError(f"{name} must be finite JSON data") from exc
 
@@ -149,7 +168,7 @@ class InterventionGenerator:
             kind=kind,
             label=label,
             changed_dimensions=changed_dimensions,
-            overrides={} if overrides is None else overrides,
+            overrides={} if overrides is None else _plain_json(overrides),
             expected_causal_implication=hypothesis.expected_if_true,
             projected_physical_calls=projected_physical_calls,
             protected_exploration=hypothesis.protected_exploration,
@@ -202,9 +221,10 @@ class InterventionGenerator:
             required = evidence.get("required_tool_schema")
             if not isinstance(required, Mapping):
                 raise ValueError("TOOL_CAPABILITY requires required_tool_schema")
-            if required in current_tools:
+            required_plain = _plain_json(required)
+            if required_plain in current_tools:
                 raise ValueError("required tool is already present in visible tool state")
-            tools = current_tools + [dict(required)]
+            tools = current_tools + [required_plain]
             return (self._definition(
                 fixture,
                 hypothesis,
@@ -551,7 +571,7 @@ class InterventionGenerator:
             kind=InterventionKind.SHAM,
             label=f"matched control for {target.label}",
             changed_dimensions=target.changed_dimensions,
-            overrides=overrides,
+            overrides=_plain_json(overrides),
             expected_causal_implication=(
                 "the matched control should not reproduce gain caused by the targeted mechanism"
             ),
