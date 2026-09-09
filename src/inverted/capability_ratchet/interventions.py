@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -72,6 +73,47 @@ class InterventionGenerator:
         return f"request_envelopes.0.messages.{index}.content", message["content"]
 
     @staticmethod
+    def _tool_dimension(visible: Mapping[str, Any]) -> tuple[str, list[Any]]:
+        envelope = visible["request_envelopes"][0]
+        if "tools" not in envelope:
+            raise ValueError("tool intervention requires an explicit visible tools leaf")
+        tools = envelope.get("tools")
+        if not isinstance(tools, list):
+            raise ValueError("tool intervention requires visible tools to be a list")
+        return "request_envelopes.0.tools", list(tools)
+
+    @staticmethod
+    def _stage7_evidence(fixture: FailureFixture) -> Mapping[str, Any]:
+        evidence = fixture.metadata.get("stage7_evidence")
+        if not isinstance(evidence, Mapping):
+            raise ValueError("Stage-7 intervention requires explicit observable stage7_evidence")
+        return evidence
+
+    @staticmethod
+    def _required_text(evidence: Mapping[str, Any], key: str) -> str:
+        value = evidence.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Stage-7 intervention requires non-blank {key}")
+        return value
+
+    @staticmethod
+    def _tool_name(tool: Any) -> str | None:
+        if not isinstance(tool, Mapping):
+            return None
+        function = tool.get("function")
+        if isinstance(function, Mapping) and isinstance(function.get("name"), str):
+            return function["name"]
+        value = tool.get("name")
+        return value if isinstance(value, str) else None
+
+    @staticmethod
+    def _json_text(value: Any, *, name: str) -> str:
+        try:
+            return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{name} must be finite JSON data") from exc
+
+    @staticmethod
     def _cognition_dimensions(
         visible: Mapping[str, Any],
     ) -> tuple[tuple[str, ...], dict[str, Any]]:
@@ -134,6 +176,154 @@ class InterventionGenerator:
             overrides={path: f"{original}\n\n{heading}\n{instruction}"},
         )
 
+    def _stage7_recipe(
+        self,
+        fixture: FailureFixture,
+        hypothesis: CausalHypothesis,
+        visible: Mapping[str, Any],
+    ) -> tuple[InterventionDefinition, ...] | None:
+        divergence = hypothesis.divergence.divergence_class
+        if divergence not in {
+            DivergenceClass.TOOL_CAPABILITY,
+            DivergenceClass.TOOL_SELECTION,
+            DivergenceClass.TOOL_ARGUMENTS,
+            DivergenceClass.TOOL_INTERPRETATION,
+            DivergenceClass.VERIFIER_FEEDBACK,
+            DivergenceClass.RECOVERY_POLICY,
+            DivergenceClass.SKILL_DEFICIT,
+            DivergenceClass.MODEL_CAPABILITY_LIMIT,
+        }:
+            return None
+
+        evidence = self._stage7_evidence(fixture)
+
+        if divergence is DivergenceClass.TOOL_CAPABILITY:
+            path, current_tools = self._tool_dimension(visible)
+            required = evidence.get("required_tool_schema")
+            if not isinstance(required, Mapping):
+                raise ValueError("TOOL_CAPABILITY requires required_tool_schema")
+            if required in current_tools:
+                raise ValueError("required tool is already present in visible tool state")
+            tools = current_tools + [dict(required)]
+            return (self._definition(
+                fixture,
+                hypothesis,
+                kind=InterventionKind.TOOL,
+                label="supply required tool capability",
+                changed_dimensions=(path,),
+                overrides={path: tools},
+            ),)
+
+        if divergence is DivergenceClass.TOOL_SELECTION:
+            path, current_tools = self._tool_dimension(visible)
+            required_name = self._required_text(evidence, "required_tool_name")
+            selected = [tool for tool in current_tools if self._tool_name(tool) == required_name]
+            if len(selected) != 1:
+                raise ValueError("TOOL_SELECTION requires exactly one visible matching required tool")
+            if len(current_tools) == 1:
+                raise ValueError("TOOL_SELECTION contrast requires a nontrivial visible tool menu")
+            return (self._definition(
+                fixture,
+                hypothesis,
+                kind=InterventionKind.TOOL,
+                label="force correct tool selection",
+                changed_dimensions=(path,),
+                overrides={path: selected},
+            ),)
+
+        if divergence is DivergenceClass.TOOL_ARGUMENTS:
+            tool_name = self._required_text(evidence, "required_tool_name")
+            arguments = evidence.get("canonical_tool_arguments")
+            if not isinstance(arguments, Mapping):
+                raise ValueError("TOOL_ARGUMENTS requires canonical_tool_arguments")
+            rendered = self._json_text(arguments, name="canonical_tool_arguments")
+            return (self._message_treatment(
+                fixture,
+                hypothesis,
+                visible,
+                kind=InterventionKind.TOOL,
+                label="supply registered canonical tool arguments",
+                heading="REGISTERED TOOL ARGUMENTS",
+                instruction=f"Use tool {tool_name!r} with exactly these registered arguments: {rendered}",
+            ),)
+
+        if divergence is DivergenceClass.TOOL_INTERPRETATION:
+            tool_name = self._required_text(evidence, "required_tool_name")
+            if "canonical_tool_result" not in evidence:
+                raise ValueError("TOOL_INTERPRETATION requires canonical_tool_result")
+            rendered = self._json_text(evidence["canonical_tool_result"], name="canonical_tool_result")
+            return (self._message_treatment(
+                fixture,
+                hypothesis,
+                visible,
+                kind=InterventionKind.TOOL,
+                label="supply registered canonical tool result for interpretation",
+                heading="REGISTERED TOOL RESULT",
+                instruction=(
+                    f"Treat this preserved result from tool {tool_name!r} as the fixed tool evidence and derive the answer from it: {rendered}"
+                ),
+            ),)
+
+        if divergence is DivergenceClass.VERIFIER_FEEDBACK:
+            feedback = self._required_text(evidence, "verifier_feedback")
+            return (self._message_treatment(
+                fixture,
+                hypothesis,
+                visible,
+                kind=InterventionKind.VERIFICATION_RECOVERY,
+                label="deterministic verifier feedback",
+                heading="VERIFIER FEEDBACK",
+                instruction=f"Apply only this registered deterministic feedback, then re-check the affected postcondition: {feedback}",
+            ),)
+
+        if divergence is DivergenceClass.RECOVERY_POLICY:
+            recovery = evidence.get("targeted_recovery")
+            if not isinstance(recovery, Mapping):
+                raise ValueError("RECOVERY_POLICY requires targeted_recovery mapping")
+            changed_state = recovery.get("changed_state")
+            instruction = recovery.get("instruction")
+            if not isinstance(changed_state, str) or not changed_state.strip():
+                raise ValueError("targeted_recovery requires explicit changed_state")
+            if not isinstance(instruction, str) or not instruction.strip():
+                raise ValueError("targeted_recovery requires explicit instruction")
+            return (self._message_treatment(
+                fixture,
+                hypothesis,
+                visible,
+                kind=InterventionKind.VERIFICATION_RECOVERY,
+                label="targeted state recovery",
+                heading="TARGETED RECOVERY",
+                instruction=f"Changed state: {changed_state}. Recovery action: {instruction}",
+            ),)
+
+        if divergence is DivergenceClass.SKILL_DEFICIT:
+            skill_id = self._required_text(evidence, "skill_id")
+            version = self._required_text(evidence, "skill_version")
+            trigger = self._required_text(evidence, "skill_trigger")
+            procedure = self._required_text(evidence, "skill_procedure")
+            return (self._message_treatment(
+                fixture,
+                hypothesis,
+                visible,
+                kind=InterventionKind.SKILL,
+                label=f"registered skill procedure {skill_id}@{version}",
+                heading="REGISTERED SKILL",
+                instruction=f"Trigger: {trigger}\nProcedure: {procedure}",
+            ),)
+
+        if divergence is DivergenceClass.MODEL_CAPABILITY_LIMIT:
+            if evidence.get("external_supports_exhausted") is not True:
+                raise ValueError("MODEL_CAPABILITY_LIMIT requires external_supports_exhausted=true")
+            return (self._definition(
+                fixture,
+                hypothesis,
+                kind=InterventionKind.ESCALATION,
+                label="stronger-model escalation reference",
+                projected_physical_calls=0,
+            ),)
+
+        raise AssertionError("unreachable Stage-7 divergence")
+
     def _recipe(
         self,
         fixture: FailureFixture,
@@ -142,6 +332,10 @@ class InterventionGenerator:
     ) -> tuple[InterventionDefinition, ...]:
         divergence = hypothesis.divergence.divergence_class
         owner = hypothesis.owner_candidate
+
+        stage7 = self._stage7_recipe(fixture, hypothesis, visible)
+        if stage7 is not None:
+            return stage7
 
         if divergence is DivergenceClass.CONTRACT_INTERFACE:
             if owner is ArchitectureOwner.SYSTEM:
@@ -343,6 +537,10 @@ class InterventionGenerator:
                 elif ".options." in dimension:
                     key = dimension.rsplit(".", 1)[-1]
                     overrides[dimension] = options.get(key)
+                elif dimension.endswith(".tools"):
+                    if "tools" not in envelope or not isinstance(envelope.get("tools"), list):
+                        raise ValueError("cannot construct matched tool sham without visible tools leaf")
+                    overrides[dimension] = list(envelope["tools"])
                 else:
                     raise ValueError(f"cannot construct matched sham for dimension {dimension}")
 
