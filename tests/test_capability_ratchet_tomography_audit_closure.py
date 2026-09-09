@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import runpy
 from pathlib import Path
 
 import inverted.capability_ratchet as cr
@@ -58,6 +59,20 @@ def test_permanent_audit_covers_stage7_tomography_boundaries() -> None:
     )
     missing = [token for token in required_tokens if token not in text]
     assert not missing, missing
+
+
+def test_stage7_semantic_audit_is_clean_on_repository_source(tmp_path: Path) -> None:
+    audit = runpy.run_path(str(Path("scripts/audit-v3-replay-foundation.py")))
+    findings, payload = audit["_stage7_semantic_checks"](Path.cwd(), tmp_path / "replay")
+    assert findings == []
+    boolean_contracts = {
+        key: value
+        for key, value in payload.items()
+        if key.startswith("stage7_") and key != "stage7_certified_event_count"
+    }
+    assert boolean_contracts
+    assert all(boolean_contracts.values()), boolean_contracts
+    assert payload["stage7_certified_event_count"] == 0
 
 
 def test_stage7_completion_workflow_is_zero_call_and_evidence_bearing() -> None:
