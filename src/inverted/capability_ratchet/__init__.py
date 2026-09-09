@@ -12,6 +12,23 @@ from .causal_core import (
     MechanismRole,
 )
 from .causal_store import CausalEvidenceStore
+from .compilation_compiler import CapabilityCompiler
+from .compilation_core import (
+    CompilationCandidate,
+    CompilationDisposition,
+    CompilationEligibilityStatus,
+    CompilationKind,
+    CompilationPlan,
+    CompilationPolicy,
+    CompiledCapability,
+)
+from .compilation_eligibility import (
+    CompilationEligibilityResult,
+    CompilationEligibilityScanner,
+    plan_eligible_compilation,
+)
+from .compilation_planner import CompilationPlanner
+from .compilation_store import CompilationEvidenceStore, CompilationStoreValidation
 from .core import (
     FailureFixture,
     MechanismLabel,
@@ -98,9 +115,12 @@ from .tomography_store import TomographyEvidenceStore, TomographyStoreValidation
 from .tournament import TournamentBranch, TournamentPlan, TournamentPlanner, build_ablations
 
 __all__ = [
-    "ArchitectureOwner", "AutopsyReport", "CausalEvidenceStore", "CausalHypothesis",
-    "DivergenceClass", "FailureAutopsy", "FailureFixture", "FailureLab",
-    "FailureResearchProgram", "FailureResearchResult", "FirstDivergence",
+    "ArchitectureOwner", "AutopsyReport", "CapabilityCompiler", "CausalEvidenceStore", "CausalHypothesis",
+    "CompilationCandidate", "CompilationDisposition", "CompilationEligibilityResult",
+    "CompilationEligibilityScanner", "CompilationEligibilityStatus", "CompilationEvidenceStore",
+    "CompilationKind", "CompilationPlan", "CompilationPlanner", "CompilationPolicy",
+    "CompilationStoreValidation", "CompiledCapability", "DivergenceClass", "FailureAutopsy",
+    "FailureFixture", "FailureLab", "FailureResearchProgram", "FailureResearchResult", "FirstDivergence",
     "GeneralizationClass", "GeneralizationProfile", "HistoricalSeedResult", "HypothesisStatus",
     "InterventionDefinition", "InterventionGenerator", "InterventionKind", "MechanismAssessment",
     "MechanismLabel", "MechanismLocalizer", "MechanismRole", "MutationAnalyzer", "MutationAxis",
@@ -123,7 +143,7 @@ __all__ = [
     "TomographyStatus", "TomographyStepResult", "TomographyStopReason", "TomographyStoreValidation",
     "TomographyStudy", "TournamentBranch", "TournamentPlan", "TournamentPlanner", "V2EvidenceSource",
     "V2ReplayScorer", "build_ablations", "build_failure_fixture", "classify_tomography_eligibility",
-    "from_payload", "plan_eligible_mutations", "plan_eligible_surfaces", "plan_eligible_tomography",
-    "preview_v2_failures", "seed_v2_failures", "select_failures", "select_surface_study",
-    "semantic_contract_hash", "to_payload",
+    "from_payload", "plan_eligible_compilation", "plan_eligible_mutations", "plan_eligible_surfaces",
+    "plan_eligible_tomography", "preview_v2_failures", "seed_v2_failures", "select_failures",
+    "select_surface_study", "semantic_contract_hash", "to_payload",
 ]
