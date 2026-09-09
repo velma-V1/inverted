@@ -19,17 +19,20 @@ def _case(
     contract=True,
     completed=True,
     family="ARITHMETIC",
+    stage7_evidence=None,
+    tools=None,
 ):
     replay = ReplayStore(tmp_path / "replay")
-    visible_payload = {
-        "request_envelopes": [{
-            "model": "model",
-            "stream": False,
-            "think": False,
-            "options": {"seed": 7, "temperature": 0.7, "num_predict": 128},
-            "messages": [{"role": "user", "content": "Solve 17 + 25 and return the required answer object."}],
-        }]
+    envelope = {
+        "model": "model",
+        "stream": False,
+        "think": False,
+        "options": {"seed": 7, "temperature": 0.7, "num_predict": 128},
+        "messages": [{"role": "user", "content": "Solve 17 + 25 and return the required answer object."}],
     }
+    if tools is not None:
+        envelope["tools"] = tools
+    visible_payload = {"request_envelopes": [envelope]}
     visible = replay.put_asset(visible_payload)
     forensic = replay.put_asset({
         "focus_observation": {
@@ -53,6 +56,9 @@ def _case(
         },
         "oracle_material": {"expected": 42},
     })
+    metadata = {}
+    if stage7_evidence is not None:
+        metadata["stage7_evidence"] = stage7_evidence
     fixture = FailureFixture(
         failure_snapshot_id="failure-intervention",
         source_campaign_id="campaign",
@@ -74,6 +80,7 @@ def _case(
         expected_contract="answer object",
         source_evidence_refs=("raw:intervention",),
         forensic_asset_sha256=forensic,
+        metadata=metadata,
     )
     replay.append(fixture)
     causal = CausalEvidenceStore(tmp_path / "causal", replay_store=replay)
@@ -83,6 +90,21 @@ def _case(
 
 def _rendered_overrides(interventions) -> str:
     return repr([dict(item.overrides) for item in interventions]).lower()
+
+
+def _tool(name: str):
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": f"registered {name} tool",
+            "parameters": {
+                "type": "object",
+                "properties": {"expression": {"type": "string"}},
+                "required": ["expression"],
+            },
+        },
+    }
 
 
 def test_arithmetic_failure_generates_competing_system_model_and_sham_treatments(tmp_path) -> None:
@@ -172,3 +194,121 @@ def test_generation_is_deterministic_idempotent_and_registered(tmp_path) -> None
     assert causal.intervention_registry_path.read_bytes() == before
     assert all(causal.get_intervention(item.intervention_id) == item for item in first)
     assert causal.validate().ok
+
+
+def test_stage7_owner_classes_generate_distinct_executable_treatment_kinds(tmp_path) -> None:
+    calculator = _tool("calculator")
+    lookup = _tool("lookup")
+    cases = (
+        (
+            "TOOL_CAPABILITY",
+            {"divergence_class": "TOOL_CAPABILITY", "required_tool_schema": calculator},
+            [],
+            InterventionKind.TOOL,
+            "request_envelopes.0.tools",
+        ),
+        (
+            "TOOL_SELECTION",
+            {"divergence_class": "TOOL_SELECTION", "required_tool_name": "calculator"},
+            [calculator, lookup],
+            InterventionKind.TOOL,
+            "request_envelopes.0.tools",
+        ),
+        (
+            "TOOL_ARGUMENTS",
+            {
+                "divergence_class": "TOOL_ARGUMENTS",
+                "required_tool_name": "calculator",
+                "canonical_tool_arguments": {"expression": "17 + 25"},
+            },
+            [calculator, lookup],
+            InterventionKind.TOOL,
+            ".content",
+        ),
+        (
+            "TOOL_INTERPRETATION",
+            {
+                "divergence_class": "TOOL_INTERPRETATION",
+                "required_tool_name": "calculator",
+                "canonical_tool_result": {"value": 42},
+            },
+            [calculator],
+            InterventionKind.TOOL,
+            ".content",
+        ),
+        (
+            "VERIFIER_FEEDBACK",
+            {
+                "divergence_class": "VERIFIER_FEEDBACK",
+                "verifier_feedback": "The computed value is valid but the answer object is malformed.",
+            },
+            None,
+            InterventionKind.VERIFICATION_RECOVERY,
+            ".content",
+        ),
+        (
+            "RECOVERY_POLICY",
+            {
+                "divergence_class": "RECOVERY_POLICY",
+                "targeted_recovery": {
+                    "changed_state": "answer_object.contract_valid",
+                    "instruction": "Repair only the malformed answer object and re-verify the contract.",
+                },
+            },
+            None,
+            InterventionKind.VERIFICATION_RECOVERY,
+            ".content",
+        ),
+        (
+            "SKILL_DEFICIT",
+            {
+                "divergence_class": "SKILL_DEFICIT",
+                "skill_id": "arithmetic-answer-contract",
+                "skill_version": "1",
+                "skill_trigger": "arithmetic task requiring answer object",
+                "skill_procedure": "Compute, populate the required answer object, then verify its schema.",
+            },
+            None,
+            InterventionKind.SKILL,
+            ".content",
+        ),
+    )
+
+    for name, evidence, tools, expected_kind, changed_suffix in cases:
+        fixture, replay, causal, report = _case(
+            tmp_path / name.lower(),
+            family="STAGE7",
+            stage7_evidence=evidence,
+            tools=tools,
+        )
+        assert report.first_divergence.divergence_class.value == name
+        generated = TailoredInterventionGenerator(replay, causal).generate(fixture, report)
+        targets = [item for item in generated if item.kind is not InterventionKind.SHAM]
+        assert len(targets) == 1
+        target = targets[0]
+        assert target.kind is expected_kind
+        assert target.changed_dimensions
+        assert set(target.changed_dimensions) == set(target.overrides)
+        assert any(path.endswith(changed_suffix) for path in target.changed_dimensions)
+        assert "protected hypothesis-separating probe" not in target.label
+
+
+def test_stage7_model_limit_is_zero_call_escalation_reference_not_same_model_retry(tmp_path) -> None:
+    fixture, replay, causal, report = _case(
+        tmp_path,
+        family="STAGE7",
+        stage7_evidence={
+            "divergence_class": "MODEL_CAPABILITY_LIMIT",
+            "external_supports_exhausted": True,
+        },
+    )
+    generated = TailoredInterventionGenerator(replay, causal).generate(fixture, report)
+    targets = [item for item in generated if item.kind is not InterventionKind.SHAM]
+    assert len(targets) == 1
+    target = targets[0]
+    assert target.kind is InterventionKind.ESCALATION
+    assert target.projected_physical_calls == 0
+    assert target.changed_dimensions == ()
+    assert dict(target.overrides) == {}
+    assert target.protected_exploration
+    assert "retry" not in target.label.lower()
