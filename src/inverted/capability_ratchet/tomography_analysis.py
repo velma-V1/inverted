@@ -18,13 +18,22 @@ _TOOL_DISPOSITIONS = {
     TomographyAxis.TOOL_AVAILABILITY: TomographyDisposition.TOOL_REQUIRED,
     TomographyAxis.TOOL_SELECTION: TomographyDisposition.TOOL_SELECTION_DEFICIT,
     TomographyAxis.TOOL_ARGUMENTS: TomographyDisposition.TOOL_ARGUMENT_DEFICIT,
+    TomographyAxis.TOOL_EXECUTION_RESULT: TomographyDisposition.TOOL_EXECUTION_FAILURE,
     TomographyAxis.TOOL_RESULT_INTERPRETATION: TomographyDisposition.TOOL_INTERPRETATION_DEFICIT,
 }
 _SKILL_AXES = {
     TomographyAxis.SKILL_TRIGGER,
     TomographyAxis.SKILL_PROCEDURE,
-    TomographyAxis.SKILL_EVIDENCE_REQUIREMENT,
-    TomographyAxis.SKILL_VERIFICATION_RULE,
+}
+_MOVEMENT_ELIGIBLE_DISPOSITIONS = {
+    TomographyDisposition.TOOL_REQUIRED,
+    TomographyDisposition.TOOL_SELECTION_DEFICIT,
+    TomographyDisposition.TOOL_ARGUMENT_DEFICIT,
+    TomographyDisposition.TOOL_EXECUTION_FAILURE,
+    TomographyDisposition.TOOL_INTERPRETATION_DEFICIT,
+    TomographyDisposition.VERIFIER_SUFFICIENT,
+    TomographyDisposition.RECOVERY_SUFFICIENT,
+    TomographyDisposition.SKILL_CANDIDATE,
 }
 
 
@@ -39,6 +48,8 @@ class TomographyAnalyzer:
         *,
         skill_related_success_count: int = 0,
         external_supports_exhausted: bool = False,
+        causal_movement_earned: bool = False,
+        safe_stop_required: bool = False,
     ) -> TomographyProfile:
         if not isinstance(study, TomographyStudy):
             raise TypeError("study must be TomographyStudy")
@@ -58,8 +69,13 @@ class TomographyAnalyzer:
             raise ValueError("outcome references unknown tomography probe")
         if not isinstance(skill_related_success_count, int) or isinstance(skill_related_success_count, bool) or skill_related_success_count < 0:
             raise ValueError("skill_related_success_count must be non-negative")
-        if type(external_supports_exhausted) is not bool:
-            raise TypeError("external_supports_exhausted must be boolean")
+        for name, value in (
+            ("external_supports_exhausted", external_supports_exhausted),
+            ("causal_movement_earned", causal_movement_earned),
+            ("safe_stop_required", safe_stop_required),
+        ):
+            if type(value) is not bool:
+                raise TypeError(f"{name} must be boolean")
 
         evidence_refs = tuple(dict.fromkeys(item.replay_result_id for item in outcomes))
         if not evidence_refs:
@@ -79,7 +95,7 @@ class TomographyAnalyzer:
         }
         dispositions: list[TomographyDisposition] = []
 
-        # Tool ladder dispositions are admissible only from a successful targeted probe.
+        # Tool ownership is admissible only from a successful targeted probe.
         for axis, disposition in _TOOL_DISPOSITIONS.items():
             if axis in successful_axes:
                 dispositions.append(disposition)
@@ -89,53 +105,72 @@ class TomographyAnalyzer:
         targeted_recovery_success = TomographyAxis.TARGETED_RECOVERY in successful_axes
         if verifier_success:
             dispositions.append(
-                TomographyDisposition.NONSPECIFIC_RETRY_EFFECT
-                if generic_success else TomographyDisposition.VERIFIER_RECOVERABLE
+                TomographyDisposition.UNRESOLVED
+                if generic_success else TomographyDisposition.VERIFIER_SUFFICIENT
             )
         if targeted_recovery_success:
             dispositions.append(
-                TomographyDisposition.NONSPECIFIC_RETRY_EFFECT
-                if generic_success else TomographyDisposition.RECOVERY_POLICY_DEFICIT
+                TomographyDisposition.UNRESOLVED
+                if generic_success else TomographyDisposition.RECOVERY_SUFFICIENT
             )
         if generic_success and not (verifier_success or targeted_recovery_success):
-            dispositions.append(TomographyDisposition.NONSPECIFIC_RETRY_EFFECT)
+            dispositions.append(TomographyDisposition.UNRESOLVED)
+
+        # Visibility proves only that verifier evidence can be exposed. It does not
+        # prove feedback suffices to repair the failure.
+        if TomographyAxis.VERIFIER_VISIBILITY in successful_axes and not verifier_success:
+            dispositions.append(TomographyDisposition.UNRESOLVED)
 
         skill_success = any(axis in successful_axes for axis in _SKILL_AXES)
         if skill_success:
-            if skill_related_success_count >= 2:
-                dispositions.append(TomographyDisposition.SKILL_DEFICIT)
-            else:
-                dispositions.append(TomographyDisposition.UNRESOLVED)
+            dispositions.append(
+                TomographyDisposition.SKILL_CANDIDATE
+                if skill_related_success_count >= 2
+                else TomographyDisposition.UNRESOLVED
+            )
 
-        # A model-internal boundary is never inferred from one failure. It requires an
-        # explicit caller assertion that admissible external supports were exhausted.
-        any_external_gain = any(
-            item not in {
-                TomographyDisposition.UNRESOLVED,
-                TomographyDisposition.NONSPECIFIC_RETRY_EFFECT,
-            }
+        escalation_success = TomographyAxis.ESCALATION_REFERENCE in successful_axes
+        if escalation_success:
+            dispositions.append(
+                TomographyDisposition.ESCALATION_CANDIDATE
+                if external_supports_exhausted
+                else TomographyDisposition.UNRESOLVED
+            )
+
+        # Collapse duplicates before evaluating the residual boundary.
+        dispositions = list(dict.fromkeys(dispositions))
+        specific_external_gain = any(
+            item in _MOVEMENT_ELIGIBLE_DISPOSITIONS
             for item in dispositions
         )
-        model_internal = bool(external_supports_exhausted and not any_external_gain)
-        if model_internal:
-            dispositions = [TomographyDisposition.MODEL_INTERNAL_RESIDUAL]
+        escalation_gain = TomographyDisposition.ESCALATION_CANDIDATE in dispositions
+
+        model_internal = False
+        stop_reason: TomographyStopReason | None = None
+        if external_supports_exhausted and not specific_external_gain and not escalation_gain:
+            if safe_stop_required:
+                dispositions = [TomographyDisposition.SAFE_STOP_BOUNDARY]
+            else:
+                dispositions = [TomographyDisposition.MODEL_INTERNAL_RESIDUAL]
+                model_internal = True
+                stop_reason = TomographyStopReason.MODEL_INTERNAL_BOUNDARY
 
         if not dispositions:
             dispositions = [TomographyDisposition.UNRESOLVED]
         dispositions = list(dict.fromkeys(dispositions))
 
-        nonspecific_only = all(
-            item in {TomographyDisposition.UNRESOLVED, TomographyDisposition.NONSPECIFIC_RETRY_EFFECT}
-            for item in dispositions
+        promotion = bool(
+            causal_movement_earned
+            and any(item in _MOVEMENT_ELIGIBLE_DISPOSITIONS for item in dispositions)
+            and not model_internal
         )
-        promotion = bool(not model_internal and not nonspecific_only)
         return self._profile(
             study,
             tuple(dispositions),
             evidence_refs,
             promotion=promotion,
             model_internal=model_internal,
-            stop_reason=(TomographyStopReason.MODEL_INTERNAL_BOUNDARY if model_internal else None),
+            stop_reason=stop_reason,
         )
 
     @staticmethod
@@ -153,12 +188,14 @@ class TomographyAnalyzer:
             "dispositions": [item.value for item in dispositions],
             "evidence_refs": list(evidence_refs),
             "model_internal": model_internal,
+            "promotion_allowed": promotion,
+            "route_back_stage": "stage4" if promotion else None,
             "stop_reason": None if stop_reason is None else stop_reason.value,
         }
         supported = tuple(
             f"stage7:{item.value}"
             for item in dispositions
-            if item not in {TomographyDisposition.UNRESOLVED, TomographyDisposition.NONSPECIFIC_RETRY_EFFECT}
+            if item is not TomographyDisposition.UNRESOLVED
         )
         return TomographyProfile(
             profile_id=stable_id("tomography-profile", payload),
