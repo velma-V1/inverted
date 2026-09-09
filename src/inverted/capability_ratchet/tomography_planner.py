@@ -32,9 +32,13 @@ _AXIS_LADDERS: dict[DivergenceClass, tuple[TomographyAxis, ...]] = {
         TomographyAxis.TOOL_AVAILABILITY,
         TomographyAxis.TOOL_SELECTION,
         TomographyAxis.TOOL_ARGUMENTS,
+        TomographyAxis.TOOL_EXECUTION_RESULT,
         TomographyAxis.TOOL_RESULT_INTERPRETATION,
     ),
-    DivergenceClass.VERIFIER_FEEDBACK: (TomographyAxis.VERIFIER_FEEDBACK,),
+    DivergenceClass.VERIFIER_FEEDBACK: (
+        TomographyAxis.VERIFIER_VISIBILITY,
+        TomographyAxis.VERIFIER_FEEDBACK,
+    ),
     DivergenceClass.RECOVERY_POLICY: (
         TomographyAxis.TARGETED_RECOVERY,
         TomographyAxis.GENERIC_RETRY_CONTROL,
@@ -42,11 +46,9 @@ _AXIS_LADDERS: dict[DivergenceClass, tuple[TomographyAxis, ...]] = {
     DivergenceClass.SKILL_DEFICIT: (
         TomographyAxis.SKILL_TRIGGER,
         TomographyAxis.SKILL_PROCEDURE,
-        TomographyAxis.SKILL_EVIDENCE_REQUIREMENT,
-        TomographyAxis.SKILL_VERIFICATION_RULE,
     ),
     DivergenceClass.MODEL_CAPABILITY_LIMIT: (
-        TomographyAxis.STRONGER_MODEL_ESCALATION_CONTROL,
+        TomographyAxis.ESCALATION_REFERENCE,
     ),
 }
 
@@ -126,6 +128,8 @@ class TomographyPlanner:
             raise ValueError("max_new_probes must be at least 1")
         if max_new_probes > 3 and not extension_authorized:
             raise ValueError("more than three Stage-7 probes requires explicit extension authorization")
+        if type(external_supports_exhausted) is not bool:
+            raise TypeError("external_supports_exhausted must be boolean")
         decisions = tuple(decision_ids)
         evidence = tuple(baseline_evidence_refs)
         if not decisions or not evidence:
@@ -160,16 +164,25 @@ class TomographyPlanner:
                 reason=TomographyStopReason.INSUFFICIENT_OBSERVABLE_EVIDENCE,
                 max_new_probes=max_new_probes, candidate_axes=axes,
             )
-        if kind is DivergenceClass.MODEL_CAPABILITY_LIMIT:
-            reason = (
-                TomographyStopReason.MODEL_INTERNAL_BOUNDARY
-                if external_supports_exhausted
-                else TomographyStopReason.INSUFFICIENT_OBSERVABLE_EVIDENCE
-            )
+
+        # Escalation is not a cheap first-line probe. It becomes admissible only after
+        # deterministic/tool/skill/verifier/recovery alternatives are exhausted.
+        if kind is DivergenceClass.MODEL_CAPABILITY_LIMIT and not external_supports_exhausted:
             return self._stopped(
                 failure_snapshot_id=failure_snapshot_id, parent_state_hash=parent_state_hash,
                 partition=part, decision_ids=decisions, baseline_evidence_refs=evidence,
-                reason=reason, max_new_probes=max_new_probes, candidate_axes=axes,
+                reason=TomographyStopReason.INSUFFICIENT_OBSERVABLE_EVIDENCE,
+                max_new_probes=max_new_probes, candidate_axes=axes,
+            )
+        if (
+            kind is DivergenceClass.MODEL_CAPABILITY_LIMIT
+            and TomographyAxis.ESCALATION_REFERENCE not in intervention_ids
+        ):
+            return self._stopped(
+                failure_snapshot_id=failure_snapshot_id, parent_state_hash=parent_state_hash,
+                partition=part, decision_ids=decisions, baseline_evidence_refs=evidence,
+                reason=TomographyStopReason.MODEL_INTERNAL_BOUNDARY,
+                max_new_probes=max_new_probes, candidate_axes=axes,
             )
 
         resolved = {item if isinstance(item, TomographyAxis) else TomographyAxis(item) for item in resolved_axes}
@@ -185,14 +198,8 @@ class TomographyPlanner:
         selected: list[TomographyAxis] = []
         for axis in remaining:
             if axis not in intervention_ids or axis not in changed_dimensions:
-                # Existing-evidence-first ladder cannot skip an unresolved prerequisite.
-                if axis in {
-                    TomographyAxis.TOOL_AVAILABILITY,
-                    TomographyAxis.TOOL_SELECTION,
-                    TomographyAxis.TOOL_ARGUMENTS,
-                }:
-                    break
-                continue
+                # The diagnostic ladder may never skip an unresolved prerequisite.
+                break
             selected.append(axis)
             if len(selected) == max_new_probes:
                 break
@@ -216,14 +223,13 @@ class TomographyPlanner:
         probes: list[TomographyProbe] = []
         target_recovery_id = intervention_ids.get(TomographyAxis.TARGETED_RECOVERY)
         generic_control_id = intervention_ids.get(TomographyAxis.GENERIC_RETRY_CONTROL)
-        verifier_control_id = intervention_ids.get(TomographyAxis.GENERIC_RETRY_CONTROL)
         for axis in selected:
             intervention_id = intervention_ids[axis]
             control_id = None
             if axis is TomographyAxis.TARGETED_RECOVERY:
                 control_id = generic_control_id
             elif axis is TomographyAxis.VERIFIER_FEEDBACK:
-                control_id = verifier_control_id
+                control_id = generic_control_id
             elif axis is TomographyAxis.GENERIC_RETRY_CONTROL:
                 control_id = target_recovery_id
             seed = {"study_id": study_id, "axis": axis.value, "intervention_id": intervention_id}
