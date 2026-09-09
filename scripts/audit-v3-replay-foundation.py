@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import inverted.capability_ratchet as cr
+from inverted.capability_ratchet.stage9_audit import stage9_semantic_checks as _stage9_semantic_checks
 from inverted.capability_ratchet.cli import _build_compilation_parser, _build_tomography_parser
 from inverted.capability_ratchet.compilation_core import (
     COMPILATION_KIND_ORDER,
@@ -29,6 +30,37 @@ from inverted.capability_ratchet.tomography_eligibility import (
     classify_tomography_eligibility,
 )
 
+
+# Stage-9 permanent-audit surface.  These tokens remain in the repository-wide
+# audit so omission tests can detect silent removal without importing helper code.
+STAGE9_AUDIT_CONTRACT_TOKENS = (
+    "fine_tuning_core.py",
+    "fine_tuning_store.py",
+    "fine_tuning_eligibility.py",
+    "fine_tuning_dataset.py",
+    "fine_tuning_planner.py",
+    "fine_tuning_analysis.py",
+    "fine_tuning_lab.py",
+    "fine_tuning_cli.py",
+    "test_capability_ratchet_fine_tuning_cli.py",
+    ".github/workflows/v3-stage9-completion.yml",
+    "stage9_cli_surface_contract",
+    "stage9_zero_call_contract",
+    "stage9_no_independent_trainer_contract",
+    "stage9_model_internal_owner_contract",
+    "stage9_cheaper_owner_veto_contract",
+    "stage9_recurrence_contract",
+    "stage9_stage8_generalization_gate",
+    "stage9_protected_partition_veto_contract",
+    "stage9_train_eval_disjoint_contract",
+    "stage9_leakage_veto_contract",
+    "stage9_observable_target_contract",
+    "stage9_regression_negative_transfer_contract",
+    "stage9_qualification_not_training_contract",
+    "stage9_not_authorized_contract",
+    "stage9_stage11_confirmation_contract",
+    "stage9_certified_event_count",
+)
 
 LEGACY_AUDIT = Path(__file__).with_name("audit-v3-replay-foundation-legacy.py")
 
@@ -692,15 +724,17 @@ def main(argv: list[str] | None = None) -> int:
     legacy_rc, payload = _run_legacy(raw, repo)
     stage7_findings, stage7_payload = _stage7_semantic_checks(repo, Path(args.replay_root))
     stage8_findings, stage8_payload = _stage8_semantic_checks(repo, Path(args.replay_root))
+    stage9_findings, stage9_payload = _stage9_semantic_checks(repo, Path(args.replay_root))
     legacy_findings = list(payload.get("forgotten_items", ()))
-    combined = legacy_findings + stage7_findings + stage8_findings
+    combined = legacy_findings + stage7_findings + stage8_findings + stage9_findings
     payload.update(stage7_payload)
     payload.update(stage8_payload)
+    payload.update(stage9_payload)
     payload["forgotten_items"] = combined
     payload["forgotten_count"] = len(combined)
     payload["MODEL_CALLS"] = 0
     print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
-    return 0 if legacy_rc == 0 and not stage7_findings and not stage8_findings else 1
+    return 0 if legacy_rc == 0 and not stage7_findings and not stage8_findings and not stage9_findings else 1
 
 
 if __name__ == "__main__":
