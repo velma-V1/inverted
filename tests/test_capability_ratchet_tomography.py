@@ -79,13 +79,14 @@ def test_planner_tool_ladder_is_ordered_bounded_and_existing_evidence_first():
         partition=Partition.DEVELOPMENT, divergence=DivergenceClass.TOOL_INTERPRETATION,
         decision_ids=("D6",), baseline_evidence_refs=("baseline",),
         intervention_ids={TomographyAxis.TOOL_SELECTION: "int-select", TomographyAxis.TOOL_ARGUMENTS: "int-args",
-            TomographyAxis.TOOL_RESULT_INTERPRETATION: "int-interpret"},
+            TomographyAxis.TOOL_EXECUTION_RESULT: "int-exec", TomographyAxis.TOOL_RESULT_INTERPRETATION: "int-interpret"},
         changed_dimensions={TomographyAxis.TOOL_SELECTION: ("request_envelopes.0.messages.0.content",),
             TomographyAxis.TOOL_ARGUMENTS: ("request_envelopes.0.messages.0.content",),
+            TomographyAxis.TOOL_EXECUTION_RESULT: ("request_envelopes.0.messages.0.content",),
             TomographyAxis.TOOL_RESULT_INTERPRETATION: ("request_envelopes.0.messages.0.content",)},
         resolved_axes=(TomographyAxis.TOOL_AVAILABILITY,))
     assert [p.axis for p in plan.probes] == [TomographyAxis.TOOL_SELECTION, TomographyAxis.TOOL_ARGUMENTS,
-        TomographyAxis.TOOL_RESULT_INTERPRETATION]
+        TomographyAxis.TOOL_EXECUTION_RESULT]
     assert plan.study.projected_calls == 3 and plan.study.max_new_probes == 3
 
 
@@ -144,9 +145,12 @@ def test_targeted_recovery_beats_generic_retry_control():
     control = probe(TomographyAxis.GENERIC_RETRY_CONTROL, probe_id="control", intervention_id="control")
     outs = (outcome(TomographyAxis.TARGETED_RECOVERY, probe_id="target", replay_result_id="r1"),
         outcome(TomographyAxis.GENERIC_RETRY_CONTROL, success=False, probe_id="control", replay_result_id="r2"))
-    profile = TomographyAnalyzer().analyze(study(probe_ids=("target", "control"), projected_calls=2), (target, control), outs)
+    base_study = study(probe_ids=("target", "control"), projected_calls=2)
+    profile = TomographyAnalyzer().analyze(base_study, (target, control), outs)
     assert TomographyDisposition.RECOVERY_POLICY_DEFICIT in profile.dispositions
-    assert profile.route_back_stage == "stage4"
+    assert profile.route_back_stage is None and profile.promotion_allowed is False
+    movement = TomographyAnalyzer().analyze(base_study, (target, control), outs, causal_movement_earned=True)
+    assert movement.route_back_stage == "stage4" and movement.promotion_allowed is True
 
 
 def test_skill_requires_related_case_evidence_before_stage4_routeback():
@@ -154,7 +158,11 @@ def test_skill_requires_related_case_evidence_before_stage4_routeback():
     weak = TomographyAnalyzer().analyze(study(), (p,), (outcome(TomographyAxis.SKILL_PROCEDURE),))
     assert weak.dispositions == (TomographyDisposition.UNRESOLVED,)
     strong = TomographyAnalyzer().analyze(study(), (p,), (outcome(TomographyAxis.SKILL_PROCEDURE),), skill_related_success_count=2)
-    assert TomographyDisposition.SKILL_DEFICIT in strong.dispositions and strong.route_back_stage == "stage4"
+    assert TomographyDisposition.SKILL_DEFICIT in strong.dispositions
+    assert strong.route_back_stage is None and strong.promotion_allowed is False
+    movement = TomographyAnalyzer().analyze(study(), (p,), (outcome(TomographyAxis.SKILL_PROCEDURE),),
+        skill_related_success_count=2, causal_movement_earned=True)
+    assert movement.route_back_stage == "stage4" and movement.promotion_allowed is True
 
 
 def test_protected_regression_is_immediate_veto():
