@@ -16,28 +16,44 @@ class TomographyAxis(str, Enum):
     TOOL_AVAILABILITY = "TOOL_AVAILABILITY"
     TOOL_SELECTION = "TOOL_SELECTION"
     TOOL_ARGUMENTS = "TOOL_ARGUMENTS"
+    TOOL_EXECUTION_RESULT = "TOOL_EXECUTION_RESULT"
     TOOL_RESULT_INTERPRETATION = "TOOL_RESULT_INTERPRETATION"
+    VERIFIER_VISIBILITY = "VERIFIER_VISIBILITY"
     VERIFIER_FEEDBACK = "VERIFIER_FEEDBACK"
     TARGETED_RECOVERY = "TARGETED_RECOVERY"
-    SKILL_TRIGGER = "SKILL_TRIGGER"
-    SKILL_PROCEDURE = "SKILL_PROCEDURE"
-    SKILL_EVIDENCE_REQUIREMENT = "SKILL_EVIDENCE_REQUIREMENT"
-    SKILL_VERIFICATION_RULE = "SKILL_VERIFICATION_RULE"
     GENERIC_RETRY_CONTROL = "GENERIC_RETRY_CONTROL"
-    STRONGER_MODEL_ESCALATION_CONTROL = "STRONGER_MODEL_ESCALATION_CONTROL"
+    SKILL_PROCEDURE = "SKILL_PROCEDURE"
+    SKILL_TRIGGER = "SKILL_TRIGGER"
+    ESCALATION_REFERENCE = "ESCALATION_REFERENCE"
+
+    # Temporary source-compatibility aliases. Enum iteration exposes only the
+    # corrected Stage-7 scientific vocabulary above.
+    SKILL_EVIDENCE_REQUIREMENT = "SKILL_PROCEDURE"
+    SKILL_VERIFICATION_RULE = "VERIFIER_VISIBILITY"
+    STRONGER_MODEL_ESCALATION_CONTROL = "ESCALATION_REFERENCE"
 
 
 class TomographyDisposition(str, Enum):
     TOOL_REQUIRED = "TOOL_REQUIRED"
     TOOL_SELECTION_DEFICIT = "TOOL_SELECTION_DEFICIT"
     TOOL_ARGUMENT_DEFICIT = "TOOL_ARGUMENT_DEFICIT"
+    TOOL_EXECUTION_FAILURE = "TOOL_EXECUTION_FAILURE"
     TOOL_INTERPRETATION_DEFICIT = "TOOL_INTERPRETATION_DEFICIT"
-    VERIFIER_RECOVERABLE = "VERIFIER_RECOVERABLE"
-    SKILL_DEFICIT = "SKILL_DEFICIT"
-    RECOVERY_POLICY_DEFICIT = "RECOVERY_POLICY_DEFICIT"
+    VERIFIER_SUFFICIENT = "VERIFIER_SUFFICIENT"
+    RECOVERY_SUFFICIENT = "RECOVERY_SUFFICIENT"
+    SKILL_CANDIDATE = "SKILL_CANDIDATE"
     MODEL_INTERNAL_RESIDUAL = "MODEL_INTERNAL_RESIDUAL"
-    NONSPECIFIC_RETRY_EFFECT = "NONSPECIFIC_RETRY_EFFECT"
+    ESCALATION_CANDIDATE = "ESCALATION_CANDIDATE"
+    SAFE_STOP_BOUNDARY = "SAFE_STOP_BOUNDARY"
     UNRESOLVED = "UNRESOLVED"
+
+    # Temporary source-compatibility aliases. Generic retry is evidence of a
+    # confound, not a deployment disposition, so its old label resolves to
+    # UNRESOLVED rather than creating a second scientific conclusion.
+    VERIFIER_RECOVERABLE = "VERIFIER_SUFFICIENT"
+    RECOVERY_POLICY_DEFICIT = "RECOVERY_SUFFICIENT"
+    SKILL_DEFICIT = "SKILL_CANDIDATE"
+    NONSPECIFIC_RETRY_EFFECT = "UNRESOLVED"
 
 
 class TomographyStatus(str, Enum):
@@ -91,6 +107,32 @@ def _enum_tuple(name: str, values: tuple[Any, ...], enum_type: type[Enum], *, al
 def stable_id(prefix: str, payload: Mapping[str, Any]) -> str:
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
     return f"{prefix}-{hashlib.sha256(raw).hexdigest()[:24]}"
+
+
+@dataclass(frozen=True)
+class TomographyPolicy:
+    """Bounded Stage-7 planning policy; never grants execution or certification."""
+
+    max_new_probes: int = 3
+    max_generic_retry_controls: int = 1
+    stage456_feedback_required: bool = True
+    certification_allowed: bool = False
+
+    def __post_init__(self) -> None:
+        for name in ("max_new_probes", "max_generic_retry_controls"):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if self.max_new_probes < 1:
+            raise ValueError("max_new_probes must be at least 1")
+        if self.max_generic_retry_controls > 1:
+            raise ValueError("Stage 7 permits at most one matched generic-retry control")
+        if type(self.stage456_feedback_required) is not bool:
+            raise TypeError("stage456_feedback_required must be boolean")
+        if type(self.certification_allowed) is not bool:
+            raise TypeError("certification_allowed must be boolean")
+        if self.certification_allowed:
+            raise ValueError("Stage 7 cannot certify")
 
 
 @dataclass(frozen=True)
@@ -155,7 +197,7 @@ class TomographyStudy:
 
 
 @dataclass(frozen=True)
-class TomographyProbe:
+class TomographyProbeSpec:
     probe_id: str
     study_id: str
     axis: TomographyAxis
@@ -191,6 +233,10 @@ class TomographyProbe:
             "projected_calls": self.projected_calls,
             "protected": self.protected,
         }
+
+
+# Backwards-compatible source alias; the scientific public name is ProbeSpec.
+TomographyProbe = TomographyProbeSpec
 
 
 @dataclass(frozen=True)
@@ -244,7 +290,7 @@ class TomographyOutcome:
 
 
 @dataclass(frozen=True)
-class TomographyProfile:
+class TomographyAssessment:
     profile_id: str
     study_id: str
     dispositions: tuple[TomographyDisposition, ...]
@@ -298,3 +344,7 @@ class TomographyProfile:
             "certification_allowed": False,
             "stop_reason": None if self.stop_reason is None else self.stop_reason.value,
         }
+
+
+# Backwards-compatible source alias; storage migration is handled independently.
+TomographyProfile = TomographyAssessment
