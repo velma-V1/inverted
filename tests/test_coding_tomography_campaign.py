@@ -26,29 +26,30 @@ def _config(max_sessions: int = 160):
             "include_common_interventions":True,
             "common_intervention_task_ids":[
                 "PU01-false-green",
-                "PU31-generalization",
                 "PUC01-false-green-generated-package",
                 "PUC03-circular-evidence-split-brain",
-                "PUC04-correctly-unsolvable",
                 "PUC05-active-path-generated-generalization",
                 "PUC06-parallel-opportunity",
                 "PUC08-transient-retry",
             ],
             "observability_repeats":1,
-            "observability_subjects":["claude_code","codex"],
+            "observability_subjects":["claude_code"],
             "observability_task_ids":[
-                "PUC01-false-green-generated-package",
-                "PUC04-correctly-unsolvable",
                 "PUC06-parallel-opportunity",
-                "PUC08-transient-retry",
+                "PUC12-context-pressure-authority",
             ],
+            "resume_task_ids":[
+                "PUC10-unfinished-work",
+                "PUC12-context-pressure-authority",
+            ],
+            "mcp_task_ids":[
+                "PUC13-mcp-reference-escalation",
+            ],
+            "replay_reserve_slots":6,
             "timeout_s":30,
             "task_ids":[
                 "PU01-false-green",
-                "PU08-generated-decoy",
                 "PU09-stale-test",
-                "PU10-wrong-fixture",
-                "PU25-packaging",
                 "PU27-negative-space",
                 "PU29-underengineering",
                 "PU31-generalization",
@@ -64,6 +65,9 @@ def _config(max_sessions: int = 160):
                 "PUC08-transient-retry",
                 "PUC09-false-tool-success",
                 "PUC10-unfinished-work",
+                "PUC11-least-privilege-tool-choice",
+                "PUC12-context-pressure-authority",
+                "PUC13-mcp-reference-escalation",
             ],
             "subjects":[
                 {"name":"claude_code","executable":"definitely-missing-claude","extra_args":[]},
@@ -78,16 +82,26 @@ def test_campaign_plan_is_bounded_and_matched(tmp_path: Path):
     plan = build_campaign_plan(_config(), tasks)
 
     assert plan["task_count"] == 20
+    assert plan["scheduled_sessions"] == 154
+    assert plan["replay_reserve_slots"] == 6
     assert plan["planned_sessions"] == 160
     assert len(plan["subjects"]) == 2
 
     native = [row for row in plan["entries"] if row["kind"] == "NATIVE_OBSERVATION"]
     causal = [row for row in plan["entries"] if row["kind"] == "CAUSAL_INTERVENTION"]
-    assert len(native) == 80
-    assert len(causal) == 72
     observed = [row for row in plan["entries"] if row["kind"] == "OBSERVABILITY_AUGMENTED"]
-    assert len(observed) == 8
-    assert {row["subject"]["name"] for row in observed} == {"claude_code", "codex"}
+    resume_fresh = [row for row in plan["entries"] if row["kind"] == "RESUME_FRESH_CONTROL"]
+    resume_continue = [row for row in plan["entries"] if row["kind"] == "RESUME_CONTINUE"]
+    mcp = [row for row in plan["entries"] if row["kind"] == "MCP_TREATMENT"]
+
+    assert len(native) == 80
+    assert len(causal) == 62
+    assert len(observed) == 2
+    assert len(resume_fresh) == 4
+    assert len(resume_continue) == 4
+    assert len(mcp) == 2
+    assert {row["subject"]["name"] for row in observed} == {"claude_code"}
+    assert {row["task_id"] for row in mcp} == {"PUC13-mcp-reference-escalation"}
 
     by_subject_task = {}
     for row in native:
