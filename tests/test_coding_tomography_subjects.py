@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from inverted.assistant_value.coding_subjects import (
     build_claude_code_command,
+    build_claude_code_resume_command,
     build_codex_command,
+    build_codex_resume_command,
     expand_observable_subject_stream,
     extract_observable_final_text,
     parse_jsonl_stream,
@@ -133,3 +135,38 @@ def test_extract_observable_final_text_uses_explicit_subject_output_only():
     assert codex == "Please specify blue or green deployment."
     assert claude == "Please clarify which deployment is active."
     assert "internal summary" not in codex
+
+
+def test_resume_commands_preserve_machine_readable_output_and_session_id(tmp_path):
+    claude = build_claude_code_resume_command(
+        session_id="claude-session-1",
+        prompt="continue",
+        cwd=tmp_path,
+    )
+    codex = build_codex_resume_command(
+        session_id="codex-session-1",
+        prompt="continue",
+        cwd=tmp_path,
+    )
+
+    assert claude.argv[:4] == (
+        "claude",
+        "-p",
+        "--resume",
+        "claude-session-1",
+    )
+    assert "stream-json" in claude.argv
+    assert "--verbose" in claude.argv
+    assert claude.evidence_channel == "resume"
+
+    assert codex.argv[:3] == ("codex","exec","--json")
+    resume_index = codex.argv.index("resume")
+    assert codex.argv[resume_index + 1] == "codex-session-1"
+    assert codex.argv[resume_index + 2] == "continue"
+    assert "-C" in codex.argv
+    assert codex.evidence_channel == "resume"
+
+    for command in (claude, codex):
+        joined = " ".join(command.argv).lower()
+        assert "dangerously" not in joined
+        assert "bypass" not in joined
