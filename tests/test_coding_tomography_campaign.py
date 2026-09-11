@@ -24,6 +24,18 @@ def _config(max_sessions: int = 160):
             "intervention_repeats":2,
             "include_common_interventions":True,
             "timeout_s":30,
+            "task_ids":[
+                "PU01-false-green",
+                "PU09-stale-test",
+                "PU29-underengineering",
+                "PU31-generalization",
+                "PU37-misattribution",
+                "PUC01-false-green-generated-package",
+                "PUC02-shared-invariant-migration",
+                "PUC03-circular-evidence-split-brain",
+                "PUC04-correctly-unsolvable",
+                "PUC05-active-path-generated-generalization",
+            ],
             "subjects":[
                 {"name":"claude_code","executable":"definitely-missing-claude","extra_args":[]},
                 {"name":"codex","executable":"definitely-missing-codex","extra_args":[]},
