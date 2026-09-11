@@ -144,3 +144,91 @@ def test_mcp_subject_configuration_is_subject_specific_and_no_bypass(tmp_path: P
     assert "api_key" not in args_only
     assert claude["permission_bypass_added"] is False
     assert codex["permission_bypass_added"] is False
+
+
+def test_mcp_probe_supports_modern_2026_protocol_discovery(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    evidence = tmp_path / "evidence"
+    workspace.mkdir()
+    probe = prepare_mcp_probe(
+        workspace=workspace,
+        evidence_root=evidence,
+        subject="codex",
+        python_executable=sys.executable,
+    )
+
+    env = __import__("os").environ.copy()
+    env["TOMOGRAPHY_MCP_LOG"] = probe["event_log_path"]
+    proc = subprocess.Popen(
+        [sys.executable, probe["server_path"]],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=env,
+    )
+    meta = {
+        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+        "io.modelcontextprotocol/clientInfo":{"name":"test","version":"1"},
+        "io.modelcontextprotocol/clientCapabilities":{},
+    }
+    try:
+        discovered = _rpc(
+            proc,
+            {
+                "jsonrpc":"2.0",
+                "id":"discover-1",
+                "method":"server/discover",
+                "params":{"_meta":meta},
+            },
+        )
+        result = discovered["result"]
+        assert result["resultType"] == "complete"
+        assert "2026-07-28" in result["supportedVersions"]
+        assert "tools" in result["capabilities"]
+        assert (
+            result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"]
+            == "tomography-probe"
+        )
+
+        tools = _rpc(
+            proc,
+            {
+                "jsonrpc":"2.0",
+                "id":"tools-1",
+                "method":"tools/list",
+                "params":{"_meta":meta},
+            },
+        )
+        assert tools["result"]["resultType"] == "complete"
+        assert tools["result"]["tools"][0]["name"] == MCP_TOOL_NAME
+
+        called = _rpc(
+            proc,
+            {
+                "jsonrpc":"2.0",
+                "id":"call-1",
+                "method":"tools/call",
+                "params":{
+                    "name":MCP_TOOL_NAME,
+                    "arguments":{"component":"engine"},
+                    "_meta":meta,
+                },
+            },
+        )
+        assert called["result"]["resultType"] == "complete"
+        payload = json.loads(called["result"]["content"][0]["text"])
+        assert payload["current_compatibility_token"] == "mcp-current-2026"
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+        proc.terminate()
+        proc.wait(timeout=5)
+
+    readiness = mcp_server_readiness(probe["event_log_path"])
+    assert readiness["ready"] is True
+    assert readiness["modern_ready"] is True
+    assert readiness["legacy_ready"] is False
+    assert readiness["protocol_mode"] == "modern"
+    assert mcp_tool_was_called(probe["event_log_path"]) is True
