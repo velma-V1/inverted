@@ -12,6 +12,7 @@ from .coding_tomography import (
     MECHANISMS,
     classify_mechanism_evidence,
     first_divergence,
+    mechanism_observable_signal,
     mechanism_registry,
     pathology_registry,
 )
@@ -281,62 +282,95 @@ def _mechanism_results(
     summaries: list[dict[str, Any]],
     intervention_results: dict[str, Any],
 ) -> dict[str, Any]:
-    task_map = {task["task_id"]:task for task in tasks}
-    by_mechanism: dict[str, dict[str, Any]] = {}
+    task_map = {task["task_id"]: task for task in tasks}
     paired = list((intervention_results.get("results") or {}).values())
+    subjects = sorted({
+        str(row.get("subject"))
+        for row in summaries
+        if row.get("subject")
+    })
+    trajectory_cache: dict[str, list[dict[str, Any]]] = {}
 
-    for mechanism in MECHANISMS:
-        mid = mechanism["id"]
-        looked_trials = [
+    def events_for(summary: dict[str, Any]) -> list[dict[str, Any]]:
+        key = str(summary["trial_key"])
+        if key not in trajectory_cache:
+            trajectory_cache[key] = _read_jsonl(
+                Path(summary["evidence_root"]) / "normalized-trajectory.jsonl"
+            )
+        return trajectory_cache[key]
+
+    def analyze(mid: str, subject: str | None) -> dict[str, Any]:
+        native = [
             row for row in summaries
             if row.get("kind") == "NATIVE_OBSERVATION"
-            and mid in (task_map.get(row["task_id"],{}).get("candidate_mechanisms") or [])
+            and (subject is None or str(row.get("subject")) == subject)
         ]
-        affected = [row for row in paired if mid in (row.get("mechanisms") or [])]
-        identifiable = [
-            row for row in affected
-            if list(row.get("mechanisms") or []) == [mid]
-            or (
-                len(list(row.get("mechanisms") or [])) == 1
-                and mid in list(row.get("mechanisms") or [])
+        opportunities = [
+            row for row in native
+            if mid in (task_map.get(row["task_id"], {}).get("candidate_mechanisms") or [])
+        ]
+        signaled = [
+            row for row in opportunities
+            if mechanism_observable_signal(
+                mid,
+                events_for(row),
+                dict(row.get("metrics") or {}),
             )
         ]
-        bundled = [row for row in affected if row not in identifiable]
-        independent_tasks = {
-            row["task_id"] for row in looked_trials
+        signal_tasks = {str(row["task_id"]) for row in signaled}
+
+        affected = [
+            row for row in paired
+            if mid in (row.get("mechanisms") or [])
+            and (subject is None or str(row.get("subject")) == subject)
+        ]
+        independent_interventions = {
+            (str(row.get("task_id")), str(row.get("intervention_id")))
+            for row in affected
         }
-        positive = [row for row in identifiable if float(row.get("success_delta",0.0)) > 0]
-        negative = [row for row in identifiable if float(row.get("success_delta",0.0)) < 0]
+        positive = [
+            row for row in affected
+            if float(row.get("success_delta", 0.0)) > 0.0
+        ]
+        negative = [
+            row for row in affected
+            if float(row.get("success_delta", 0.0)) < 0.0
+        ]
         rescue_rate = (
-            sum(max(0.0,float(row["success_delta"])) for row in identifiable) / len(identifiable)
-            if identifiable else 0.0
+            sum(max(0.0, float(row.get("success_delta", 0.0))) for row in affected)
+            / len(affected)
+            if affected else 0.0
         )
         regression_rate = (
-            sum(max(0.0,-float(row["success_delta"])) for row in identifiable) / len(identifiable)
-            if identifiable else 0.0
+            sum(max(0.0, -float(row.get("success_delta", 0.0))) for row in affected)
+            / len(affected)
+            if affected else 0.0
         )
-        families = {
-            task_map.get(row["task_id"],{}).get("family")
+        positive_families = {
+            str(task_map.get(row["task_id"], {}).get("family"))
             for row in positive
             if task_map.get(row["task_id"])
         }
         evidence = classify_mechanism_evidence(
-            observed_trials=len(looked_trials),
-            independent_tasks=len(independent_tasks),
-            causal_interventions=len(identifiable),
-            generalized_families=len(families),
+            opportunity_trials=len(opportunities),
+            observed_trials=len(signaled),
+            independent_tasks=len(signal_tasks),
+            causal_interventions=len(independent_interventions),
+            generalized_families=len(positive_families),
             rescue_rate=rescue_rate,
             regression_rate=regression_rate,
             complexity_units=None,
         )
-        mean_elapsed_delta = (
-            sum(float(row.get("elapsed_s_delta", 0.0)) for row in affected) / len(affected)
-            if affected else None
-        )
-        mean_event_delta = (
-            sum(float(row.get("event_count_delta", 0.0)) for row in affected) / len(affected)
-            if affected else None
-        )
+
+        def mean(name: str) -> float | None:
+            values = [
+                float(row[name])
+                for row in affected
+                if isinstance(row.get(name), (int, float))
+                and not isinstance(row.get(name), bool)
+            ]
+            return sum(values) / len(values) if values else None
+
         verification_delta = (
             sum(
                 float(row.get("verification_after_last_edit_treatment", 0.0))
@@ -345,27 +379,67 @@ def _mechanism_results(
             ) / len(affected)
             if affected else None
         )
-        by_mechanism[mid] = {
-            "mechanism_id":mid,
-            "mechanism_name":mechanism["name"],
+        return {
             **evidence,
-            "looked_at_task_ids":sorted(independent_tasks),
-            "intervention_count":len(affected),
-            "identifiable_intervention_count":len(identifiable),
-            "bundle_intervention_count":len(bundled),
-            "positive_identifiable_interventions":len(positive),
-            "negative_identifiable_interventions":len(negative),
-            "bundle_evidence_keys":[
-                f"{row.get('subject')}|{row.get('task_id')}|{row.get('intervention_id')}"
-                for row in bundled
-            ],
-            "measured_mean_elapsed_delta_s_all_associated_factors": mean_elapsed_delta,
-            "measured_mean_event_count_delta_all_associated_factors": mean_event_delta,
-            "measured_verification_after_last_edit_delta_all_associated_factors": verification_delta,
+            "subject": subject or "combined",
+            "opportunity_task_ids": sorted({
+                str(row["task_id"]) for row in opportunities
+            }),
+            "observed_signal_task_ids": sorted(signal_tasks),
+            "intervention_task_ids": sorted({
+                str(row.get("task_id")) for row in affected
+            }),
+            "independent_intervention_units": len(independent_interventions),
+            "positive_interventions": len(positive),
+            "negative_interventions": len(negative),
+            "measured_mean_elapsed_delta_s": mean("elapsed_s_delta"),
+            "measured_mean_event_count_delta": mean("event_count_delta"),
+            "measured_verification_after_last_edit_delta": verification_delta,
             "inverted_implementation_complexity": "UNKNOWN_UNTIL_IMPLEMENTATION_PROTOTYPE",
-            "attribution_rule":"multi-mechanism intervention effects do not promote individual mechanism causality",
         }
-    return {"schema_version":1,"mechanisms":by_mechanism}
+
+    by_mechanism: dict[str, dict[str, Any]] = {}
+    for mechanism in MECHANISMS:
+        mid = mechanism["id"]
+        by_subject = {
+            subject: analyze(mid, subject)
+            for subject in subjects
+        }
+        combined = analyze(mid, None)
+        subject_net = {
+            subject: float(row.get("net_effect", 0.0))
+            for subject, row in by_subject.items()
+        }
+        positive_subjects = [
+            subject for subject, value in subject_net.items() if value > 0.0
+        ]
+        negative_subjects = [
+            subject for subject, value in subject_net.items() if value < 0.0
+        ]
+        if len(positive_subjects) >= 2 and not negative_subjects:
+            source_pattern = "SHARED_POSITIVE"
+        elif len(positive_subjects) == 1 and not negative_subjects:
+            source_pattern = f"{positive_subjects[0].upper()}_POSITIVE_ONLY"
+        elif positive_subjects and negative_subjects:
+            source_pattern = "SUBJECTS_DIVERGE"
+        elif negative_subjects and not positive_subjects:
+            source_pattern = "SHARED_OR_SOURCE_SPECIFIC_NEGATIVE"
+        else:
+            source_pattern = "NO_DIRECTIONAL_SIGNAL"
+
+        by_mechanism[mid] = {
+            "mechanism_id": mid,
+            "mechanism_name": mechanism["name"],
+            **combined,
+            "by_subject": by_subject,
+            "source_pattern": source_pattern,
+            "subject_net_effects": subject_net,
+        }
+    return {
+        "schema_version": 2,
+        "subjects": subjects,
+        "mechanisms": by_mechanism,
+    }
 
 
 def _behavior_atlas(summaries: list[dict[str, Any]]) -> dict[str, Any]:
