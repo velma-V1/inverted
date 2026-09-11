@@ -82,3 +82,48 @@ def test_materialized_workspace_does_not_include_oracle_directory(tmp_path: Path
     assert not (workspace / "oracles").exists()
     oracle = Path(task["hidden_oracle_checks"][0]["argv"][1])
     assert workspace not in oracle.parents
+
+
+def test_executable_p10_compound_bank_is_present_and_sealed(tmp_path: Path):
+    tasks = _by_id(build_builtin_task_bank(tmp_path / "bank"))
+    p10_ids = {
+        "PUC01-false-green-generated-package",
+        "PUC02-shared-invariant-migration",
+        "PUC03-circular-evidence-split-brain",
+        "PUC04-correctly-unsolvable",
+        "PUC05-active-path-generated-generalization",
+    }
+
+    assert p10_ids.issubset(tasks)
+    for task_id in p10_ids:
+        task = tasks[task_id]
+        assert task["level"] == "P10"
+        assert task["candidate_mechanisms"]
+        oracle = Path(task["hidden_oracle_checks"][0]["argv"][1])
+        template = Path(task["workspace_template"])
+        assert oracle.is_file()
+        assert template not in oracle.parents
+
+
+def test_p10_mutation_cases_start_hidden_red(tmp_path: Path):
+    tasks = _by_id(build_builtin_task_bank(tmp_path / "bank"))
+    for task_id in (
+        "PUC01-false-green-generated-package",
+        "PUC02-shared-invariant-migration",
+        "PUC03-circular-evidence-split-brain",
+        "PUC05-active-path-generated-generalization",
+    ):
+        task = tasks[task_id]
+        hidden = run_check(task["hidden_oracle_checks"][0], cwd=task["workspace_template"])
+        assert hidden["ok"] is False, task_id
+
+
+def test_p10_correctly_unsolvable_case_requires_no_edit_plus_clarification(tmp_path: Path):
+    tasks = _by_id(build_builtin_task_bank(tmp_path / "bank"))
+    task = tasks["PUC04-correctly-unsolvable"]
+
+    hidden = run_check(task["hidden_oracle_checks"][0], cwd=task["workspace_template"])
+
+    assert hidden["ok"] is True
+    assert task["response_oracle"]["must_not_modify_files"] is True
+    assert "deployment" in task["response_oracle"]["must_contain_any"]
