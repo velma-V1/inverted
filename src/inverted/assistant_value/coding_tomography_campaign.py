@@ -20,6 +20,11 @@ from .coding_tomography_interventions import (
     apply_intervention,
     selected_interventions,
 )
+from .coding_tomography_mcp import (
+    mcp_server_readiness,
+    mcp_tool_was_called,
+    prepare_mcp_probe,
+)
 from .coding_tomography_observers import prepare_claude_hook_observer
 from .coding_tomography_runner import (
     materialize_workspace,
@@ -135,6 +140,8 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
     }
     observability_repeats = int(root.get("observability_repeats", 1))
     resume_task_ids = {str(x) for x in root.get("resume_task_ids") or []}
+    mcp_task_ids = {str(x) for x in root.get("mcp_task_ids") or []}
+    replay_reserve_slots = max(0, int(root.get("replay_reserve_slots", 0)))
 
     entries = []
     for subject in subjects:
@@ -199,10 +206,24 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
                 "intervention":None,
             })
 
+    for subject in subjects:
+        for task in selected_tasks:
+            if task["task_id"] not in mcp_task_ids:
+                continue
+            entries.append({
+                "kind":"MCP_TREATMENT",
+                "subject":subject,
+                "task_id":task["task_id"],
+                "repeat":1,
+                "intervention":None,
+            })
+
     max_sessions = int(root.get("max_sessions", 250))
-    if len(entries) > max_sessions:
+    scheduled_sessions = len(entries)
+    planned_sessions = scheduled_sessions + replay_reserve_slots
+    if planned_sessions > max_sessions:
         raise ValueError(
-            f"planned coding-tomography sessions {len(entries)} exceed max_sessions={max_sessions}"
+            f"planned coding-tomography sessions {planned_sessions} exceed max_sessions={max_sessions}"
         )
     return {
         "schema_version":1,
@@ -218,7 +239,10 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
         "observability_subjects":sorted(observability_subjects),
         "observability_repeats":observability_repeats,
         "resume_task_ids":sorted(resume_task_ids),
-        "planned_sessions":len(entries),
+        "mcp_task_ids":sorted(mcp_task_ids),
+        "replay_reserve_slots":replay_reserve_slots,
+        "scheduled_sessions":scheduled_sessions,
+        "planned_sessions":planned_sessions,
         "max_sessions":max_sessions,
         "entries":entries,
     }
@@ -234,6 +258,8 @@ def _trial_key(entry: dict[str, Any]) -> str:
         treatment = "resume-fresh"
     elif entry.get("kind") == "RESUME_CONTINUE":
         treatment = "resume-continue"
+    elif entry.get("kind") == "MCP_TREATMENT":
+        treatment = "mcp-treatment"
     else:
         treatment = "native"
     return (
@@ -1169,6 +1195,8 @@ def run_coding_tomography_campaign(
         kind = str(entry.get("kind") or "")
         resume_session_id = None
         trial_task = task
+        trial_subject = deepcopy(entry["subject"])
+        mcp_probe = None
 
         if kind in {"RESUME_FRESH_CONTROL", "RESUME_CONTINUE"}:
             source = next(
@@ -1215,6 +1243,18 @@ def run_coding_tomography_campaign(
         else:
             materialize_workspace(task["workspace_template"],workspace)
 
+        if kind == "MCP_TREATMENT":
+            mcp_probe = prepare_mcp_probe(
+                workspace=workspace,
+                evidence_root=evidence,
+                subject=str(entry["subject"]["name"]),
+            )
+            trial_subject["extra_args"] = (
+                list(trial_subject.get("extra_args") or [])
+                + list(mcp_probe.get("extra_args") or [])
+            )
+            _write_json(evidence / "mcp-probe-provenance.json", mcp_probe)
+
         intervention = entry.get("intervention")
         applied = None
         observer_files: list[str] = []
@@ -1242,7 +1282,7 @@ def run_coding_tomography_campaign(
 
         summary = run_subject_trial(
             task=trial_task,
-            subject=entry["subject"],
+            subject=trial_subject,
             workspace=workspace,
             evidence_root=evidence,
             timeout_s=timeout_s,
@@ -1254,6 +1294,18 @@ def run_coding_tomography_campaign(
             ),
             resume_session_id=resume_session_id,
         )
+        if mcp_probe is not None:
+            readiness = mcp_server_readiness(mcp_probe["event_log_path"])
+            mcp_result = {
+                **readiness,
+                "tool_called":mcp_tool_was_called(mcp_probe["event_log_path"]),
+                "server_name":mcp_probe["server_name"],
+                "tool_name":mcp_probe["tool_name"],
+                "permission_bypass_added":False,
+            }
+            _write_json(evidence / "mcp-probe-result.json", mcp_result)
+            summary["mcp_probe"] = mcp_result
+
         summary.update({
             "trial_key":key,
             "ordinal":ordinal,
