@@ -122,6 +122,9 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
     native_repeats = int(root.get("native_repeats", 2))
     intervention_repeats = int(root.get("intervention_repeats", 1))
     include_common = bool(root.get("include_common_interventions", True))
+    common_task_ids = {
+        str(x) for x in root.get("common_intervention_task_ids") or []
+    }
     task_filter = {str(x) for x in root.get("task_ids") or []}
     selected_tasks = [task for task in tasks if not task_filter or task["task_id"] in task_filter]
     observability_task_ids = {
@@ -143,7 +146,14 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
                     "repeat":repeat + 1,
                     "intervention":None,
                 })
-            for intervention in selected_interventions(task["task_id"], include_common=include_common):
+            include_common_for_task = (
+                include_common
+                and (not common_task_ids or task["task_id"] in common_task_ids)
+            )
+            for intervention in selected_interventions(
+                task["task_id"],
+                include_common=include_common_for_task,
+            ):
                 for repeat in range(intervention_repeats):
                     entries.append({
                         "kind":"CAUSAL_INTERVENTION",
@@ -179,6 +189,7 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
         "native_repeats":native_repeats,
         "intervention_repeats":intervention_repeats,
         "include_common_interventions":include_common,
+        "common_intervention_task_ids":sorted(common_task_ids),
         "observability_task_ids":sorted(observability_task_ids),
         "observability_subjects":sorted(observability_subjects),
         "observability_repeats":observability_repeats,
