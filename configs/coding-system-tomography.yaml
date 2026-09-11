@@ -1,51 +1,57 @@
 coding_tomography:
-  # Hard campaign ceiling. The default plan is exactly 160 full agent sessions.
-  # Any config expansion above this refuses before launching Claude Code/Codex.
+  # Hard physical-agent-call ceiling. Static work schedules 154 sessions and
+  # reserves up to 6 adaptive exact-failure replays. Unused replay slots do not
+  # launch filler calls.
   max_sessions: 160
 
-  # Two clean native observations per subject/task measure behavioral stability.
+  # Two untouched native observations per subject/task establish stability.
   native_repeats: 2
-
-  # One first-order task-specific intervention is enough here because causal
-  # promotion requires replication across independent task/intervention units,
-  # not repeated copies of the same treatment.
   intervention_repeats: 1
   include_common_interventions: true
 
-  # The common context-noise and project-instruction probes are replicated over
-  # representative task families rather than burned on every task.
+  # Common factors are sampled on six representative families instead of every
+  # task, preserving calls for mechanism-specific probes.
   common_intervention_task_ids:
     - PU01-false-green
-    - PU31-generalization
     - PUC01-false-green-generated-package
     - PUC03-circular-evidence-split-brain
-    - PUC04-correctly-unsolvable
     - PUC05-active-path-generated-generalization
     - PUC06-parallel-opportunity
     - PUC08-transient-retry
 
-  # Dedicated observability sessions are excluded from native performance.
-  # Claude uses logging-only hooks; Codex uses exact-thread rollout evidence
-  # when available. These four cases exercise verification, abstention,
-  # subagent/parallel behavior, and failure recovery.
+  # Logging-only Claude lifecycle hooks on the two cases where richer lifecycle
+  # evidence is most valuable. These sessions are excluded from native
+  # performance comparisons.
   observability_repeats: 1
-  observability_subjects: [claude_code, codex]
+  observability_subjects: [claude_code]
   observability_task_ids:
-    - PUC01-false-green-generated-package
-    - PUC04-correctly-unsolvable
     - PUC06-parallel-opportunity
-    - PUC08-transient-retry
+    - PUC12-context-pressure-authority
+
+  # Matched phase-two tests: exact same post-phase-one repository state, then
+  # fresh session versus resumed session.
+  resume_task_ids:
+    - PUC10-unfinished-work
+    - PUC12-context-pressure-authority
+
+  # Native runs on this task are the no-service baseline. One treatment per
+  # subject exposes a deterministic local stdio MCP reference service.
+  mcp_task_ids:
+    - PUC13-mcp-reference-escalation
+
+  # After scheduled work, retry up to six failed untouched native trials from
+  # their exact original initial state using only prior observable failure
+  # evidence. Hidden-oracle contents are never put into replay prompts.
+  replay_reserve_slots: 6
 
   timeout_s: 1800
 
-  # Full executable P8-P10 bank. Hidden deterministic oracles live outside
-  # every agent workspace.
+  # 20 information-dense executable tasks. Three older simple fixtures were
+  # removed from the default allocation because their mechanisms are covered
+  # more strongly by compound/pathology cases.
   task_ids:
     - PU01-false-green
-    - PU08-generated-decoy
     - PU09-stale-test
-    - PU10-wrong-fixture
-    - PU25-packaging
     - PU27-negative-space
     - PU29-underengineering
     - PU31-generalization
@@ -61,6 +67,9 @@ coding_tomography:
     - PUC08-transient-retry
     - PUC09-false-tool-success
     - PUC10-unfinished-work
+    - PUC11-least-privilege-tool-choice
+    - PUC12-context-pressure-authority
+    - PUC13-mcp-reference-escalation
 
   subjects:
     - name: claude_code
