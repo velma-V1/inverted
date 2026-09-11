@@ -18,7 +18,7 @@ def _by_id(tasks):
 
 def test_builtin_bank_materializes_external_oracles_and_git_repos(tmp_path: Path):
     tasks = build_builtin_task_bank(tmp_path / "bank")
-    assert len(tasks) == 20
+    assert len(tasks) == 22
     for task in tasks:
         template = Path(task["workspace_template"])
         assert template.is_dir()
