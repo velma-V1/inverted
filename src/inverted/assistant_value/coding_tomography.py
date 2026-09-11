@@ -526,10 +526,74 @@ def failure_replay_packet(
     return packet
 
 
+def mechanism_observable_signal(mechanism_id: str, events: list[dict[str, Any]], metrics: dict[str, Any] | None = None) -> bool:
+    """Conservative observable proxy for whether a mechanism appeared.
+
+    This is not a claim about hidden internal reasoning. It only asks whether
+    the trajectory contains an observable behavior relevant to the mechanism.
+    """
+    sig = trajectory_signature(events)
+    counts = Counter(sig)
+    fields = [event.get("observable_fields") or {} for event in events]
+    commands = " ".join(
+        str(field.get("command") or "") for field in fields
+    ).lower()
+    tool_names = " ".join(
+        str(field.get("tool_name") or field.get("name") or "") for field in fields
+    ).lower()
+    metrics = metrics or {}
+
+    rules = {
+        "M01": lambda: counts["CONTEXT_LOAD"] > 0 or "claude.md" in commands or "agents.md" in commands,
+        "M02": lambda: counts["SEARCH"] > 0 or counts["FILE_READ"] > 1,
+        "M03": lambda: counts["PLAN_CREATE"] > 0 or counts["PLAN_UPDATE"] > 0,
+        "M04": lambda: counts["PLAN_UPDATE"] > 0 or counts["FILE_READ"] >= 2,
+        "M05": lambda: sum(counts[x] for x in ("COMMAND","TEST","LINT","BUILD","WEB","MCP")) > 0,
+        "M06": lambda: counts["SUBAGENT_START"] > 1 or "parallel" in tool_names or "parallel" in commands,
+        "M07": lambda: counts["FILE_READ"] > 0,
+        "M08": lambda: counts["FILE_EDIT"] + counts["FILE_WRITE"] > 0,
+        "M09": lambda: counts["FILE_EDIT"] + counts["FILE_WRITE"] > 0,
+        "M10": lambda: counts["TEST"] > 0,
+        "M11": lambda: sum(counts[x] for x in ("TEST","LINT","BUILD","VERIFY")) > 0,
+        "M12": lambda: metrics.get("verification_after_last_edit") is True,
+        "M13": lambda: counts["TOOL_ERROR"] > 0 and (counts["REPAIR"] > 0 or counts["FILE_EDIT"] > 0 or counts["TEST"] > 1),
+        "M14": lambda: counts["TOOL_ERROR"] > 0 and counts["COMMAND"] + counts["TEST"] >= 2,
+        "M15": lambda: counts["REVERT"] > 0 or "git checkout" in commands or "git restore" in commands or "git revert" in commands,
+        "M16": lambda: counts["TOOL_RESULT"] > 0 and (counts["FILE_READ"] > 0 or counts["TEST"] > 0 or counts["VERIFY"] > 0),
+        "M17": lambda: counts["CONTEXT_COMPACT"] > 0,
+        "M18": lambda: counts["CONTEXT_COMPACT"] > 0 and counts["CONTEXT_LOAD"] > 0,
+        "M19": lambda: counts["CONTEXT_LOAD"] > 0,
+        "M20": lambda: counts["RESUME"] > 0 or counts["CHECKPOINT"] > 0,
+        "M21": lambda: counts["SUBAGENT_START"] > 0,
+        "M22": lambda: counts["SUBAGENT_START"] > 0,
+        "M23": lambda: counts["SUBAGENT_RESULT"] > 0 and sum(counts[x] for x in ("TEST","VERIFY","FILE_READ")) > 0,
+        "M24": lambda: counts["SUBAGENT_START"] > 1,
+        "M25": lambda: counts["PERMISSION_REQUEST"] > 0 or counts["APPROVAL"] > 0,
+        "M26": lambda: counts["PERMISSION_DENIED"] > 0 or counts["PERMISSION_REQUEST"] > 0,
+        "M27": lambda: counts["WEB"] > 0 or counts["MCP"] > 0,
+        "M28": lambda: counts["FINAL_RESPONSE"] > 0 and counts["FILE_EDIT"] + counts["FILE_WRITE"] == 0,
+        "M29": lambda: counts["PERMISSION_REQUEST"] > 0 or (counts["FINAL_RESPONSE"] > 0 and counts["FILE_EDIT"] + counts["FILE_WRITE"] == 0),
+        "M30": lambda: any(token in commands for token in ("pip install","uv add","poetry add","npm install","pnpm add","yarn add","cargo add","go get")),
+        "M31": lambda: any(token in commands for token in ("git diff","git status")) or counts["REVERT"] > 0,
+        "M32": lambda: counts["SESSION_STOP"] > 0,
+        "M33": lambda: counts["SESSION_STOP"] > 0 and metrics.get("oracle_success") is False,
+        "M34": lambda: counts["TOOL_ERROR"] > 0 or counts["REPAIR"] > 0 or counts["REVERT"] > 0,
+        "M35": lambda: counts["CONTEXT_LOAD"] > 0 or counts["FILE_READ"] > 0,
+        "M36": lambda: False,  # Harness replay mechanism, not a subject behavior.
+        "M37": lambda: counts["CONTEXT_COMPACT"] > 0 or counts["REASONING_SUMMARY"] > 0,
+        "M38": lambda: counts["COMMAND"] + counts["TEST"] + counts["FILE_READ"] + counts["FILE_EDIT"] > 0,
+        "M39": lambda: counts["PERMISSION_REQUEST"] > 0 or counts["PERMISSION_DENIED"] > 0 or counts["TOOL_RESULT"] > 0,
+        "M40": lambda: sum(1 for key in ("SEARCH","FILE_READ","FILE_EDIT","TEST","SUBAGENT_START","VERIFY") if counts[key] > 0) >= 3,
+    }
+    rule = rules.get(str(mechanism_id))
+    return bool(rule()) if rule is not None else False
+
+
 def classify_mechanism_evidence(
     *,
     observed_trials: int,
     independent_tasks: int,
+    opportunity_trials: int | None = None,
     causal_interventions: int,
     generalized_families: int,
     rescue_rate: float,
@@ -537,11 +601,14 @@ def classify_mechanism_evidence(
     complexity_units: float | None,
 ) -> dict[str, Any]:
     net_effect = float(rescue_rate) - float(regression_rate)
-    if observed_trials <= 0:
+    opportunities = int(observed_trials if opportunity_trials is None else opportunity_trials)
+    if opportunities <= 0:
         status = "NOT_LOOKED_AT"
+    elif observed_trials <= 0:
+        status = "UNKNOWN"
     elif independent_tasks < 2:
         status = "OBSERVED"
-    elif causal_interventions <= 0:
+    elif causal_interventions < 2:
         status = "REPLICATED"
     elif net_effect < 0.0:
         status = "REJECT"
@@ -572,6 +639,7 @@ def classify_mechanism_evidence(
     return {
         "status": status,
         "implementation_decision": clone_status,
+        "opportunity_trials": opportunities,
         "observed_trials": int(observed_trials),
         "independent_tasks": int(independent_tasks),
         "causal_interventions": int(causal_interventions),
