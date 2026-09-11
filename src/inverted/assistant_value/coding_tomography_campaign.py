@@ -317,6 +317,77 @@ def _paired_intervention_results(
     return {"schema_version":1,"results":results}
 
 
+def _resume_continuity_results(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    groups: dict[tuple[str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in summaries:
+        kind = str(row.get("kind") or "")
+        if kind not in {"RESUME_FRESH_CONTROL", "RESUME_CONTINUE"}:
+            continue
+        groups[(str(row.get("subject")), str(row.get("task_id")))][kind] = row
+
+    results: dict[str, Any] = {}
+    for (subject, task_id), arms in sorted(groups.items()):
+        fresh = arms.get("RESUME_FRESH_CONTROL")
+        resumed = arms.get("RESUME_CONTINUE")
+        if fresh is None or resumed is None:
+            continue
+
+        fresh_before = _read_json(Path(fresh["evidence_root"]) / "workspace-before.json")
+        resumed_before = _read_json(Path(resumed["evidence_root"]) / "workspace-before.json")
+        fresh_hash = str(fresh_before.get("manifest_sha256") or "")
+        resumed_hash = str(resumed_before.get("manifest_sha256") or "")
+        identical_state = bool(fresh_hash and fresh_hash == resumed_hash)
+
+        def metric(row: dict[str, Any], name: str) -> float:
+            value = (row.get("metrics") or {}).get(name)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+            return 0.0
+
+        key = f"{subject}|{task_id}|SESSION_CONTINUITY"
+        results[key] = {
+            "subject": subject,
+            "task_id": task_id,
+            "intervention_id": "SESSION_CONTINUITY",
+            "hypothesis": (
+                "Persisted session context changes phase-two capability or efficiency "
+                "relative to a fresh session given identical post-phase-one repository state."
+            ),
+            "mechanisms": ["M20"],
+            "primary_mechanism": "M20",
+            "mechanism_isolation_confirmed": identical_state,
+            "baseline_arm": "RESUME_FRESH_CONTROL",
+            "treatment_arm": "RESUME_CONTINUE",
+            "baseline_n": 1,
+            "treatment_n": 1,
+            "baseline_success_rate": float(bool(fresh.get("oracle_success"))),
+            "treatment_success_rate": float(bool(resumed.get("oracle_success"))),
+            "success_delta": (
+                float(bool(resumed.get("oracle_success")))
+                - float(bool(fresh.get("oracle_success")))
+            ),
+            "event_count_delta": metric(resumed, "event_count") - metric(fresh, "event_count"),
+            "elapsed_s_delta": metric(resumed, "subject_elapsed_s") - metric(fresh, "subject_elapsed_s"),
+            "verification_after_last_edit_baseline": float(
+                (fresh.get("metrics") or {}).get("verification_after_last_edit") is True
+            ),
+            "verification_after_last_edit_treatment": float(
+                (resumed.get("metrics") or {}).get("verification_after_last_edit") is True
+            ),
+            "fresh_start_manifest_sha256": fresh_hash,
+            "resumed_start_manifest_sha256": resumed_hash,
+            "matched_start_state": identical_state,
+            "fresh_trial_key": fresh.get("trial_key"),
+            "resumed_trial_key": resumed.get("trial_key"),
+            "source_trial_key": resumed.get("source_trial_key"),
+        }
+    return {
+        "schema_version": 1,
+        "results": results,
+        "causal_claim_gate": "matched_start_state must be true for M20 isolation",
+    }
+
+
 def _mechanism_results(
     tasks: list[dict[str, Any]],
     summaries: list[dict[str, Any]],
@@ -1204,8 +1275,11 @@ def run_coding_tomography_campaign(
     _write_json(run_root / "trial-index.json",{"schema_version":1,"trials":summaries})
     behavior = _behavior_atlas(summaries)
     paired = _paired_intervention_results(plan,summaries)
-    mechanisms = _mechanism_results(tasks,summaries,paired)
-    bundles = _bundle_results(tasks, paired)
+    resume_continuity = _resume_continuity_results(summaries)
+    causal_evidence = deepcopy(paired)
+    causal_evidence.setdefault("results", {}).update(resume_continuity.get("results") or {})
+    mechanisms = _mechanism_results(tasks,summaries,causal_evidence)
+    bundles = _bundle_results(tasks, causal_evidence)
     failures = _failure_registry(summaries)
     divergence = _cross_subject_divergence(run_root,summaries)
     known_unknown = _known_unknown(mechanisms)
@@ -1223,12 +1297,13 @@ def run_coding_tomography_campaign(
     _write_json(run_root / "delegation-parallelism-atlas.json", _strategy_atlas(summaries, {"SUBAGENT_START","SUBAGENT_RESULT"}))
     _write_json(run_root / "permissions-sandbox-atlas.json", _strategy_atlas(summaries, {"PERMISSION_REQUEST","PERMISSION_DENIED","APPROVAL"}))
     _write_json(run_root / "instruction-precedence-atlas.json", _strategy_atlas(summaries, {"CONTEXT_LOAD","SEARCH","FILE_READ"}))
-    _write_json(run_root / "causal-intervention-results.json",paired)
-    _write_json(run_root / "causal-factor-registry.json", _causal_factor_registry(paired))
+    _write_json(run_root / "causal-intervention-results.json",causal_evidence)
+    _write_json(run_root / "resume-continuity-results.json",resume_continuity)
+    _write_json(run_root / "causal-factor-registry.json", _causal_factor_registry(causal_evidence))
     _write_json(run_root / "pathology-ablation-results.json", _pathology_ablation_results(tasks, paired))
     _write_json(run_root / "mechanism-value-per-cost.json",mechanisms)
     _write_json(run_root / "mechanism-bundle-value.json",bundles)
-    _write_json(run_root / "mechanism-interaction-graph.json", _mechanism_interaction_graph(tasks, summaries, paired))
+    _write_json(run_root / "mechanism-interaction-graph.json", _mechanism_interaction_graph(tasks, summaries, causal_evidence))
     _write_json(run_root / "behavioral-inference-registry.json", _behavioral_inference_registry(mechanisms))
     _write_json(run_root / "observability-coverage.json", _observability_coverage(summaries))
     _write_json(run_root / "observer-strategy-atlas.json", _strategy_atlas(summaries, {
