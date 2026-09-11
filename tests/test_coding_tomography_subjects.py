@@ -4,6 +4,7 @@ from inverted.assistant_value.coding_subjects import (
     build_claude_code_command,
     build_codex_command,
     expand_observable_subject_stream,
+    extract_observable_final_text,
     parse_jsonl_stream,
     sanitize_environment_snapshot,
 )
@@ -108,3 +109,27 @@ def test_environment_snapshot_never_copies_arbitrary_secret_values():
     assert "secret-openai" not in serialized
     assert "secret-anthropic" not in serialized
     assert "secret-custom" not in serialized
+
+
+def test_extract_observable_final_text_uses_explicit_subject_output_only():
+    codex = extract_observable_final_text(
+        "codex",
+        [
+            {"type":"item.completed","item":{"type":"reasoning","summary":"internal summary"}},
+            {"type":"item.completed","item":{"type":"agent_message","text":"Please specify blue or green deployment."}},
+        ],
+    )
+    claude = extract_observable_final_text(
+        "claude_code",
+        [
+            {
+                "type":"assistant",
+                "message":{"content":[{"type":"text","text":"Need the deployment selection before editing."}]},
+            },
+            {"type":"result","result":"Please clarify which deployment is active."},
+        ],
+    )
+
+    assert codex == "Please specify blue or green deployment."
+    assert claude == "Please clarify which deployment is active."
+    assert "internal summary" not in codex
