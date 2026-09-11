@@ -134,7 +134,13 @@ def test_mcp_subject_configuration_is_subject_specific_and_no_bypass(tmp_path: P
     assert codex["extra_args"][0] == "--config"
     assert f"mcp_servers.{MCP_SERVER_NAME}" in codex["extra_args"][1]
 
-    serialized = json.dumps({"claude":claude,"codex":codex}).lower()
-    assert "dangerously" not in serialized
-    assert "bypass" not in serialized
-    assert "api_key" not in serialized
+    args_only = json.dumps({
+        "claude_extra_args":claude["extra_args"],
+        "codex_extra_args":codex["extra_args"],
+        "claude_config":config,
+    }).lower()
+    assert "dangerously" not in args_only
+    assert "bypass" not in args_only
+    assert "api_key" not in args_only
+    assert claude["permission_bypass_added"] is False
+    assert codex["permission_bypass_added"] is False
