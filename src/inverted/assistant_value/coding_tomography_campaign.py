@@ -134,6 +134,7 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
         str(x) for x in root.get("observability_subjects") or ["claude_code"]
     }
     observability_repeats = int(root.get("observability_repeats", 1))
+    resume_task_ids = {str(x) for x in root.get("resume_task_ids") or []}
 
     entries = []
     for subject in subjects:
@@ -175,6 +176,29 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
                         "intervention":None,
                     })
 
+    for subject in subjects:
+        for task in selected_tasks:
+            if task["task_id"] not in resume_task_ids:
+                continue
+            if not isinstance(task.get("resume_spec"), dict):
+                raise ValueError(f"resume task lacks resume_spec: {task['task_id']}")
+            entries.append({
+                "kind":"RESUME_FRESH_CONTROL",
+                "subject":subject,
+                "task_id":task["task_id"],
+                "repeat":1,
+                "source_repeat":1,
+                "intervention":None,
+            })
+            entries.append({
+                "kind":"RESUME_CONTINUE",
+                "subject":subject,
+                "task_id":task["task_id"],
+                "repeat":1,
+                "source_repeat":1,
+                "intervention":None,
+            })
+
     max_sessions = int(root.get("max_sessions", 250))
     if len(entries) > max_sessions:
         raise ValueError(
@@ -193,6 +217,7 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
         "observability_task_ids":sorted(observability_task_ids),
         "observability_subjects":sorted(observability_subjects),
         "observability_repeats":observability_repeats,
+        "resume_task_ids":sorted(resume_task_ids),
         "planned_sessions":len(entries),
         "max_sessions":max_sessions,
         "entries":entries,
@@ -205,6 +230,10 @@ def _trial_key(entry: dict[str, Any]) -> str:
         treatment = intervention.get("id")
     elif entry.get("kind") == "OBSERVABILITY_AUGMENTED":
         treatment = "observability"
+    elif entry.get("kind") == "RESUME_FRESH_CONTROL":
+        treatment = "resume-fresh"
+    elif entry.get("kind") == "RESUME_CONTINUE":
+        treatment = "resume-continue"
     else:
         treatment = "native"
     return (
@@ -1066,7 +1095,54 @@ def run_coding_tomography_campaign(
         key = _trial_key(entry)
         workspace = run_root / "workspaces" / key
         evidence = run_root / "trials" / key
-        materialize_workspace(task["workspace_template"],workspace)
+        kind = str(entry.get("kind") or "")
+        resume_session_id = None
+        trial_task = task
+
+        if kind in {"RESUME_FRESH_CONTROL", "RESUME_CONTINUE"}:
+            source = next(
+                (
+                    row for row in summaries
+                    if row.get("kind") == "NATIVE_OBSERVATION"
+                    and row.get("task_id") == task["task_id"]
+                    and row.get("subject") == entry["subject"]["name"]
+                    and int(row.get("repeat", 0)) == int(entry.get("source_repeat", 1))
+                ),
+                None,
+            )
+            if source is None:
+                raise RuntimeError(f"resume source trial missing for {entry['subject']['name']} {task['task_id']}")
+            source_workspace = run_root / "workspaces" / source["trial_key"]
+            if kind == "RESUME_FRESH_CONTROL":
+                materialize_workspace(source_workspace, workspace)
+            else:
+                workspace = source_workspace
+                resume_session_id = str((source.get("metrics") or {}).get("session_id") or "")
+                if not resume_session_id:
+                    raise RuntimeError(f"source session id missing for resume trial {source['trial_key']}")
+
+            resume_spec = dict(task.get("resume_spec") or {})
+            mutation = {
+                "id":"RESUME_PHASE2_MUTATION",
+                "hypothesis":"matched phase-two state change for resume-vs-fresh continuity test",
+                "mechanisms":list(resume_spec.get("candidate_mechanisms") or ["M20"]),
+                "operations":list(resume_spec.get("operations") or []),
+            }
+            evidence.mkdir(parents=True, exist_ok=True)
+            applied_resume = apply_intervention(
+                workspace,
+                mutation,
+                subject=str(entry["subject"]["name"]),
+            )
+            _git_seal(workspace, "tomography phase-two resume baseline")
+            _write_json(evidence / "resume-phase2-mutation.json", applied_resume)
+            trial_task = deepcopy(task)
+            trial_task["prompt"] = str(resume_spec["prompt"])
+            trial_task["visible_checks"] = list(resume_spec.get("visible_checks") or [])
+            trial_task["hidden_oracle_checks"] = list(resume_spec.get("hidden_oracle_checks") or [])
+            trial_task["candidate_mechanisms"] = list(resume_spec.get("candidate_mechanisms") or ["M20"])
+        else:
+            materialize_workspace(task["workspace_template"],workspace)
 
         intervention = entry.get("intervention")
         applied = None
@@ -1094,7 +1170,7 @@ def run_coding_tomography_campaign(
             _write_json(evidence / "observer-provenance.json", observer_record)
 
         summary = run_subject_trial(
-            task=task,
+            task=trial_task,
             subject=entry["subject"],
             workspace=workspace,
             evidence_root=evidence,
@@ -1105,6 +1181,7 @@ def run_coding_tomography_campaign(
                 entry.get("kind") == "OBSERVABILITY_AUGMENTED"
                 and str(entry["subject"]["name"]) == "codex"
             ),
+            resume_session_id=resume_session_id,
         )
         summary.update({
             "trial_key":key,
@@ -1114,6 +1191,7 @@ def run_coding_tomography_campaign(
             "intervention_id":intervention.get("id") if isinstance(intervention,dict) else None,
             "intervention_hypothesis":intervention.get("hypothesis") if isinstance(intervention,dict) else None,
             "observer_mode": observer_record.get("mode") if isinstance(observer_record, dict) else None,
+            "source_trial_key": source.get("trial_key") if kind in {"RESUME_FRESH_CONTROL","RESUME_CONTINUE"} else None,
         })
         _write_json(evidence / "trial-summary.json",summary)
         summaries.append(summary)
