@@ -12,6 +12,19 @@ coding_tomography:
   # Per agent-task session watchdog. A timeout is preserved as evidence.
   timeout_s: 1800
 
+  task_ids:
+    - PU01-false-green
+    - PU09-stale-test
+    - PU29-underengineering
+    - PU31-generalization
+    - PU37-misattribution
+    - PUC01-false-green-generated-package
+    - PUC02-shared-invariant-migration
+    - PUC03-circular-evidence-split-brain
+    - PUC04-correctly-unsolvable
+    - PUC05-active-path-generated-generalization
+
+
   # Native arms deliberately add no permission bypass or extra behavioral
   # instruction. Exact local user/project policy therefore remains part of
   # provenance. Add explicit extra_args only for preregistered intervention arms.
