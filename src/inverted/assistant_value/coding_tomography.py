@@ -602,30 +602,29 @@ def classify_mechanism_evidence(
 ) -> dict[str, Any]:
     net_effect = float(rescue_rate) - float(regression_rate)
     opportunities = int(observed_trials if opportunity_trials is None else opportunity_trials)
-    if opportunities <= 0:
+    if opportunities <= 0 and causal_interventions <= 0:
         status = "NOT_LOOKED_AT"
+    elif causal_interventions >= 2 and net_effect < 0.0:
+        status = "REJECT"
+    elif causal_interventions >= 2 and net_effect > 0.0:
+        if generalized_families < 2:
+            status = "CAUSAL"
+        elif (
+            net_effect >= 0.20
+            and complexity_units is not None
+            and float(complexity_units) <= 3.0
+        ):
+            status = "HIGH_VALUE"
+        else:
+            status = "GENERALIZED"
     elif observed_trials <= 0:
         status = "UNKNOWN"
     elif independent_tasks < 2:
         status = "OBSERVED"
-    elif causal_interventions < 2:
-        status = "REPLICATED"
-    elif net_effect < 0.0:
-        status = "REJECT"
-    elif net_effect == 0.0:
-        # A matched intervention with no directional effect is evidence of a
-        # null result, not evidence that the mechanism caused capability gain.
-        status = "REPLICATED"
-    elif generalized_families < 2:
-        status = "CAUSAL"
-    elif (
-        net_effect >= 0.20
-        and complexity_units is not None
-        and float(complexity_units) <= 3.0
-    ):
-        status = "HIGH_VALUE"
     else:
-        status = "GENERALIZED"
+        # Includes replicated null interventions: they are useful evidence but
+        # not evidence that the mechanism caused a capability gain.
+        status = "REPLICATED"
 
     clone_status = (
         "CLONE_CANDIDATE"
