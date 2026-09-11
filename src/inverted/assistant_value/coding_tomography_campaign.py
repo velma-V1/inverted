@@ -414,6 +414,297 @@ def _resume_continuity_results(summaries: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
+def _mcp_escalation_results(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    native: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    treatments: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in summaries:
+        key = (str(row.get("subject")), str(row.get("task_id")))
+        if row.get("kind") == "NATIVE_OBSERVATION":
+            native[key].append(row)
+        elif row.get("kind") == "MCP_TREATMENT":
+            treatments[key].append(row)
+
+    results: dict[str, Any] = {}
+    for key, treated in sorted(treatments.items()):
+        controls = native.get(key) or []
+        if not controls or not treated:
+            continue
+        subject, task_id = key
+        treatment = treated[0]
+        treatment_probe = dict(treatment.get("mcp_probe") or {})
+        native_manifest = _read_json(
+            Path(controls[0]["evidence_root"]) / "workspace-before.json"
+        ).get("manifest_sha256")
+        treatment_manifest = _read_json(
+            Path(treatment["evidence_root"]) / "workspace-before.json"
+        ).get("manifest_sha256")
+        matched_state = bool(native_manifest and native_manifest == treatment_manifest)
+        ready = bool(treatment_probe.get("ready"))
+        isolation = bool(matched_state and ready)
+
+        baseline_success = (
+            sum(bool(row.get("oracle_success")) for row in controls) / len(controls)
+        )
+        treatment_success = float(bool(treatment.get("oracle_success")))
+
+        def mean_metric(rows: list[dict[str, Any]], name: str) -> float:
+            values = [
+                float((row.get("metrics") or {}).get(name))
+                for row in rows
+                if isinstance((row.get("metrics") or {}).get(name), (int, float))
+                and not isinstance((row.get("metrics") or {}).get(name), bool)
+            ]
+            return sum(values) / len(values) if values else 0.0
+
+        row_key = f"{subject}|{task_id}|MCP_AVAILABILITY"
+        results[row_key] = {
+            "subject":subject,
+            "task_id":task_id,
+            "intervention_id":"MCP_AVAILABILITY",
+            "hypothesis":"Availability of a deterministic authoritative MCP reference tool changes tool-escalation behavior and task success.",
+            "mechanisms":["M27"],
+            "primary_mechanism":"M27",
+            "mechanism_isolation_confirmed":isolation,
+            "baseline_n":len(controls),
+            "treatment_n":1,
+            "baseline_success_rate":baseline_success,
+            "treatment_success_rate":treatment_success,
+            "success_delta":treatment_success - baseline_success,
+            "event_count_delta":(
+                float((treatment.get("metrics") or {}).get("event_count", 0.0))
+                - mean_metric(controls, "event_count")
+            ),
+            "elapsed_s_delta":(
+                float((treatment.get("metrics") or {}).get("subject_elapsed_s", 0.0))
+                - mean_metric(controls, "subject_elapsed_s")
+            ),
+            "verification_after_last_edit_baseline":(
+                sum((row.get("metrics") or {}).get("verification_after_last_edit") is True for row in controls)
+                / len(controls)
+            ),
+            "verification_after_last_edit_treatment":float(
+                (treatment.get("metrics") or {}).get("verification_after_last_edit") is True
+            ),
+            "matched_start_state":matched_state,
+            "mcp_ready":ready,
+            "mcp_tool_called":bool(treatment_probe.get("tool_called")),
+            "mcp_observed_methods":list(treatment_probe.get("observed_methods") or []),
+            "attribution_gate":"M27 isolation requires identical start manifest and observable MCP initialization plus tools/list.",
+        }
+    return {"schema_version":1,"results":results}
+
+
+def _safe_replay_context(source: dict[str, Any]) -> dict[str, Any]:
+    root = Path(source["evidence_root"])
+    visible = _read_json(root / "visible-check-results.json") if (root / "visible-check-results.json").is_file() else []
+    git_after = _read_json(root / "git-after.json") if (root / "git-after.json").is_file() else {}
+    events = _read_jsonl(root / "normalized-native-trajectory.jsonl")
+    final_path = root / "observable-final-response.txt"
+    final_text = final_path.read_text(encoding="utf-8", errors="replace") if final_path.is_file() else ""
+
+    safe_events = [
+        {
+            "sequence":row.get("sequence"),
+            "event_type":row.get("event_type"),
+            "observable_fields":row.get("observable_fields") or {},
+        }
+        for row in events
+    ]
+    safe_visible = [
+        {
+            "id":row.get("id"),
+            "ok":row.get("ok"),
+            "returncode":row.get("returncode"),
+            "stdout":str(row.get("stdout") or "")[:4000],
+            "stderr":str(row.get("stderr") or "")[:4000],
+            "timeout":row.get("timeout"),
+            "error":row.get("error"),
+        }
+        for row in visible
+    ]
+    return {
+        "prior_acceptance_status":"FAILED",
+        "visible_checks":safe_visible,
+        "observable_trajectory":safe_events[:250],
+        "prior_git_status":str(git_after.get("status") or "")[:4000],
+        "prior_git_diff":str(git_after.get("diff") or "")[:10000],
+        "prior_final_response":final_text[:6000],
+        "hidden_oracle_content_included":False,
+    }
+
+
+def _replay_prompt(task: dict[str, Any], source: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    context = _safe_replay_context(source)
+    payload = json.dumps(context, indent=2, sort_keys=True, ensure_ascii=False)
+    prompt = (
+        str(task["prompt"])
+        + "\n\n<prior_attempt_evidence>\n"
+        + "A previous attempt on this exact initial repository state did not pass acceptance verification. "
+        + "Use the observable evidence below to avoid repeating the same failure. "
+        + "No hidden expected answer or hidden-oracle content is included.\n"
+        + payload
+        + "\n</prior_attempt_evidence>\n"
+    )
+    return prompt, context
+
+
+def _select_replay_sources(
+    summaries: list[dict[str, Any]],
+    tasks: dict[str, dict[str, Any]],
+    slots: int,
+) -> list[dict[str, Any]]:
+    failed = [
+        row for row in summaries
+        if row.get("kind") == "NATIVE_OBSERVATION"
+        and not bool(row.get("oracle_success"))
+    ]
+    def score(row: dict[str, Any]) -> tuple[int, int, str, str]:
+        task = tasks.get(str(row.get("task_id"))) or {}
+        p10 = 1 if str(task.get("level")) == "P10" else 0
+        visible_green = 1 if (row.get("metrics") or {}).get("visible_checks_ok") is True else 0
+        return (-p10, -visible_green, str(row.get("task_id")), str(row.get("subject")))
+
+    selected: list[dict[str, Any]] = []
+    used_tasks: set[str] = set()
+    used_pairs: set[tuple[str, str]] = set()
+    for row in sorted(failed, key=score):
+        pair = (str(row.get("task_id")), str(row.get("subject")))
+        if pair in used_pairs:
+            continue
+        if str(row.get("task_id")) in used_tasks and len(used_tasks) < slots:
+            continue
+        selected.append(row)
+        used_pairs.add(pair)
+        used_tasks.add(str(row.get("task_id")))
+        if len(selected) >= slots:
+            break
+    if len(selected) < slots:
+        for row in sorted(failed, key=score):
+            pair = (str(row.get("task_id")), str(row.get("subject")))
+            if pair in used_pairs:
+                continue
+            selected.append(row)
+            used_pairs.add(pair)
+            if len(selected) >= slots:
+                break
+    return selected
+
+
+def _run_replay_reserve(
+    *,
+    summaries: list[dict[str, Any]],
+    task_map: dict[str, dict[str, Any]],
+    subjects: list[dict[str, Any]],
+    run_root: Path,
+    timeout_s: float,
+    slots: int,
+    ordinal_start: int,
+    planned_total: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    selected = _select_replay_sources(summaries, task_map, slots)
+    subject_map = {str(row["name"]):row for row in subjects}
+    replay_rows: list[dict[str, Any]] = []
+    effects: dict[str, Any] = {}
+
+    for offset, source in enumerate(selected, start=1):
+        task = task_map[str(source["task_id"])]
+        subject = deepcopy(subject_map[str(source["subject"])])
+        key = (
+            f"{_slug(str(source['subject']))}__{_slug(str(source['task_id']))}"
+            f"__failure-replay__s{offset:02d}"
+        )
+        workspace = run_root / "workspaces" / key
+        evidence = run_root / "trials" / key
+        materialize_workspace(task["workspace_template"], workspace)
+
+        prompt, replay_context = _replay_prompt(task, source)
+        replay_task = deepcopy(task)
+        replay_task["prompt"] = prompt
+        replay_task["candidate_mechanisms"] = ["M36"]
+        evidence.mkdir(parents=True, exist_ok=True)
+        _write_json(evidence / "replay-source.json", {
+            "source_trial_key":source.get("trial_key"),
+            "source_task_id":source.get("task_id"),
+            "source_subject":source.get("subject"),
+            "context":replay_context,
+        })
+
+        summary = run_subject_trial(
+            task=replay_task,
+            subject=subject,
+            workspace=workspace,
+            evidence_root=evidence,
+            timeout_s=timeout_s,
+        )
+        ordinal = ordinal_start + offset
+        summary.update({
+            "trial_key":key,
+            "ordinal":ordinal,
+            "kind":"FAILURE_REPLAY_TREATMENT",
+            "repeat":1,
+            "intervention_id":"EXACT_FAILURE_REPLAY",
+            "intervention_hypothesis":"Observable prior-failure evidence improves recovery when replayed from the exact original initial state.",
+            "source_trial_key":source.get("trial_key"),
+        })
+        _write_json(evidence / "trial-summary.json", summary)
+        replay_rows.append(summary)
+
+        source_before = _read_json(Path(source["evidence_root"]) / "workspace-before.json")
+        replay_before = _read_json(evidence / "workspace-before.json")
+        matched = (
+            source_before.get("manifest_sha256")
+            and source_before.get("manifest_sha256") == replay_before.get("manifest_sha256")
+        )
+        effect_key = f"{source['subject']}|{source['task_id']}|EXACT_FAILURE_REPLAY|{offset}"
+        effects[effect_key] = {
+            "subject":source["subject"],
+            "task_id":source["task_id"],
+            "intervention_id":f"EXACT_FAILURE_REPLAY_{offset:02d}",
+            "hypothesis":"Failure snapshot/replay can recover a previously failed exact task from the same initial state.",
+            "mechanisms":["M36"],
+            "primary_mechanism":"M36",
+            "mechanism_isolation_confirmed":bool(matched),
+            "baseline_n":1,
+            "treatment_n":1,
+            "baseline_success_rate":0.0,
+            "treatment_success_rate":float(bool(summary.get("oracle_success"))),
+            "success_delta":float(bool(summary.get("oracle_success"))),
+            "event_count_delta":(
+                float((summary.get("metrics") or {}).get("event_count",0.0))
+                - float((source.get("metrics") or {}).get("event_count",0.0))
+            ),
+            "elapsed_s_delta":(
+                float((summary.get("metrics") or {}).get("subject_elapsed_s",0.0))
+                - float((source.get("metrics") or {}).get("subject_elapsed_s",0.0))
+            ),
+            "verification_after_last_edit_baseline":float(
+                (source.get("metrics") or {}).get("verification_after_last_edit") is True
+            ),
+            "verification_after_last_edit_treatment":float(
+                (summary.get("metrics") or {}).get("verification_after_last_edit") is True
+            ),
+            "matched_start_state":bool(matched),
+            "source_trial_key":source.get("trial_key"),
+            "replay_trial_key":key,
+            "hidden_oracle_content_included":False,
+        }
+        _write_json(run_root / "progress.json", {
+            "completed":ordinal,
+            "total":planned_total,
+            "last_trial_key":key,
+        })
+
+    return replay_rows, {
+        "schema_version":1,
+        "reserved_slots":slots,
+        "used_slots":len(replay_rows),
+        "unused_slots":max(0, slots - len(replay_rows)),
+        "results":effects,
+        "selection_rule":"failed native trials; prioritize P10 and visible-green false-success; distinct tasks first",
+        "hidden_oracle_content_in_replay_prompt":False,
+    }
+
+
 def _mechanism_results(
     tasks: list[dict[str, Any]],
     summaries: list[dict[str, Any]],
@@ -1324,12 +1615,27 @@ def run_coding_tomography_campaign(
             "last_trial_key":key,
         })
 
+    replay_rows, replay_effectiveness = _run_replay_reserve(
+        summaries=summaries,
+        task_map=task_map,
+        subjects=plan["subjects"],
+        run_root=run_root,
+        timeout_s=timeout_s,
+        slots=int(plan.get("replay_reserve_slots", 0)),
+        ordinal_start=len(summaries),
+        planned_total=int(plan["planned_sessions"]),
+    )
+    summaries.extend(replay_rows)
+
     _write_json(run_root / "trial-index.json",{"schema_version":1,"trials":summaries})
     behavior = _behavior_atlas(summaries)
     paired = _paired_intervention_results(plan,summaries)
     resume_continuity = _resume_continuity_results(summaries)
+    mcp_escalation = _mcp_escalation_results(summaries)
     causal_evidence = deepcopy(paired)
     causal_evidence.setdefault("results", {}).update(resume_continuity.get("results") or {})
+    causal_evidence.setdefault("results", {}).update(mcp_escalation.get("results") or {})
+    causal_evidence.setdefault("results", {}).update(replay_effectiveness.get("results") or {})
     mechanisms = _mechanism_results(tasks,summaries,causal_evidence)
     bundles = _bundle_results(tasks, causal_evidence)
     failures = _failure_registry(summaries)
@@ -1351,6 +1657,8 @@ def run_coding_tomography_campaign(
     _write_json(run_root / "instruction-precedence-atlas.json", _strategy_atlas(summaries, {"CONTEXT_LOAD","SEARCH","FILE_READ"}))
     _write_json(run_root / "causal-intervention-results.json",causal_evidence)
     _write_json(run_root / "resume-continuity-results.json",resume_continuity)
+    _write_json(run_root / "mcp-escalation-results.json",mcp_escalation)
+    _write_json(run_root / "failure-replay-effectiveness.json",replay_effectiveness)
     _write_json(run_root / "causal-factor-registry.json", _causal_factor_registry(causal_evidence))
     _write_json(run_root / "pathology-ablation-results.json", _pathology_ablation_results(tasks, paired))
     _write_json(run_root / "mechanism-value-per-cost.json",mechanisms)
