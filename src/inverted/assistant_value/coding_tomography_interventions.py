@@ -279,3 +279,89 @@ def apply_intervention(workspace: str | Path, intervention: dict[str, Any], *, s
         "changed_paths": changed,
         "operations": json.loads(json.dumps(intervention.get("operations") or [], default=str)),
     }
+
+
+def intervention_record_id(task_id: str, intervention: dict[str, Any]) -> str:
+    import hashlib
+    payload = json.dumps(
+        {"task_id": str(task_id), "intervention": intervention},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return "INT-" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def matched_intervention_plan(task: dict[str, Any], *, include_common: bool = True) -> list[dict[str, Any]]:
+    """Native baseline plus one-factor intervention arms.
+
+    Every arm starts from the same sealed template. Interventions are never
+    stacked in this first-order causal pass; combinations belong in a separately
+    preregistered interaction experiment.
+    """
+    task_id = str(task.get("task_id") or task.get("case_id") or "")
+    if not task_id:
+        raise ValueError("task requires task_id")
+    baseline = {
+        "id": "NATIVE",
+        "hypothesis": "native subject behavior on the sealed task",
+        "mechanisms": [],
+        "operations": [],
+    }
+    rows = [baseline, *selected_interventions(task_id, include_common=include_common)]
+    result = []
+    for row in rows:
+        result.append(
+            {
+                "task_id": task_id,
+                "baseline": str(row.get("id")) == "NATIVE",
+                "factor": str(row.get("id")),
+                "intervention": dict(row),
+                "record_id": intervention_record_id(task_id, row),
+            }
+        )
+    return result
+
+
+def causal_effect_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Matched within-task/subject effect rows.
+
+    This reports observed deltas only. Replication/generalization gates are
+    applied later before any causal mechanism is promoted.
+    """
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for trial in trials:
+        key = (str(trial.get("task_id")), str(trial.get("subject")))
+        grouped.setdefault(key, []).append(trial)
+
+    effects: list[dict[str, Any]] = []
+    for (task_id, subject), members in grouped.items():
+        baselines = [row for row in members if bool(row.get("baseline"))]
+        if len(baselines) != 1:
+            continue
+        base = baselines[0]
+        for treatment in members:
+            if bool(treatment.get("baseline")):
+                continue
+            bm = dict(base.get("metrics") or {})
+            tm = dict(treatment.get("metrics") or {})
+            effects.append(
+                {
+                    "task_id": task_id,
+                    "subject": subject,
+                    "factor": treatment.get("factor"),
+                    "record_id": treatment.get("record_id"),
+                    "mechanisms": list(treatment.get("mechanisms") or []),
+                    "baseline_success": bool(base.get("oracle_success")),
+                    "treatment_success": bool(treatment.get("oracle_success")),
+                    "success_delta": int(bool(treatment.get("oracle_success"))) - int(bool(base.get("oracle_success"))),
+                    "elapsed_delta_s": float(tm.get("subject_elapsed_s", 0.0)) - float(bm.get("subject_elapsed_s", 0.0)),
+                    "event_count_delta": int(tm.get("event_count", 0)) - int(bm.get("event_count", 0)),
+                    "tool_error_delta": int(tm.get("tool_error_count", 0)) - int(bm.get("tool_error_count", 0)),
+                    "stuck_loop_delta": int(tm.get("stuck_loop_count", 0)) - int(bm.get("stuck_loop_count", 0)),
+                    "verification_after_last_edit_baseline": bm.get("verification_after_last_edit"),
+                    "verification_after_last_edit_treatment": tm.get("verification_after_last_edit"),
+                    "changed_file_delta": int(tm.get("changed_file_count", 0)) - int(bm.get("changed_file_count", 0)),
+                }
+            )
+    return effects
