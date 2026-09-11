@@ -377,6 +377,251 @@ def _cross_subject_divergence(run_root: Path, summaries: list[dict[str, Any]]) -
     return {"schema_version":1,"tasks":result}
 
 
+def _normalized_trajectory_rows(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for summary in summaries:
+        root = Path(summary["evidence_root"])
+        events = _read_jsonl(root / "normalized-trajectory.jsonl")
+        for event in events:
+            rows.append({
+                "trial_key": summary["trial_key"],
+                "task_id": summary["task_id"],
+                "subject": summary["subject"],
+                "kind": summary.get("kind"),
+                "intervention_id": summary.get("intervention_id"),
+                "repeat": summary.get("repeat"),
+                "oracle_success": summary.get("oracle_success"),
+                **event,
+            })
+    return rows
+
+
+def _strategy_atlas(
+    summaries: list[dict[str, Any]],
+    event_types: set[str],
+    *,
+    native_only: bool = True,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for summary in summaries:
+        if native_only and summary.get("kind") != "NATIVE_OBSERVATION":
+            continue
+        events = _read_jsonl(Path(summary["evidence_root"]) / "normalized-trajectory.jsonl")
+        selected = [
+            event for event in events
+            if str(event.get("event_type") or "") in event_types
+        ]
+        result[summary["trial_key"]] = {
+            "task_id": summary["task_id"],
+            "subject": summary["subject"],
+            "kind": summary.get("kind"),
+            "intervention_id": summary.get("intervention_id"),
+            "repeat": summary.get("repeat"),
+            "oracle_success": summary.get("oracle_success"),
+            "signature": [event.get("event_type") for event in selected],
+            "events": selected,
+        }
+    return {
+        "schema_version": 1,
+        "native_only": native_only,
+        "event_types": sorted(event_types),
+        "trajectories": result,
+    }
+
+
+def _within_subject_failure_divergence(
+    summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in summaries:
+        groups[(str(row["subject"]), str(row["task_id"]))].append(row)
+
+    results: dict[str, Any] = {}
+    for (subject, task_id), rows in sorted(groups.items()):
+        success = [row for row in rows if bool(row.get("oracle_success"))]
+        failures = [row for row in rows if not bool(row.get("oracle_success"))]
+        for failed in failures:
+            same_kind = [
+                row for row in success
+                if row.get("kind") == failed.get("kind")
+            ]
+            sibling = same_kind[0] if same_kind else (success[0] if success else None)
+            if sibling is None:
+                results[failed["trial_key"]] = {
+                    "subject": subject,
+                    "task_id": task_id,
+                    "failed_trial_key": failed["trial_key"],
+                    "status": "NO_SUCCESSFUL_SIBLING",
+                    "first_divergence": None,
+                }
+                continue
+            successful_events = _read_jsonl(
+                Path(sibling["evidence_root"]) / "normalized-trajectory.jsonl"
+            )
+            failed_events = _read_jsonl(
+                Path(failed["evidence_root"]) / "normalized-trajectory.jsonl"
+            )
+            results[failed["trial_key"]] = {
+                "subject": subject,
+                "task_id": task_id,
+                "failed_trial_key": failed["trial_key"],
+                "successful_sibling_trial_key": sibling["trial_key"],
+                "status": "COMPARED",
+                "first_divergence": first_divergence(
+                    successful_events,
+                    failed_events,
+                ),
+            }
+    return {"schema_version": 1, "failures": results}
+
+
+def _false_success_registry(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = []
+    for summary in summaries:
+        metrics = summary.get("metrics") or {}
+        visible_green = metrics.get("visible_checks_ok") is True
+        hidden_bad = metrics.get("hidden_oracle_ok") is False
+        response_bad = metrics.get("response_oracle_ok") is False
+        if visible_green and (hidden_bad or response_bad):
+            rows.append({
+                "trial_key": summary["trial_key"],
+                "task_id": summary["task_id"],
+                "subject": summary["subject"],
+                "kind": summary.get("kind"),
+                "intervention_id": summary.get("intervention_id"),
+                "visible_checks_ok": True,
+                "hidden_oracle_ok": metrics.get("hidden_oracle_ok"),
+                "response_oracle_ok": metrics.get("response_oracle_ok"),
+                "oracle_success": summary.get("oracle_success"),
+            })
+    return {"schema_version": 1, "false_successes": rows}
+
+
+def _pathology_ablation_results(
+    tasks: list[dict[str, Any]],
+    paired: dict[str, Any],
+) -> dict[str, Any]:
+    task_map = {str(task["task_id"]): task for task in tasks}
+    rows = []
+    for key, result in sorted((paired.get("results") or {}).items()):
+        task = task_map.get(str(result.get("task_id")))
+        if not task:
+            continue
+        if str(task.get("level")) != "P10":
+            continue
+        rows.append({
+            "key": key,
+            "task_id": task["task_id"],
+            "pathology_ids": list(task.get("pathology_ids") or []),
+            **result,
+        })
+    return {"schema_version": 1, "p10_ablation_results": rows}
+
+
+def _mechanism_interaction_graph(
+    tasks: list[dict[str, Any]],
+    summaries: list[dict[str, Any]],
+    paired: dict[str, Any],
+) -> dict[str, Any]:
+    native = [
+        row for row in summaries
+        if row.get("kind") == "NATIVE_OBSERVATION"
+    ]
+    nodes = {row["id"]: row["name"] for row in MECHANISMS}
+    edge_rows: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for task in tasks:
+        mechanisms = sorted(set(task.get("candidate_mechanisms") or []))
+        if len(mechanisms) < 2:
+            continue
+        task_native = [
+            row for row in native
+            if row["task_id"] == task["task_id"]
+        ]
+        success_rate = (
+            sum(bool(row["oracle_success"]) for row in task_native) / len(task_native)
+            if task_native else None
+        )
+        for index, left in enumerate(mechanisms):
+            for right in mechanisms[index + 1:]:
+                key = (left, right)
+                edge = edge_rows.setdefault(
+                    key,
+                    {
+                        "left": left,
+                        "right": right,
+                        "cooccurring_task_ids": [],
+                        "p10_task_ids": [],
+                        "native_success_rates": [],
+                        "directional_ablation_evidence": [],
+                    },
+                )
+                edge["cooccurring_task_ids"].append(task["task_id"])
+                if task.get("level") == "P10":
+                    edge["p10_task_ids"].append(task["task_id"])
+                if success_rate is not None:
+                    edge["native_success_rates"].append({
+                        "task_id": task["task_id"],
+                        "success_rate": success_rate,
+                    })
+
+    for result in (paired.get("results") or {}).values():
+        mechanisms = sorted(set(result.get("mechanisms") or []))
+        if len(mechanisms) < 2:
+            continue
+        for index, left in enumerate(mechanisms):
+            for right in mechanisms[index + 1:]:
+                edge = edge_rows.get((left, right))
+                if edge is None:
+                    continue
+                edge["directional_ablation_evidence"].append({
+                    "task_id": result.get("task_id"),
+                    "intervention_id": result.get("intervention_id"),
+                    "success_delta": result.get("success_delta"),
+                })
+
+    edges = []
+    for key, edge in sorted(edge_rows.items()):
+        directional = [
+            row for row in edge["directional_ablation_evidence"]
+            if float(row.get("success_delta", 0.0)) != 0.0
+        ]
+        edges.append({
+            **edge,
+            "evidence_status": (
+                "DIRECTIONAL_ABLATION_SIGNAL"
+                if directional
+                else "COOCCURRENCE_ONLY_NOT_SYNERGY_PROOF"
+            ),
+        })
+    return {
+        "schema_version": 1,
+        "nodes": [{"id": mid, "name": name} for mid, name in sorted(nodes.items())],
+        "edges": edges,
+    }
+
+
+def _behavioral_inference_registry(
+    mechanisms: dict[str, Any],
+) -> dict[str, Any]:
+    rows = []
+    for mid, row in sorted((mechanisms.get("mechanisms") or {}).items()):
+        rows.append({
+            "mechanism_id": mid,
+            "mechanism_name": row.get("mechanism_name"),
+            "status": row.get("status"),
+            "implementation_decision": row.get("implementation_decision"),
+            "net_effect": row.get("net_effect"),
+            "looked_at_task_ids": row.get("looked_at_task_ids"),
+            "intervention_count": row.get("intervention_count"),
+            "claim_boundary": (
+                "observable_or_causally_inferred_behavior_only; "
+                "not hidden chain-of-thought or proprietary implementation"
+            ),
+        })
+    return {"schema_version": 1, "inferences": rows}
+
+
 def _failure_registry(summaries: list[dict[str, Any]]) -> dict[str, Any]:
     rows = []
     for summary in summaries:
@@ -564,9 +809,25 @@ def run_coding_tomography_campaign(
     known_unknown = _known_unknown(mechanisms)
     blueprint,rejects,next_experiments = _blueprint_and_rejects(mechanisms)
 
+    normalized_rows = _normalized_trajectory_rows(summaries)
+    _write_jsonl(run_root / "normalized-trajectories.jsonl", normalized_rows)
     _write_json(run_root / "native-behavior-atlas.json",behavior)
+    _write_json(run_root / "search-strategy-atlas.json", _strategy_atlas(summaries, {"SEARCH","FILE_READ"}))
+    _write_json(run_root / "edit-strategy-atlas.json", _strategy_atlas(summaries, {"FILE_WRITE","FILE_EDIT","REVERT"}))
+    _write_json(run_root / "verification-strategy-atlas.json", _strategy_atlas(summaries, {"TEST","LINT","BUILD","VERIFY"}))
+    _write_json(run_root / "failure-recovery-atlas.json", _strategy_atlas(summaries, {"TOOL_ERROR","REPAIR","REVERT","TEST","VERIFY"}))
+    _write_json(run_root / "stop-rule-atlas.json", _strategy_atlas(summaries, {"FINAL_RESPONSE","SESSION_STOP","TEST","VERIFY"}))
+    _write_json(run_root / "context-memory-atlas.json", _strategy_atlas(summaries, {"CONTEXT_LOAD","CONTEXT_COMPACT","RESUME","CHECKPOINT","REASONING_SUMMARY"}))
+    _write_json(run_root / "delegation-parallelism-atlas.json", _strategy_atlas(summaries, {"SUBAGENT_START","SUBAGENT_RESULT"}))
+    _write_json(run_root / "permissions-sandbox-atlas.json", _strategy_atlas(summaries, {"PERMISSION_REQUEST","PERMISSION_DENIED","APPROVAL"}))
+    _write_json(run_root / "instruction-precedence-atlas.json", _strategy_atlas(summaries, {"CONTEXT_LOAD","SEARCH","FILE_READ"}))
     _write_json(run_root / "causal-intervention-results.json",paired)
+    _write_json(run_root / "pathology-ablation-results.json", _pathology_ablation_results(tasks, paired))
     _write_json(run_root / "mechanism-value-per-cost.json",mechanisms)
+    _write_json(run_root / "mechanism-interaction-graph.json", _mechanism_interaction_graph(tasks, summaries, paired))
+    _write_json(run_root / "behavioral-inference-registry.json", _behavioral_inference_registry(mechanisms))
+    _write_json(run_root / "failure-first-divergence-atlas.json", _within_subject_failure_divergence(summaries))
+    _write_json(run_root / "false-success-registry.json", _false_success_registry(summaries))
     _write_json(run_root / "failure-replay-registry.json",failures)
     _write_json(run_root / "first-divergence-atlas.json",divergence)
     _write_json(run_root / "known-unknown-not-looked-at.json",known_unknown)
