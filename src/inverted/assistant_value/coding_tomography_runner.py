@@ -25,6 +25,10 @@ from .coding_tomography import (
     normalize_events,
     trajectory_metrics,
 )
+from .coding_tomography_observers import (
+    load_rollout_jsonl,
+    resolve_rollout_path,
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -251,6 +255,7 @@ def run_subject_trial(
     evidence_root: str | Path,
     timeout_s: float = 1800.0,
     observer_event_files: Iterable[str | Path] = (),
+    rollout_path_template: str | None = None,
 ) -> dict[str, Any]:
     """Run one clean coding-agent session and preserve all observable evidence."""
     root = Path(evidence_root)
@@ -289,7 +294,30 @@ def run_subject_trial(
     _write_json(root / "subject-non-json.json", parsed["non_json"])
 
     raw_events = [row["event"] for row in parsed["events"]]
+    session_id = extract_subject_session_id(command.subject, parsed["events"])
     observer_rows: list[dict[str, Any]] = []
+
+    rollout_path = resolve_rollout_path(
+        rollout_path_template,
+        session_id=session_id,
+    )
+    if rollout_path is not None:
+        rollout_rows = load_rollout_jsonl(rollout_path)
+        _write_jsonl(root / "codex-rollout-events.jsonl", rollout_rows)
+        _write_json(
+            root / "codex-rollout-provenance.json",
+            {
+                "path": str(rollout_path),
+                "session_id": session_id,
+                "rows": len(rollout_rows),
+                "selection_rule": "exact user-supplied path template with session_id substitution",
+                "home_scan_performed": False,
+            },
+        )
+        for value in rollout_rows:
+            row = dict(value)
+            row.setdefault("observer_source", str(rollout_path))
+            observer_rows.append(row)
     for observer_path in observer_event_files:
         path = Path(observer_path)
         if not path.is_file():
@@ -413,7 +441,7 @@ def run_subject_trial(
             "response_oracle_ok": response_ok,
             "observable_final_response_chars": len(final_text),
             "changed_file_count": int(change_map["changed_count"]),
-            "session_id": extract_subject_session_id(command.subject, parsed["events"]),
+            "session_id": session_id,
             "native_event_count": len(raw_events),
             "observer_event_count": len(observer_rows),
             "non_json_line_count": len(parsed["non_json"]),
