@@ -8,6 +8,7 @@ from inverted.assistant_value.coding_tomography import (
     compound_ablations,
     detect_stuck_loops,
     first_divergence,
+    mechanism_observable_signal,
     mechanism_registry,
     normalize_events,
     pathology_registry,
@@ -154,3 +155,59 @@ def test_positive_matched_effect_can_be_causal_but_not_high_value_without_cost_e
     assert result["status"] == "CAUSAL"
     assert result["implementation_decision"] == "CLONE_CANDIDATE"
     assert result["complexity_units"] is None
+
+
+def test_looked_at_without_observable_signal_stays_unknown():
+    result = classify_mechanism_evidence(
+        opportunity_trials=6,
+        observed_trials=0,
+        independent_tasks=0,
+        causal_interventions=0,
+        generalized_families=0,
+        rescue_rate=0.0,
+        regression_rate=0.0,
+        complexity_units=None,
+    )
+    assert result["status"] == "UNKNOWN"
+    assert result["implementation_decision"] == "UNKNOWN"
+
+
+def test_one_directional_intervention_is_not_enough_for_causal_label():
+    result = classify_mechanism_evidence(
+        opportunity_trials=6,
+        observed_trials=4,
+        independent_tasks=3,
+        causal_interventions=1,
+        generalized_families=1,
+        rescue_rate=1.0,
+        regression_rate=0.0,
+        complexity_units=None,
+    )
+    assert result["status"] == "REPLICATED"
+    assert result["implementation_decision"] == "MODIFY_CANDIDATE"
+
+
+def test_observable_signal_uses_trajectory_not_task_intent():
+    quiet = [
+        {"event_type":"SESSION_START","observable_fields":{}},
+        {"event_type":"FINAL_RESPONSE","observable_fields":{}},
+        {"event_type":"SESSION_STOP","observable_fields":{}},
+    ]
+    searched = [
+        {"event_type":"SEARCH","observable_fields":{"command":"rg target"}},
+        {"event_type":"FILE_READ","observable_fields":{"path":"app.py"}},
+        {"event_type":"FILE_READ","observable_fields":{"path":"policy.py"}},
+    ]
+    assert mechanism_observable_signal("M02", quiet, {}) is False
+    assert mechanism_observable_signal("M02", searched, {}) is True
+
+
+def test_normalized_event_retains_safe_observable_command_details():
+    event = normalize_events(
+        "codex",
+        [{"type":"command_execution","command":"pytest -q","cwd":"repo","exit_code":1}],
+    )[0]
+    assert event["event_type"] == "TEST"
+    assert event["observable_fields"]["command"] == "pytest -q"
+    assert event["observable_fields"]["cwd"] == "repo"
+    assert event["observable_fields"]["exit_code"] == 1
