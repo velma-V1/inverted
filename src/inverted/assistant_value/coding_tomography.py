@@ -139,8 +139,12 @@ EVENT_ALIASES = {
     "session_started":"SESSION_START",
     "thread.started":"SESSION_START",
     "sessionstart":"SESSION_START",
+    "instructionsloaded":"CONTEXT_LOAD",
+    "userpromptsubmit":"CONTEXT_LOAD",
     "compact":"CONTEXT_COMPACT",
     "postcompact":"CONTEXT_COMPACT",
+    "precompact":"CONTEXT_COMPACT",
+    "context_load":"CONTEXT_LOAD",
     "plan":"PLAN_CREATE",
     "plan_update":"PLAN_UPDATE",
     "todo_list":"PLAN_UPDATE",
@@ -168,8 +172,13 @@ EVENT_ALIASES = {
     "collab_spawn":"SUBAGENT_START",
     "subagent_start":"SUBAGENT_START",
     "subagent_stop":"SUBAGENT_RESULT",
+    "taskcreated":"PLAN_UPDATE",
+    "taskcompleted":"SUBAGENT_RESULT",
+    "posttoolusefailure":"TOOL_ERROR",
+    "stopfailure":"TOOL_ERROR",
     "permissionrequest":"PERMISSION_REQUEST",
     "permissiondenied":"PERMISSION_DENIED",
+    "permissionrequest":"PERMISSION_REQUEST",
     "tool_error":"TOOL_ERROR",
     "tool_result":"TOOL_RESULT",
     "verify":"VERIFY",
@@ -225,6 +234,78 @@ def compound_ablations(compound: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _observable_projection(raw_event: dict[str, Any]) -> dict[str, Any]:
+    """Extract only user-observable execution metadata from a raw event."""
+    projection: dict[str, Any] = {}
+    candidates: list[dict[str, Any]] = [raw_event]
+    for key in ("item", "payload", "source_event"):
+        value = raw_event.get(key)
+        if isinstance(value, dict):
+            candidates.append(value)
+    payload = raw_event.get("payload")
+    if isinstance(payload, dict):
+        for key in ("tool_input", "tool_response"):
+            value = payload.get(key)
+            if isinstance(value, dict):
+                candidates.append(value)
+
+    scalar_keys = (
+        "tool_name", "name", "command", "cwd", "path", "query", "status",
+        "exit_code", "duration_ms", "session_id", "sessionId", "thread_id",
+        "subagent_id", "agent_id", "tool_use_id", "id", "hook_event_name",
+        "permission_mode", "decision", "reason",
+    )
+    for obj in candidates:
+        for key in scalar_keys:
+            value = obj.get(key)
+            if value is None or key in projection:
+                continue
+            if isinstance(value, (str, int, float, bool)):
+                projection[key] = value
+
+    # File-change payloads often expose lists of path/kind objects.
+    for obj in candidates:
+        changes = obj.get("changes")
+        if isinstance(changes, list):
+            rows = []
+            for change in changes:
+                if not isinstance(change, dict):
+                    continue
+                row = {}
+                for key in ("path", "kind", "move_path"):
+                    if isinstance(change.get(key), (str, int, float, bool)) or change.get(key) is None:
+                        row[key] = change.get(key)
+                if row:
+                    rows.append(row)
+            if rows:
+                projection["changes"] = rows
+                break
+
+    # Product-exposed summaries are observable; raw private reasoning is not
+    # synthesized or promoted here.
+    if str(raw_event.get("type") or "").lower() == "reasoning_summary":
+        summary = raw_event.get("summary")
+        if isinstance(summary, str):
+            projection["reasoning_summary"] = summary
+
+    # Claude hook payloads identify tools and inputs in hook JSON.
+    hook_payload = raw_event.get("payload")
+    if isinstance(hook_payload, dict):
+        if isinstance(hook_payload.get("tool_name"), str):
+            projection.setdefault("tool_name", hook_payload["tool_name"])
+        tool_input = hook_payload.get("tool_input")
+        if isinstance(tool_input, dict):
+            safe_input = {}
+            for key in ("command", "file_path", "path", "pattern", "query", "description"):
+                value = tool_input.get(key)
+                if isinstance(value, (str, int, float, bool)):
+                    safe_input[key] = value
+            if safe_input:
+                projection["tool_input"] = safe_input
+
+    return projection
+
+
 def normalize_event(subject: str, raw_event: dict[str, Any], *, sequence: int, raw_ref: str | None = None) -> dict[str, Any]:
     """Map one observable subject event into the common event vocabulary.
 
@@ -276,6 +357,7 @@ def normalize_event(subject: str, raw_event: dict[str, Any], *, sequence: int, r
         "raw_hash": _stable_hash(raw_event),
         "observable": True,
         "raw_type_candidates": candidates,
+        "observable_fields": _observable_projection(raw_event),
     }
 
 
