@@ -18,7 +18,7 @@ def _by_id(tasks):
 
 def test_builtin_bank_materializes_external_oracles_and_git_repos(tmp_path: Path):
     tasks = build_builtin_task_bank(tmp_path / "bank")
-    assert len(tasks) >= 10
+    assert len(tasks) == 20
     for task in tasks:
         template = Path(task["workspace_template"])
         assert template.is_dir()
@@ -127,3 +127,36 @@ def test_p10_correctly_unsolvable_case_requires_no_edit_plus_clarification(tmp_p
     assert hidden["ok"] is True
     assert task["response_oracle"]["must_not_modify_files"] is True
     assert "deployment" in task["response_oracle"]["must_contain_any"]
+
+
+def test_specialized_system_behavior_frontier_cases_are_present(tmp_path: Path):
+    tasks = _by_id(build_builtin_task_bank(tmp_path / "bank"))
+    expected = {
+        "PUC06-parallel-opportunity",
+        "PUC07-parallel-hazard",
+        "PUC08-transient-retry",
+        "PUC09-false-tool-success",
+        "PUC10-unfinished-work",
+    }
+    assert expected.issubset(tasks)
+    for task_id in expected:
+        assert tasks[task_id]["candidate_mechanisms"]
+        assert tasks[task_id]["level"] in {"P8","P9","P10"}
+
+
+def test_false_tool_success_and_unfinished_work_are_visible_green_hidden_red(tmp_path: Path):
+    tasks = _by_id(build_builtin_task_bank(tmp_path / "bank"))
+    for task_id in ("PUC09-false-tool-success", "PUC10-unfinished-work"):
+        task = tasks[task_id]
+        visible = run_check(task["visible_checks"][0], cwd=task["workspace_template"])
+        hidden = run_check(task["hidden_oracle_checks"][0], cwd=task["workspace_template"])
+        assert visible["ok"] is True, task_id
+        assert hidden["ok"] is False, task_id
+
+
+def test_parallelism_cases_start_hidden_red(tmp_path: Path):
+    tasks = _by_id(build_builtin_task_bank(tmp_path / "bank"))
+    for task_id in ("PUC06-parallel-opportunity", "PUC07-parallel-hazard"):
+        task = tasks[task_id]
+        hidden = run_check(task["hidden_oracle_checks"][0], cwd=task["workspace_template"])
+        assert hidden["ok"] is False, task_id
