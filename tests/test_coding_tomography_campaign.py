@@ -21,7 +21,7 @@ def _config(max_sessions: int = 160):
         "coding_tomography":{
             "max_sessions":max_sessions,
             "native_repeats":2,
-            "intervention_repeats":1,
+            "intervention_repeats":2,
             "include_common_interventions":True,
             "timeout_s":30,
             "subjects":[
@@ -37,13 +37,13 @@ def test_campaign_plan_is_bounded_and_matched(tmp_path: Path):
     plan = build_campaign_plan(_config(), tasks)
 
     assert plan["task_count"] == 10
-    assert plan["planned_sessions"] == 100
+    assert plan["planned_sessions"] == 160
     assert len(plan["subjects"]) == 2
 
     native = [row for row in plan["entries"] if row["kind"] == "NATIVE_OBSERVATION"]
     causal = [row for row in plan["entries"] if row["kind"] == "CAUSAL_INTERVENTION"]
     assert len(native) == 40
-    assert len(causal) == 60
+    assert len(causal) == 120
 
     by_subject_task = {}
     for row in native:
@@ -67,7 +67,7 @@ def test_dry_run_never_requires_installed_subjects(tmp_path: Path):
     )
 
     assert result["dry_run"] is True
-    assert result["planned_sessions"] == 100
+    assert result["planned_sessions"] == 160
     root = Path(result["run_root"])
     assert (root / "campaign-plan.json").is_file()
     assert (root / "mechanism-registry.json").is_file()
