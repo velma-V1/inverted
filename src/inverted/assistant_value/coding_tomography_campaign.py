@@ -630,6 +630,12 @@ def _select_replay_sources(
         row for row in summaries
         if row.get("kind") == "NATIVE_OBSERVATION"
         and not bool(row.get("oracle_success"))
+        and bool(
+            (tasks.get(str(row.get("task_id"))) or {}).get(
+                "replay_eligible",
+                True,
+            )
+        )
     ]
     def score(row: dict[str, Any]) -> tuple[int, int, str, str]:
         task = tasks.get(str(row.get("task_id"))) or {}
@@ -1582,6 +1588,8 @@ def _frontier_failure_replay_queue(
             continue
         level = str(task.get("level") or "")
         if level not in {"P9","P10"}:
+            continue
+        if not bool(task.get("replay_eligible", True)):
             continue
         replay_path = Path(summary["evidence_root"]) / "failure-replay.json"
         replay = _read_json(replay_path) if replay_path.is_file() else {}
