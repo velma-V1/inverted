@@ -13,6 +13,7 @@ from typing import Any, Iterable
 from .coding_subjects import (
     SubjectCommand,
     command_for_subject,
+    expand_observable_subject_stream,
     extract_subject_session_id,
     parse_jsonl_stream,
     sanitize_environment_snapshot,
@@ -311,8 +312,12 @@ def run_subject_trial(
 
     _write_jsonl(root / "observer-events.jsonl", observer_rows)
 
-    normalized_native = normalize_events(command.subject, raw_events)
-    normalized_observer = normalize_events(command.subject, observer_rows)
+    observable_native = expand_observable_subject_stream(command.subject, raw_events)
+    observable_observer = expand_observable_subject_stream(command.subject, observer_rows)
+    _write_jsonl(root / "observable-native-events.jsonl", observable_native)
+    _write_jsonl(root / "observable-observer-events.jsonl", observable_observer)
+    normalized_native = normalize_events(command.subject, observable_native)
+    normalized_observer = normalize_events(command.subject, observable_observer)
     normalized = []
     for row in normalized_native:
         normalized.append({**row, "channel":"native_stdout"})
