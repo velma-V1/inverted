@@ -295,7 +295,7 @@ def _mechanism_results(
         key = str(summary["trial_key"])
         if key not in trajectory_cache:
             trajectory_cache[key] = _read_jsonl(
-                Path(summary["evidence_root"]) / "normalized-trajectory.jsonl"
+                Path(summary["evidence_root"]) / ("normalized-native-trajectory.jsonl" if native_only else "normalized-trajectory.jsonl")
             )
         return trajectory_cache[key]
 
@@ -489,8 +489,8 @@ def _cross_subject_divergence(run_root: Path, summaries: list[dict[str, Any]]) -
         codex = by_task_subject.get((task_id,"codex"),[])
         if not claude or not codex:
             continue
-        a = _read_jsonl(Path(claude[0]["evidence_root"]) / "normalized-trajectory.jsonl")
-        b = _read_jsonl(Path(codex[0]["evidence_root"]) / "normalized-trajectory.jsonl")
+        a = _read_jsonl(Path(claude[0]["evidence_root"]) / "normalized-native-trajectory.jsonl")
+        b = _read_jsonl(Path(codex[0]["evidence_root"]) / "normalized-native-trajectory.jsonl")
         result[task_id] = first_divergence(a,b)
     return {"schema_version":1,"tasks":result}
 
@@ -590,10 +590,10 @@ def _within_subject_failure_divergence(
                 }
                 continue
             successful_events = _read_jsonl(
-                Path(sibling["evidence_root"]) / "normalized-trajectory.jsonl"
+                Path(sibling["evidence_root"]) / "normalized-native-trajectory.jsonl"
             )
             failed_events = _read_jsonl(
-                Path(failed["evidence_root"]) / "normalized-trajectory.jsonl"
+                Path(failed["evidence_root"]) / "normalized-native-trajectory.jsonl"
             )
             results[failed["trial_key"]] = {
                 "subject": subject,
@@ -754,6 +754,42 @@ def _behavioral_inference_registry(
             ),
         })
     return {"schema_version": 1, "inferences": rows}
+
+
+def _observability_coverage(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = []
+    for summary in summaries:
+        coverage = dict(summary.get("channel_coverage") or {})
+        rows.append({
+            "trial_key":summary.get("trial_key"),
+            "task_id":summary.get("task_id"),
+            "subject":summary.get("subject"),
+            "kind":summary.get("kind"),
+            **coverage,
+        })
+    by_subject: dict[str, dict[str, Any]] = {}
+    for subject in sorted({str(row.get("subject")) for row in rows if row.get("subject")}):
+        group = [row for row in rows if str(row.get("subject")) == subject]
+        native_total = sum(int(row.get("native_normalized_event_count",0)) for row in group)
+        native_unknown = sum(int(row.get("native_unknown_event_count",0)) for row in group)
+        observer_total = sum(int(row.get("observer_normalized_event_count",0)) for row in group)
+        observer_unknown = sum(int(row.get("observer_unknown_event_count",0)) for row in group)
+        by_subject[subject] = {
+            "trials":len(group),
+            "native_normalized_events":native_total,
+            "native_unknown_events":native_unknown,
+            "native_unknown_rate":native_unknown/native_total if native_total else None,
+            "observer_normalized_events":observer_total,
+            "observer_unknown_events":observer_unknown,
+            "observer_unknown_rate":observer_unknown/observer_total if observer_total else None,
+            "codex_rollout_rows":sum(int(row.get("codex_rollout_rows",0)) for row in group),
+        }
+    return {
+        "schema_version":1,
+        "trials":rows,
+        "by_subject":by_subject,
+        "rule":"Missing/unknown event coverage is evidence about instrumentation limits, not evidence that the subject omitted the behavior.",
+    }
 
 
 def _failure_registry(summaries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -933,6 +969,10 @@ def run_coding_tomography_campaign(
             timeout_s=timeout_s,
             observer_event_files=observer_files,
             rollout_path_template=entry["subject"].get("rollout_path_template"),
+            auto_codex_rollout_lookup=(
+                entry.get("kind") == "OBSERVABILITY_AUGMENTED"
+                and str(entry["subject"]["name"]) == "codex"
+            ),
         )
         summary.update({
             "trial_key":key,
@@ -978,6 +1018,13 @@ def run_coding_tomography_campaign(
     _write_json(run_root / "mechanism-value-per-cost.json",mechanisms)
     _write_json(run_root / "mechanism-interaction-graph.json", _mechanism_interaction_graph(tasks, summaries, paired))
     _write_json(run_root / "behavioral-inference-registry.json", _behavioral_inference_registry(mechanisms))
+    _write_json(run_root / "observability-coverage.json", _observability_coverage(summaries))
+    _write_json(run_root / "observer-strategy-atlas.json", _strategy_atlas(summaries, {
+        "CONTEXT_LOAD","CONTEXT_COMPACT","SEARCH","FILE_READ","FILE_WRITE","FILE_EDIT",
+        "COMMAND","TEST","LINT","BUILD","WEB","MCP","SUBAGENT_START","SUBAGENT_RESULT",
+        "PERMISSION_REQUEST","PERMISSION_DENIED","TOOL_ERROR","TOOL_RESULT",
+        "REASONING_SUMMARY","FINAL_RESPONSE","SESSION_STOP"
+    }, native_only=False))
     _write_json(run_root / "failure-first-divergence-atlas.json", _within_subject_failure_divergence(summaries))
     _write_json(run_root / "false-success-registry.json", _false_success_registry(summaries))
     _write_json(run_root / "failure-replay-registry.json",failures)
