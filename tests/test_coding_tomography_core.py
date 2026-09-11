@@ -4,6 +4,7 @@ from inverted.assistant_value.coding_tomography import (
     COMPOUNDS,
     MECHANISMS,
     PATHOLOGIES,
+    classify_mechanism_evidence,
     compound_ablations,
     detect_stuck_loops,
     first_divergence,
@@ -105,3 +106,51 @@ def test_trajectory_metrics_requires_verification_after_last_edit():
     assert metrics["last_verify"] == 4
     assert metrics["verification_after_last_edit"] is False
     assert metrics["oracle_success"] is False
+
+
+def test_null_intervention_is_not_mislabeled_causal():
+    result = classify_mechanism_evidence(
+        observed_trials=6,
+        independent_tasks=3,
+        causal_interventions=4,
+        generalized_families=2,
+        rescue_rate=0.0,
+        regression_rate=0.0,
+        complexity_units=1.0,
+    )
+
+    assert result["status"] == "REPLICATED"
+    assert result["implementation_decision"] == "UNKNOWN"
+    assert result["net_effect"] == 0.0
+
+
+def test_negative_causal_effect_is_rejected_before_generalization_promotion():
+    result = classify_mechanism_evidence(
+        observed_trials=8,
+        independent_tasks=4,
+        causal_interventions=4,
+        generalized_families=3,
+        rescue_rate=0.0,
+        regression_rate=0.5,
+        complexity_units=1.0,
+    )
+
+    assert result["status"] == "REJECT"
+    assert result["implementation_decision"] == "REJECT"
+    assert result["net_effect"] < 0.0
+
+
+def test_positive_matched_effect_can_be_causal_but_not_high_value_without_cost_evidence():
+    result = classify_mechanism_evidence(
+        observed_trials=8,
+        independent_tasks=4,
+        causal_interventions=4,
+        generalized_families=1,
+        rescue_rate=0.5,
+        regression_rate=0.0,
+        complexity_units=None,
+    )
+
+    assert result["status"] == "CAUSAL"
+    assert result["implementation_decision"] == "CLONE_CANDIDATE"
+    assert result["complexity_units"] is None
