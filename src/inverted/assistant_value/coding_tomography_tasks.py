@@ -719,14 +719,23 @@ print("visible-tool-green")
 """)
     op = _oracle(base, case, """import json, pathlib, subprocess, sys
 root=pathlib.Path(sys.argv[1])
-r=subprocess.run([sys.executable,"migrate.py"],cwd=root,capture_output=True,text=True)
-assert r.returncode==0
+
+# The requested migration must already have been applied before hidden
+# verification begins. Otherwise the oracle would create the postcondition it
+# is supposed to judge.
 state=json.loads((root/"state.json").read_text(encoding="utf-8"))
-assert state["schema_version"]==2
-r2=subprocess.run([sys.executable,"migrate.py"],cwd=root,capture_output=True,text=True)
-assert r2.returncode==0
+assert state["schema_version"]==2, "agent did not establish the requested postcondition"
+
+# Then independently verify that the repaired migration remains successful and
+# idempotent when run again.
+r=subprocess.run([sys.executable,"migrate.py"],cwd=root,capture_output=True,text=True)
+assert r.returncode==0,(r.stdout,r.stderr)
 state2=json.loads((root/"state.json").read_text(encoding="utf-8"))
 assert state2["schema_version"]==2
+r2=subprocess.run([sys.executable,"migrate.py"],cwd=root,capture_output=True,text=True)
+assert r2.returncode==0,(r2.stdout,r2.stderr)
+state3=json.loads((root/"state.json").read_text(encoding="utf-8"))
+assert state3["schema_version"]==2
 print("hidden-ok")
 """)
     _init_git(t)
