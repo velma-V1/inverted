@@ -593,12 +593,12 @@ def classify_mechanism_evidence(
     *,
     observed_trials: int,
     independent_tasks: int,
-    opportunity_trials: int | None = None,
     causal_interventions: int,
     generalized_families: int,
     rescue_rate: float,
     regression_rate: float,
     complexity_units: float | None,
+    opportunity_trials: int | None = None,
 ) -> dict[str, Any]:
     net_effect = float(rescue_rate) - float(regression_rate)
     opportunities = int(observed_trials if opportunity_trials is None else opportunity_trials)
