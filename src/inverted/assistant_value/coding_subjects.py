@@ -289,3 +289,42 @@ def expand_observable_subject_stream(subject: str, raw_events: Iterable[dict[str
     for event in raw_events:
         expanded.extend(expand_observable_subject_event(subject, event))
     return expanded
+
+
+def extract_observable_final_text(subject: str, raw_events: Iterable[dict[str, Any]]) -> str:
+    """Return only final/assistant text explicitly emitted by the subject."""
+    normalized = str(subject).strip().lower().replace("-", "_").replace(" ", "_")
+    candidates: list[str] = []
+    for event in raw_events:
+        if normalized in {"codex", "codex_cli"}:
+            item = event.get("item") if isinstance(event, dict) else None
+            if isinstance(item, dict) and str(item.get("type") or "").lower() == "agent_message":
+                for key in ("text", "content", "message"):
+                    value = item.get(key)
+                    if isinstance(value, str) and value.strip():
+                        candidates.append(value)
+            for key in ("final_response", "response"):
+                value = event.get(key) if isinstance(event, dict) else None
+                if isinstance(value, str) and value.strip():
+                    candidates.append(value)
+        elif normalized in {"claude", "claude_code"}:
+            event_type = str(event.get("type") or "").lower() if isinstance(event, dict) else ""
+            if event_type in {"result", "final"}:
+                for key in ("result", "text", "response"):
+                    value = event.get(key)
+                    if isinstance(value, str) and value.strip():
+                        candidates.append(value)
+            if event_type == "assistant":
+                message = event.get("message")
+                content = message.get("content") if isinstance(message, dict) else None
+                if isinstance(content, list):
+                    text_parts = [
+                        str(block.get("text"))
+                        for block in content
+                        if isinstance(block, dict)
+                        and str(block.get("type") or "").lower() == "text"
+                        and isinstance(block.get("text"), str)
+                    ]
+                    if text_parts:
+                        candidates.append("\n".join(text_parts))
+    return candidates[-1] if candidates else ""
