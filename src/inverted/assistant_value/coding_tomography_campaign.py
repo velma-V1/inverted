@@ -293,18 +293,27 @@ def _mechanism_results(
             and mid in (task_map.get(row["task_id"],{}).get("candidate_mechanisms") or [])
         ]
         affected = [row for row in paired if mid in (row.get("mechanisms") or [])]
+        identifiable = [
+            row for row in affected
+            if list(row.get("mechanisms") or []) == [mid]
+            or (
+                len(list(row.get("mechanisms") or [])) == 1
+                and mid in list(row.get("mechanisms") or [])
+            )
+        ]
+        bundled = [row for row in affected if row not in identifiable]
         independent_tasks = {
             row["task_id"] for row in looked_trials
         }
-        positive = [row for row in affected if float(row.get("success_delta",0.0)) > 0]
-        negative = [row for row in affected if float(row.get("success_delta",0.0)) < 0]
+        positive = [row for row in identifiable if float(row.get("success_delta",0.0)) > 0]
+        negative = [row for row in identifiable if float(row.get("success_delta",0.0)) < 0]
         rescue_rate = (
-            sum(max(0.0,float(row["success_delta"])) for row in affected) / len(affected)
-            if affected else 0.0
+            sum(max(0.0,float(row["success_delta"])) for row in identifiable) / len(identifiable)
+            if identifiable else 0.0
         )
         regression_rate = (
-            sum(max(0.0,-float(row["success_delta"])) for row in affected) / len(affected)
-            if affected else 0.0
+            sum(max(0.0,-float(row["success_delta"])) for row in identifiable) / len(identifiable)
+            if identifiable else 0.0
         )
         families = {
             task_map.get(row["task_id"],{}).get("family")
@@ -314,7 +323,7 @@ def _mechanism_results(
         evidence = classify_mechanism_evidence(
             observed_trials=len(looked_trials),
             independent_tasks=len(independent_tasks),
-            causal_interventions=len(affected),
+            causal_interventions=len(identifiable),
             generalized_families=len(families),
             rescue_rate=rescue_rate,
             regression_rate=regression_rate,
@@ -342,12 +351,19 @@ def _mechanism_results(
             **evidence,
             "looked_at_task_ids":sorted(independent_tasks),
             "intervention_count":len(affected),
-            "positive_interventions":len(positive),
-            "negative_interventions":len(negative),
-            "measured_mean_elapsed_delta_s": mean_elapsed_delta,
-            "measured_mean_event_count_delta": mean_event_delta,
-            "measured_verification_after_last_edit_delta": verification_delta,
+            "identifiable_intervention_count":len(identifiable),
+            "bundle_intervention_count":len(bundled),
+            "positive_identifiable_interventions":len(positive),
+            "negative_identifiable_interventions":len(negative),
+            "bundle_evidence_keys":[
+                f"{row.get('subject')}|{row.get('task_id')}|{row.get('intervention_id')}"
+                for row in bundled
+            ],
+            "measured_mean_elapsed_delta_s_all_associated_factors": mean_elapsed_delta,
+            "measured_mean_event_count_delta_all_associated_factors": mean_event_delta,
+            "measured_verification_after_last_edit_delta_all_associated_factors": verification_delta,
             "inverted_implementation_complexity": "UNKNOWN_UNTIL_IMPLEMENTATION_PROTOTYPE",
+            "attribution_rule":"multi-mechanism intervention effects do not promote individual mechanism causality",
         }
     return {"schema_version":1,"mechanisms":by_mechanism}
 
@@ -403,6 +419,22 @@ def _cross_subject_divergence(run_root: Path, summaries: list[dict[str, Any]]) -
         b = _read_jsonl(Path(codex[0]["evidence_root"]) / "normalized-trajectory.jsonl")
         result[task_id] = first_divergence(a,b)
     return {"schema_version":1,"tasks":result}
+
+
+def _causal_factor_registry(paired: dict[str, Any]) -> dict[str, Any]:
+    rows = []
+    for key, result in sorted((paired.get("results") or {}).items()):
+        mechanisms = list(result.get("mechanisms") or [])
+        rows.append({
+            "factor_key": key,
+            **result,
+            "mechanism_identifiability": (
+                "SINGLE_MECHANISM_IDENTIFIABLE"
+                if len(mechanisms) == 1
+                else "MECHANISM_BUNDLE_NOT_INDIVIDUALLY_IDENTIFIABLE"
+            ),
+        })
+    return {"schema_version":1,"factors":rows}
 
 
 def _normalized_trajectory_rows(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -867,6 +899,7 @@ def run_coding_tomography_campaign(
     _write_json(run_root / "permissions-sandbox-atlas.json", _strategy_atlas(summaries, {"PERMISSION_REQUEST","PERMISSION_DENIED","APPROVAL"}))
     _write_json(run_root / "instruction-precedence-atlas.json", _strategy_atlas(summaries, {"CONTEXT_LOAD","SEARCH","FILE_READ"}))
     _write_json(run_root / "causal-intervention-results.json",paired)
+    _write_json(run_root / "causal-factor-registry.json", _causal_factor_registry(paired))
     _write_json(run_root / "pathology-ablation-results.json", _pathology_ablation_results(tasks, paired))
     _write_json(run_root / "mechanism-value-per-cost.json",mechanisms)
     _write_json(run_root / "mechanism-interaction-graph.json", _mechanism_interaction_graph(tasks, summaries, paired))
