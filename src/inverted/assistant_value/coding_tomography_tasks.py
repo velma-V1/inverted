@@ -904,16 +904,48 @@ text=(root/"normalize.py").read_text(encoding="utf-8")
 assert "def normalize(value)" in text
 print("hidden-ok")
 """)
+    resume_oracle = _oracle(base, case + "-resume", """import pathlib, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from normalize import normalize
+assert normalize(-7)==-7
+assert normalize(0)==0
+assert normalize(20)==20
+assert normalize(80)==80
+assert normalize(150)==80
+print("resume-hidden-ok")
+""")
     _init_git(t)
     tasks.append(_task(
         case_id=case,
         family="context_pressure_authority_retention",
-        pathology_ids=["PU-14","PU-19","PU-34"],
+        pathology_ids=["PU-14","PU-15","PU-19","PU-34"],
         template=t,
         oracle_path=op,
         prompt="Fix normalize according to the CURRENT RULE in AUTHORITY.md. Preserve the public API. The repository contains substantial archived design history; distinguish current authority from historical context and verify the actual behavior before stopping.",
-        mechanisms=["M01","M02","M07","M17","M18","M19","M37"],
+        mechanisms=["M01","M02","M07","M17","M18","M19","M20","M37"],
         level="P10",
+        resume_spec={
+            "prompt":"The authoritative rule changed after the previous turn. Read AUTHORITY_V2.md, update the implementation to the new current cap while preserving negative readings and the public API, and verify current state rather than relying on the prior turn.",
+            "operations":[
+                {
+                    "op":"write_file",
+                    "path":"AUTHORITY_V2.md",
+                    "content":"NEW CURRENT RULE: normalize(value) preserves negatives and caps positive readings at 80. This supersedes AUTHORITY.md only for the positive cap. Archived notes remain non-authoritative.\n",
+                },
+                {
+                    "op":"write_file",
+                    "path":"resume_check.py",
+                    "content":"from normalize import normalize\nassert normalize(-7)==-7\nassert normalize(20)==20\nassert normalize(150)==80\nprint('resume-visible-ok')\n",
+                },
+            ],
+            "visible_checks":[
+                {"id":"resume-visible","kind":"visible","argv":["{python}","resume_check.py"],"timeout_s":60}
+            ],
+            "hidden_oracle_checks":[
+                {"id":"resume-hidden","kind":"hidden_oracle","argv":["{python}",resume_oracle,"{workspace}"],"timeout_s":60}
+            ],
+            "candidate_mechanisms":["M20","M17","M18","M19","M37"],
+        },
     ))
 
     manifest = {
