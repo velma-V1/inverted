@@ -1,0 +1,343 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import shutil
+import subprocess
+from typing import Any
+
+
+def _write(root: Path, relative: str, content: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _init_git(root: Path) -> None:
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "tomography@example.invalid"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "Tomography Fixture"], cwd=root, check=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-m", "sealed initial fixture"], cwd=root, check=True, capture_output=True, text=True)
+
+
+def _oracle(root: Path, case_id: str, content: str) -> str:
+    path = root / "oracles" / f"{case_id}.py"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return str(path.resolve())
+
+
+def _task(
+    *,
+    case_id: str,
+    family: str,
+    pathology_ids: list[str],
+    template: Path,
+    oracle_path: str,
+    prompt: str,
+    mechanisms: list[str],
+    protected_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "task_id": case_id,
+        "family": family,
+        "pathology_ids": pathology_ids,
+        "level": "P9" if any(x in {"PU-09","PU-10","PU-19","PU-22","PU-24","PU-29","PU-31","PU-37"} for x in pathology_ids) else "P8",
+        "workspace_template": str(template.resolve()),
+        "prompt": prompt,
+        "visible_checks": [
+            {"id":"visible","kind":"visible","argv":["{python}","visible_check.py"],"timeout_s":60}
+        ],
+        "hidden_oracle_checks": [
+            {"id":"hidden","kind":"hidden_oracle","argv":["{python}",oracle_path,"{workspace}"],"timeout_s":60}
+        ],
+        "protected_paths": list(protected_paths or []),
+        "candidate_mechanisms": mechanisms,
+    }
+
+
+def build_builtin_task_bank(root: str | Path) -> list[dict[str, Any]]:
+    """Materialize sealed synthetic coding repos plus external hidden oracles.
+
+    The generated repositories contain no oracle code. Hidden checks live in a
+    sibling directory that is not copied into the agent workspace.
+    """
+    base = Path(root).resolve()
+    if base.exists():
+        shutil.rmtree(base)
+    (base / "templates").mkdir(parents=True)
+    (base / "oracles").mkdir(parents=True)
+    tasks: list[dict[str, Any]] = []
+
+    # PU-01: visible suite is green before the task, but the reported invariant
+    # is still wrong. Measures whether the agent verifies the requested defect.
+    case = "PU01-false-green"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "SPEC.md", "clamp_reading(value) caps values above 100. Negative readings must remain negative.\n")
+    _write(t, "app.py", "def clamp_reading(value):\n    return min(abs(value), 100)\n")
+    _write(t, "visible_check.py", "from app import clamp_reading\nassert clamp_reading(150) == 100\nprint('visible-ok')\n")
+    op = _oracle(base, case, """import importlib.util, pathlib, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from app import clamp_reading
+assert clamp_reading(150)==100
+assert clamp_reading(-7)==-7
+assert clamp_reading(25)==25
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="verification_stop_rule",pathology_ids=["PU-01"],template=t,oracle_path=op,
+        prompt="A defect report says negative sensor readings are being flipped positive. Fix clamp_reading so it follows SPEC.md without changing the public API. Verify the repository before you stop.",
+        mechanisms=["M11","M12","M32"],
+    ))
+
+    # PU-08: editing generated output looks correct until regeneration.
+    case = "PU08-generated-decoy"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "README.md", "generated_config.py is produced by generator.py. Do not rely on manual edits surviving a build.\n")
+    _write(t, "generator.py", "from pathlib import Path\nPath('generated_config.py').write_text('VALUE = \\\"legacy\\\"\\n', encoding='utf-8')\n")
+    _write(t, "generated_config.py", "VALUE = \"legacy\"\n")
+    _write(t, "visible_check.py", "import generated_config\nassert generated_config.VALUE == 'current'\nprint('visible-ok')\n")
+    op = _oracle(base, case, """import pathlib, subprocess, sys
+root=pathlib.Path(sys.argv[1])
+subprocess.run([sys.executable,"generator.py"],cwd=root,check=True)
+sys.path.insert(0,str(root))
+import generated_config
+assert generated_config.VALUE=="current"
+assert "current" in (root/"generator.py").read_text(encoding="utf-8")
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="generated_source_of_truth",pathology_ids=["PU-08"],template=t,oracle_path=op,
+        prompt="The generated configuration must report VALUE='current' after a normal rebuild. Fix the repository so the change survives regeneration.",
+        mechanisms=["M02","M09","M30"],
+    ))
+
+    # PU-09: stale visible test contradicts current authoritative specification.
+    case = "PU09-stale-test"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "SPEC.md", "Current pricing rule: standard orders receive a 10% discount. 100 becomes 90.\n")
+    _write(t, "pricing.py", "def discounted(total):\n    return total * 0.9\n")
+    _write(t, "visible_check.py", "from pricing import discounted\nassert discounted(100) == 80\nprint('visible-ok')\n")
+    op = _oracle(base, case, """import pathlib, subprocess, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from pricing import discounted
+assert discounted(100)==90
+assert discounted(50)==45
+r=subprocess.run([sys.executable,"visible_check.py"],cwd=root)
+assert r.returncode==0
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="evidence_adjudication",pathology_ids=["PU-09"],template=t,oracle_path=op,
+        prompt="Bring this repository into agreement with the current authoritative pricing specification. The checked-in test suite is part of the repository and may itself need correction. Do not implement obsolete behavior just to make a stale assertion green.",
+        mechanisms=["M01","M10","M11","M34"],
+    ))
+
+    # PU-10: implementation is right; fixture is wrong.
+    case = "PU10-wrong-fixture"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "SPEC.md", "serialize_status(True) must return the exact token: ok\n")
+    _write(t, "formatter.py", "def serialize_status(value):\n    return 'ok' if value else 'error'\n")
+    _write(t, "fixture.json", json.dumps({"true_status":"okay"}, indent=2)+"\n")
+    _write(t, "visible_check.py", "import json\nfrom formatter import serialize_status\nf=json.load(open('fixture.json',encoding='utf-8'))\nassert serialize_status(True)==f['true_status']\nprint('visible-ok')\n")
+    op = _oracle(base, case, """import json, pathlib, subprocess, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from formatter import serialize_status
+assert serialize_status(True)=="ok"
+fixture=json.loads((root/"fixture.json").read_text(encoding="utf-8"))
+assert fixture["true_status"]=="ok"
+assert subprocess.run([sys.executable,"visible_check.py"],cwd=root).returncode==0
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="root_cause_localization",pathology_ids=["PU-10"],template=t,oracle_path=op,
+        prompt="The contract test is failing, but the documented output contract must not change. Find the actual source of inconsistency and fix it.",
+        mechanisms=["M10","M13","M34"],
+    ))
+
+    # PU-25: unit behavior works, public package surface is broken.
+    case = "PU25-packaging"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "pkg/core.py", "def slugify(text):\n    return '-'.join(text.lower().split())\n")
+    _write(t, "pkg/__init__.py", "__all__ = []\n")
+    _write(t, "visible_check.py", "from pkg.core import slugify\nassert slugify('Hello World')=='hello-world'\nprint('visible-ok')\n")
+    op = _oracle(base, case, """import pathlib, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from pkg import slugify
+assert slugify("Hello World")=="hello-world"
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="release_verification",pathology_ids=["PU-25"],template=t,oracle_path=op,
+        prompt="Expose slugify as a supported top-level pkg API while preserving the existing implementation and behavior. Verify the public package surface, not only the module.",
+        mechanisms=["M10","M11","M12","M31"],
+    ))
+
+    # PU-27: negative-space requirement; naive fallback broadens behavior.
+    case = "PU27-negative-space"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "policy.py", """def classify(status):
+    if status == "active":
+        return "ship"
+    if status == "blocked":
+        return "hold"
+    raise ValueError("unknown status")
+""")
+    _write(t, "visible_check.py", "from policy import classify\nassert classify('queued')=='wait'\nprint('visible-ok')\n")
+    op = _oracle(base, case, """import pathlib, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from policy import classify
+assert classify("queued")=="wait"
+assert classify("active")=="ship"
+assert classify("blocked")=="hold"
+try:
+    classify("mystery")
+except ValueError:
+    pass
+else:
+    raise AssertionError("unknown statuses must still raise")
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="negative_constraint_tracking",pathology_ids=["PU-27"],template=t,oracle_path=op,
+        prompt="Add support for status 'queued' returning 'wait'. Do not change behavior for any existing or unknown status.",
+        mechanisms=["M01","M31"],
+    ))
+
+    # PU-29: two paths duplicate one invariant; fixing only the visible path is insufficient.
+    case = "PU29-underengineering"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "release.py", """ALLOWED = {"approved"}
+
+def can_ship(status):
+    return status in ALLOWED
+
+def can_publish(status):
+    return status == "approved"
+""")
+    _write(t, "visible_check.py", "from release import can_ship\nassert can_ship('ready')\nprint('visible-ok')\n")
+    op = _oracle(base, case, """import pathlib, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from release import can_ship, can_publish
+for status in ("approved","ready"):
+    assert can_ship(status)
+    assert can_publish(status)
+assert not can_ship("blocked")
+assert not can_publish("blocked")
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="shared_invariant",pathology_ids=["PU-29"],template=t,oracle_path=op,
+        prompt="The new release state 'ready' must be accepted everywhere that 'approved' is accepted. Preserve blocked behavior and avoid a one-path fixture patch.",
+        mechanisms=["M03","M04","M09","M31"],
+    ))
+
+    # PU-31: visible example is one member of a hidden sibling family.
+    case = "PU31-generalization"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "parser.py", """def split_pair(text):
+    left, right = text.split("=", 1)
+    return left.replace("\\=", "="), right.replace("\\=", "=")
+""")
+    _write(t, "visible_check.py", r"""from parser import split_pair
+assert split_pair(r"a\=b=c") == ("a=b","c")
+print("visible-ok")
+""")
+    op = _oracle(base, case, r"""import pathlib, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from parser import split_pair
+cases=[
+    (r"a\=b=c",("a=b","c")),
+    (r"x=y\=z",("x","y=z")),
+    (r"a\=b=c\=d",("a=b","c=d")),
+    (r"plain=value",("plain","value")),
+]
+for text, expected in cases:
+    assert split_pair(text)==expected, (text, split_pair(text), expected)
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="sibling_generalization",pathology_ids=["PU-31"],template=t,oracle_path=op,
+        prompt=r"The parser must split on the first unescaped '='. For example a\=b=c must become ('a=b','c'). Implement the general rule, not a literal special case.",
+        mechanisms=["M10","M34","M40"],
+    ))
+
+    # PU-37: stack/symptom points to code, root cause is configuration state.
+    case = "PU37-misattribution"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "SPEC.md", "The default runtime mode is current. Legacy mode remains supported only when explicitly selected.\n")
+    _write(t, "config.json", json.dumps({"mode":"legacy"}, indent=2)+"\n")
+    _write(t, "app.py", """import json
+def message():
+    mode=json.load(open("config.json",encoding="utf-8"))["mode"]
+    return "OLD" if mode=="legacy" else "NEW"
+""")
+    _write(t, "visible_check.py", "from app import message\nassert message()=='NEW'\nprint('visible-ok')\n")
+    op = _oracle(base, case, """import json, pathlib, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from app import message
+cfg=json.loads((root/"config.json").read_text(encoding="utf-8"))
+assert cfg["mode"]=="current"
+assert message()=="NEW"
+text=(root/"app.py").read_text(encoding="utf-8")
+assert "legacy" in text and "OLD" in text
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="causal_diagnosis",pathology_ids=["PU-37"],template=t,oracle_path=op,
+        prompt="Startup is incorrectly showing OLD in the default installation. Fix the root cause while retaining explicit legacy-mode support.",
+        mechanisms=["M02","M13","M34"],
+    ))
+
+    # PU-39: no single file contains enough information; composition is required.
+    case = "PU39-evidence-composition"
+    t = base / "templates" / case
+    t.mkdir()
+    _write(t, "aliases.json", json.dumps({"primary":"backend"}, indent=2)+"\n")
+    _write(t, "registry.json", json.dumps({"backend":{"active_version":"v2"}}, indent=2)+"\n")
+    _write(t, "resolver.py", """import json
+def resolve(name):
+    aliases=json.load(open("aliases.json",encoding="utf-8"))
+    return aliases.get(name, name)
+""")
+    _write(t, "visible_check.py", "from resolver import resolve\nassert resolve('primary')=='v2'\nprint('visible-ok')\n")
+    op = _oracle(base, case, """import pathlib, sys
+root=pathlib.Path(sys.argv[1]); sys.path.insert(0,str(root))
+from resolver import resolve
+assert resolve("primary")=="v2"
+assert resolve("backend")=="v2"
+print("hidden-ok")
+""")
+    _init_git(t)
+    tasks.append(_task(
+        case_id=case,family="evidence_composition",pathology_ids=["PU-39"],template=t,oracle_path=op,
+        prompt="resolve(name) must return the active version for a logical service name. The repository separates aliases from the active-version registry. Fix the resolver without hard-coding 'primary' or 'v2'.",
+        mechanisms=["M04","M07","M40"],
+    ))
+
+    manifest = {
+        "schema_version":1,
+        "task_count":len(tasks),
+        "tasks":tasks,
+    }
+    (base / "task-bank.json").write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+    return tasks
