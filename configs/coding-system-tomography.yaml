@@ -1,42 +1,67 @@
 coding_tomography:
-  # Every session is a real full coding-agent run. The campaign refuses to start
-  # if the deterministic plan exceeds this cap.
-  max_sessions: 162
+  # Hard campaign ceiling. The default plan is exactly 160 full agent sessions.
+  # Any config expansion above this refuses before launching Claude Code/Codex.
+  max_sessions: 160
 
-  # Two clean native observations distinguish stable behavior from one-off
-  # stochastic trajectories before causal interventions are interpreted.
+  # Two clean native observations per subject/task measure behavioral stability.
   native_repeats: 2
-  intervention_repeats: 2
+
+  # One first-order task-specific intervention is enough here because causal
+  # promotion requires replication across independent task/intervention units,
+  # not repeated copies of the same treatment.
+  intervention_repeats: 1
   include_common_interventions: true
 
-  # Two extra Claude-only sessions add logging-only lifecycle hooks for rich
-  # tool/subagent/permission/context telemetry. They are excluded from native
-  # performance comparisons.
+  # The common context-noise and project-instruction probes are replicated over
+  # representative task families rather than burned on every task.
+  common_intervention_task_ids:
+    - PU01-false-green
+    - PU31-generalization
+    - PUC01-false-green-generated-package
+    - PUC03-circular-evidence-split-brain
+    - PUC04-correctly-unsolvable
+    - PUC05-active-path-generated-generalization
+    - PUC06-parallel-opportunity
+    - PUC08-transient-retry
+
+  # Dedicated observability sessions are excluded from native performance.
+  # Claude uses logging-only hooks; Codex uses exact-thread rollout evidence
+  # when available. These four cases exercise verification, abstention,
+  # subagent/parallel behavior, and failure recovery.
   observability_repeats: 1
-  observability_subjects: [claude_code]
+  observability_subjects: [claude_code, codex]
   observability_task_ids:
     - PUC01-false-green-generated-package
-    - PUC05-active-path-generated-generalization
+    - PUC04-correctly-unsolvable
+    - PUC06-parallel-opportunity
+    - PUC08-transient-retry
 
-  # Per agent-task session watchdog. A timeout is preserved as evidence.
   timeout_s: 1800
 
+  # Full executable P8-P10 bank. Hidden deterministic oracles live outside
+  # every agent workspace.
   task_ids:
     - PU01-false-green
+    - PU08-generated-decoy
     - PU09-stale-test
+    - PU10-wrong-fixture
+    - PU25-packaging
+    - PU27-negative-space
     - PU29-underengineering
     - PU31-generalization
     - PU37-misattribution
+    - PU39-evidence-composition
     - PUC01-false-green-generated-package
     - PUC02-shared-invariant-migration
     - PUC03-circular-evidence-split-brain
     - PUC04-correctly-unsolvable
     - PUC05-active-path-generated-generalization
+    - PUC06-parallel-opportunity
+    - PUC07-parallel-hazard
+    - PUC08-transient-retry
+    - PUC09-false-tool-success
+    - PUC10-unfinished-work
 
-
-  # Native arms deliberately add no permission bypass or extra behavioral
-  # instruction. Exact local user/project policy therefore remains part of
-  # provenance. Add explicit extra_args only for preregistered intervention arms.
   subjects:
     - name: claude_code
       executable: claude
