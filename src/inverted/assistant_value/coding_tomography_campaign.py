@@ -261,7 +261,8 @@ def _mechanism_results(
         mid = mechanism["id"]
         looked_trials = [
             row for row in summaries
-            if mid in (task_map.get(row["task_id"],{}).get("candidate_mechanisms") or [])
+            if row.get("kind") == "NATIVE_OBSERVATION"
+            and mid in (task_map.get(row["task_id"],{}).get("candidate_mechanisms") or [])
         ]
         affected = [row for row in paired if mid in (row.get("mechanisms") or [])]
         independent_tasks = {
@@ -289,7 +290,23 @@ def _mechanism_results(
             generalized_families=len(families),
             rescue_rate=rescue_rate,
             regression_rate=regression_rate,
-            complexity_units=2.0,
+            complexity_units=None,
+        )
+        mean_elapsed_delta = (
+            sum(float(row.get("elapsed_s_delta", 0.0)) for row in affected) / len(affected)
+            if affected else None
+        )
+        mean_event_delta = (
+            sum(float(row.get("event_count_delta", 0.0)) for row in affected) / len(affected)
+            if affected else None
+        )
+        verification_delta = (
+            sum(
+                float(row.get("verification_after_last_edit_treatment", 0.0))
+                - float(row.get("verification_after_last_edit_baseline", 0.0))
+                for row in affected
+            ) / len(affected)
+            if affected else None
         )
         by_mechanism[mid] = {
             "mechanism_id":mid,
@@ -299,6 +316,10 @@ def _mechanism_results(
             "intervention_count":len(affected),
             "positive_interventions":len(positive),
             "negative_interventions":len(negative),
+            "measured_mean_elapsed_delta_s": mean_elapsed_delta,
+            "measured_mean_event_count_delta": mean_event_delta,
+            "measured_verification_after_last_edit_delta": verification_delta,
+            "inverted_implementation_complexity": "UNKNOWN_UNTIL_IMPLEMENTATION_PROTOTYPE",
         }
     return {"schema_version":1,"mechanisms":by_mechanism}
 
@@ -306,6 +327,8 @@ def _mechanism_results(
 def _behavior_atlas(summaries: list[dict[str, Any]]) -> dict[str, Any]:
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in summaries:
+        if row.get("kind") != "NATIVE_OBSERVATION":
+            continue
         groups[str(row["subject"])].append(row)
 
     result = {}
