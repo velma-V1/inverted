@@ -34,9 +34,12 @@ def test_claude_observer_installs_logging_only_hooks(tmp_path: Path):
         assert len(groups) == 1
         handler = groups[0]["hooks"][0]
         assert handler["type"] == "command"
-        assert handler["command"] == sys.executable
-        assert handler["args"][1] == record["event_log_path"]
+        command = handler["command"]
+        assert sys.executable in command
+        assert record["logger_path"] in command
+        assert record["event_log_path"] in command
         assert "permissionDecision" not in json.dumps(handler)
+        assert "continue" not in json.dumps(handler).lower()
 
 
 def test_claude_hook_logger_preserves_event_and_emits_no_stdout_decision(tmp_path: Path):
