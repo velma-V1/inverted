@@ -295,7 +295,7 @@ def _mechanism_results(
         key = str(summary["trial_key"])
         if key not in trajectory_cache:
             trajectory_cache[key] = _read_jsonl(
-                Path(summary["evidence_root"]) / ("normalized-native-trajectory.jsonl" if native_only else "normalized-trajectory.jsonl")
+                Path(summary["evidence_root"]) / "normalized-native-trajectory.jsonl"
             )
         return trajectory_cache[key]
 
@@ -540,7 +540,12 @@ def _strategy_atlas(
     for summary in summaries:
         if native_only and summary.get("kind") != "NATIVE_OBSERVATION":
             continue
-        events = _read_jsonl(Path(summary["evidence_root"]) / "normalized-trajectory.jsonl")
+        trajectory_name = (
+            "normalized-native-trajectory.jsonl"
+            if native_only
+            else "normalized-trajectory.jsonl"
+        )
+        events = _read_jsonl(Path(summary["evidence_root"]) / trajectory_name)
         selected = [
             event for event in events
             if str(event.get("event_type") or "") in event_types
