@@ -16,13 +16,19 @@ from inverted.assistant_value.coding_tomography_interventions import (
 from inverted.assistant_value.coding_tomography_tasks import build_builtin_task_bank
 
 
-def _config(max_sessions: int = 160):
+def _config(max_sessions: int = 162):
     return {
         "coding_tomography":{
             "max_sessions":max_sessions,
             "native_repeats":2,
             "intervention_repeats":2,
             "include_common_interventions":True,
+            "observability_repeats":1,
+            "observability_subjects":["claude_code"],
+            "observability_task_ids":[
+                "PUC01-false-green-generated-package",
+                "PUC05-active-path-generated-generalization",
+            ],
             "timeout_s":30,
             "task_ids":[
                 "PU01-false-green",
@@ -49,13 +55,16 @@ def test_campaign_plan_is_bounded_and_matched(tmp_path: Path):
     plan = build_campaign_plan(_config(), tasks)
 
     assert plan["task_count"] == 10
-    assert plan["planned_sessions"] == 160
+    assert plan["planned_sessions"] == 162
     assert len(plan["subjects"]) == 2
 
     native = [row for row in plan["entries"] if row["kind"] == "NATIVE_OBSERVATION"]
     causal = [row for row in plan["entries"] if row["kind"] == "CAUSAL_INTERVENTION"]
     assert len(native) == 40
     assert len(causal) == 120
+    observed = [row for row in plan["entries"] if row["kind"] == "OBSERVABILITY_AUGMENTED"]
+    assert len(observed) == 2
+    assert {row["subject"]["name"] for row in observed} == {"claude_code"}
 
     by_subject_task = {}
     for row in native:
@@ -67,7 +76,7 @@ def test_campaign_plan_is_bounded_and_matched(tmp_path: Path):
 def test_campaign_refuses_session_budget_overrun_before_subject_run(tmp_path: Path):
     tasks = build_builtin_task_bank(tmp_path / "bank")
     with pytest.raises(ValueError, match="exceed max_sessions"):
-        build_campaign_plan(_config(max_sessions=99), tasks)
+        build_campaign_plan(_config(max_sessions=161), tasks)
 
 
 def test_dry_run_never_requires_installed_subjects(tmp_path: Path):
@@ -79,7 +88,7 @@ def test_dry_run_never_requires_installed_subjects(tmp_path: Path):
     )
 
     assert result["dry_run"] is True
-    assert result["planned_sessions"] == 160
+    assert result["planned_sessions"] == 162
     root = Path(result["run_root"])
     assert (root / "campaign-plan.json").is_file()
     assert (root / "mechanism-registry.json").is_file()
