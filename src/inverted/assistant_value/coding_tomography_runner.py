@@ -14,6 +14,7 @@ from .coding_subjects import (
     SubjectCommand,
     command_for_subject,
     expand_observable_subject_stream,
+    extract_observable_final_text,
     extract_subject_session_id,
     parse_jsonl_stream,
     sanitize_environment_snapshot,
@@ -353,7 +354,52 @@ def run_subject_trial(
     hidden_ok = bool(hidden_results) and all(bool(row["ok"]) for row in hidden_results)
     visible_ok = all(bool(row["ok"]) for row in visible_results) if visible_results else None
     preservation_ok = all(bool(row["unchanged"]) for row in preservation) if preservation else True
-    oracle_success = bool(hidden_ok and preservation_ok)
+
+    final_text = extract_observable_final_text(command.subject, raw_events)
+    (root / "observable-final-response.txt").write_text(final_text, encoding="utf-8")
+    response_oracle = task.get("response_oracle")
+    response_oracle_result = None
+    if isinstance(response_oracle, dict):
+        import re
+        lower = final_text.lower()
+        contains_all = [
+            str(value).lower() for value in response_oracle.get("must_contain_all") or []
+        ]
+        contains_any = [
+            str(value).lower() for value in response_oracle.get("must_contain_any") or []
+        ]
+        forbidden = [
+            str(value).lower() for value in response_oracle.get("must_not_contain") or []
+        ]
+        regexes = [str(value) for value in response_oracle.get("regex") or []]
+        text_ok = all(value in lower for value in contains_all)
+        if contains_any:
+            text_ok = text_ok and any(value in lower for value in contains_any)
+        text_ok = text_ok and all(value not in lower for value in forbidden)
+        text_ok = text_ok and all(re.search(pattern, final_text, re.IGNORECASE | re.MULTILINE) is not None for pattern in regexes)
+        no_edit_ok = (
+            int(change_map["changed_count"]) == 0
+            if bool(response_oracle.get("must_not_modify_files"))
+            else True
+        )
+        response_oracle_result = {
+            "text_ok": bool(text_ok),
+            "no_edit_ok": bool(no_edit_ok),
+            "success": bool(text_ok and no_edit_ok),
+            "must_contain_all": contains_all,
+            "must_contain_any": contains_any,
+            "must_not_contain": forbidden,
+            "regex": regexes,
+            "must_not_modify_files": bool(response_oracle.get("must_not_modify_files")),
+        }
+        _write_json(root / "response-oracle-result.json", response_oracle_result)
+
+    response_ok = (
+        bool(response_oracle_result["success"])
+        if response_oracle_result is not None
+        else True
+    )
+    oracle_success = bool(hidden_ok and preservation_ok and response_ok)
 
     metrics = trajectory_metrics(normalized, oracle_success=oracle_success)
     metrics.update(
@@ -364,6 +410,8 @@ def run_subject_trial(
             "visible_checks_ok": visible_ok,
             "hidden_oracle_ok": hidden_ok,
             "preservation_ok": preservation_ok,
+            "response_oracle_ok": response_ok,
+            "observable_final_response_chars": len(final_text),
             "changed_file_count": int(change_map["changed_count"]),
             "session_id": extract_subject_session_id(command.subject, parsed["events"]),
             "native_event_count": len(raw_events),
@@ -386,6 +434,7 @@ def run_subject_trial(
                 "visible_results": visible_results,
                 "hidden_results": hidden_results,
                 "preservation": preservation,
+                "response_oracle": response_oracle_result,
             },
             candidate_mechanisms=candidate_mechanisms,
         )
@@ -400,6 +449,7 @@ def run_subject_trial(
         "visible_checks_ok":visible_ok,
         "hidden_oracle_ok":hidden_ok,
         "preservation_ok":preservation_ok,
+        "response_oracle_ok":response_ok,
         "metrics":metrics,
         "workspace_diff":change_map,
         "failure_replay_id":replay.get("replay_id") if replay else None,
