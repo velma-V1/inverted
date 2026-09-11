@@ -94,14 +94,14 @@ def prepare_claude_hook_observer(
 
     python = str(python_executable or sys.executable)
     hooks: dict[str, Any] = {}
+    command = f'"{python}" "{logger}" "{log}"'
     for event in events:
         hooks[str(event)] = [
             {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": python,
-                        "args": [str(logger), str(log)],
+                        "command": command,
                     }
                 ]
             }
@@ -176,3 +176,87 @@ def load_rollout_jsonl(path: str | Path) -> list[dict[str, Any]]:
 
 def observer_provenance(record: dict[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(record, sort_keys=True, default=str))
+
+
+def locate_codex_rollout_by_thread_id(
+    thread_id: str,
+    *,
+    codex_home: str | Path | None = None,
+) -> dict[str, Any]:
+    """Search only CODEX_HOME/sessions for a filename containing exact thread ID."""
+    import os
+    tid = str(thread_id).strip()
+    if not tid:
+        return {"status":"NO_THREAD_ID","path":None,"candidates":[]}
+    root = (
+        Path(codex_home).expanduser().resolve()
+        if codex_home is not None
+        else Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex")).expanduser().resolve()
+    )
+    sessions = root / "sessions"
+    if not sessions.is_dir():
+        return {"status":"SESSIONS_DIR_MISSING","path":None,"sessions_root":str(sessions),"candidates":[]}
+    matches = [
+        path for path in sessions.rglob("*")
+        if path.is_file() and tid in path.name
+    ]
+    matches.sort(key=lambda p: (p.stat().st_mtime_ns, str(p)), reverse=True)
+    return {
+        "status":"FOUND" if matches else "NOT_FOUND_BY_EXACT_THREAD_ID",
+        "path":str(matches[0]) if matches else None,
+        "sessions_root":str(sessions),
+        "candidates":[str(path) for path in matches],
+        "selection_rule":"filename contains exact emitted thread_id; no home-wide content scan",
+    }
+
+
+def codex_rollout_observable_events(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project exact-thread rollout records into safe observable trajectory events."""
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        row_type = str(row.get("type") or "")
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        ptype = str(payload.get("type") or "")
+
+        if row_type == "event_msg":
+            if ptype == "agent_reasoning":
+                text = payload.get("text")
+                if isinstance(text, str) and text:
+                    out.append({"type":"reasoning_summary","summary":text,"rollout_type":ptype})
+            elif ptype == "task_started":
+                out.append({"type":"session_started","rollout_type":ptype})
+            elif ptype == "task_complete":
+                out.append({"type":"stop","rollout_type":ptype})
+            elif ptype in {"agent_message","plan_update","turn_aborted"}:
+                out.append({"type":ptype,"payload":payload})
+            continue
+
+        if row_type == "response_item":
+            if ptype == "reasoning":
+                summaries = payload.get("summary")
+                if isinstance(summaries, list):
+                    for item in summaries:
+                        if isinstance(item, dict) and isinstance(item.get("text"), str):
+                            out.append({"type":"reasoning_summary","summary":item["text"],"rollout_type":ptype})
+                continue
+            if ptype in {"function_call","custom_tool_call","local_shell_call","mcp_tool_call"}:
+                name = payload.get("name") or payload.get("tool_name") or ptype
+                lowered = str(name).lower()
+                mapped = (
+                    "collab_spawn"
+                    if "spawn" in lowered or "collab" in lowered
+                    else "mcp"
+                    if "mcp" in lowered
+                    else "command_execution"
+                )
+                out.append({"type":mapped,"tool_name":name,"payload":payload})
+                continue
+            if ptype in {"message","agent_message"}:
+                out.append({"type":"agent_message","payload":payload})
+                continue
+
+        if row_type in {"turn_context","session_meta"}:
+            out.append({"type":"context_load","rollout_type":row_type})
+    return out
