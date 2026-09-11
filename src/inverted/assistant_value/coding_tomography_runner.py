@@ -26,7 +26,9 @@ from .coding_tomography import (
     trajectory_metrics,
 )
 from .coding_tomography_observers import (
+    codex_rollout_observable_events,
     load_rollout_jsonl,
+    locate_codex_rollout_by_thread_id,
     resolve_rollout_path,
 )
 
@@ -256,6 +258,7 @@ def run_subject_trial(
     timeout_s: float = 1800.0,
     observer_event_files: Iterable[str | Path] = (),
     rollout_path_template: str | None = None,
+    auto_codex_rollout_lookup: bool = False,
 ) -> dict[str, Any]:
     """Run one clean coding-agent session and preserve all observable evidence."""
     root = Path(evidence_root)
@@ -301,23 +304,56 @@ def run_subject_trial(
         rollout_path_template,
         session_id=session_id,
     )
+    rollout_lookup: dict[str, Any] | None = None
+    if (
+        rollout_path is None
+        and auto_codex_rollout_lookup
+        and command.subject == "codex"
+        and session_id
+    ):
+        rollout_lookup = locate_codex_rollout_by_thread_id(session_id)
+        if rollout_lookup.get("status") == "FOUND":
+            rollout_path = Path(str(rollout_lookup["path"]))
+
+    rollout_rows: list[dict[str, Any]] = []
     if rollout_path is not None:
         rollout_rows = load_rollout_jsonl(rollout_path)
         _write_jsonl(root / "codex-rollout-events.jsonl", rollout_rows)
+        projected_rollout = codex_rollout_observable_events(rollout_rows)
+        _write_jsonl(root / "codex-rollout-observable-events.jsonl", projected_rollout)
         _write_json(
             root / "codex-rollout-provenance.json",
             {
                 "path": str(rollout_path),
                 "session_id": session_id,
                 "rows": len(rollout_rows),
-                "selection_rule": "exact user-supplied path template with session_id substitution",
+                "observable_rows": len(projected_rollout),
+                "selection_rule": (
+                    "exact user-supplied path template with session_id substitution"
+                    if rollout_path_template
+                    else "exact emitted thread_id filename lookup inside CODEX_HOME/sessions only"
+                ),
                 "home_scan_performed": False,
+                "lookup": rollout_lookup,
             },
         )
-        for value in rollout_rows:
+        for value in projected_rollout:
             row = dict(value)
             row.setdefault("observer_source", str(rollout_path))
             observer_rows.append(row)
+    elif auto_codex_rollout_lookup and command.subject == "codex":
+        _write_json(
+            root / "codex-rollout-provenance.json",
+            {
+                "path": None,
+                "session_id": session_id,
+                "rows": 0,
+                "observable_rows": 0,
+                "selection_rule": "exact emitted thread_id filename lookup inside CODEX_HOME/sessions only",
+                "home_scan_performed": False,
+                "lookup": rollout_lookup,
+            },
+        )
     for observer_path in observer_event_files:
         path = Path(observer_path)
         if not path.is_file():
@@ -345,15 +381,45 @@ def run_subject_trial(
     observable_observer = expand_observable_subject_stream(command.subject, observer_rows)
     _write_jsonl(root / "observable-native-events.jsonl", observable_native)
     _write_jsonl(root / "observable-observer-events.jsonl", observable_observer)
-    normalized_native = normalize_events(command.subject, observable_native)
-    normalized_observer = normalize_events(command.subject, observable_observer)
+    normalized_native = [
+        {**row, "channel":"native_stdout", "channel_sequence":index}
+        for index, row in enumerate(
+            normalize_events(command.subject, observable_native),
+            start=1,
+        )
+    ]
+    normalized_observer = [
+        {**row, "channel":"observer", "channel_sequence":index}
+        for index, row in enumerate(
+            normalize_events(command.subject, observable_observer),
+            start=1,
+        )
+    ]
+    _write_jsonl(root / "normalized-native-trajectory.jsonl", normalized_native)
+    _write_jsonl(root / "normalized-observer-trajectory.jsonl", normalized_observer)
     normalized = []
-    for row in normalized_native:
-        normalized.append({**row, "channel":"native_stdout"})
-    offset = len(normalized)
-    for index, row in enumerate(normalized_observer, start=1):
-        normalized.append({**row, "sequence":offset + index, "channel":"observer"})
+    for index, row in enumerate([*normalized_native, *normalized_observer], start=1):
+        normalized.append({**row, "sequence":index})
     _write_jsonl(root / "normalized-trajectory.jsonl", normalized)
+
+    unknown_native = sum(row.get("event_type") == "UNKNOWN" for row in normalized_native)
+    unknown_observer = sum(row.get("event_type") == "UNKNOWN" for row in normalized_observer)
+    channel_coverage = {
+        "schema_version":1,
+        "native_json_event_count":len(raw_events),
+        "native_observable_event_count":len(observable_native),
+        "native_normalized_event_count":len(normalized_native),
+        "native_unknown_event_count":unknown_native,
+        "observer_raw_or_projected_event_count":len(observer_rows),
+        "observer_observable_event_count":len(observable_observer),
+        "observer_normalized_event_count":len(normalized_observer),
+        "observer_unknown_event_count":unknown_observer,
+        "non_json_stdout_line_count":len(parsed["non_json"]),
+        "codex_rollout_rows":len(rollout_rows),
+        "session_id":session_id,
+        "performance_metric_channel":"native_stdout_only",
+    }
+    _write_json(root / "channel-coverage.json", channel_coverage)
 
     post_manifest = workspace_manifest(workspace_path)
     post_git = git_snapshot(workspace_path)
@@ -429,7 +495,8 @@ def run_subject_trial(
     )
     oracle_success = bool(hidden_ok and preservation_ok and response_ok)
 
-    metrics = trajectory_metrics(normalized, oracle_success=oracle_success)
+    metrics = trajectory_metrics(normalized_native, oracle_success=oracle_success)
+    observer_metrics = trajectory_metrics(normalized_observer, oracle_success=oracle_success) if normalized_observer else None
     metrics.update(
         {
             "subject_exit_ok": bool(run["ok"]),
@@ -445,9 +512,11 @@ def run_subject_trial(
             "native_event_count": len(raw_events),
             "observer_event_count": len(observer_rows),
             "non_json_line_count": len(parsed["non_json"]),
+            "observer_metrics_available": observer_metrics is not None,
         }
     )
     _write_json(root / "trajectory-metrics.json", metrics)
+    _write_json(root / "observer-trajectory-metrics.json", observer_metrics or {"status":"NO_OBSERVER_EVENTS"})
 
     candidate_mechanisms = list(task.get("candidate_mechanisms") or [])
     replay = None
@@ -456,7 +525,7 @@ def run_subject_trial(
             task=task,
             subject=subject,
             workspace_manifest=pre_manifest,
-            normalized_events=normalized,
+            normalized_events=normalized_native,
             oracle_result={
                 "success": oracle_success,
                 "visible_results": visible_results,
@@ -480,6 +549,7 @@ def run_subject_trial(
         "response_oracle_ok":response_ok,
         "metrics":metrics,
         "workspace_diff":change_map,
+        "channel_coverage":channel_coverage,
         "failure_replay_id":replay.get("replay_id") if replay else None,
         "evidence_root":str(root),
     }
