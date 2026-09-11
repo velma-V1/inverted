@@ -19,6 +19,7 @@ from .coding_tomography_interventions import (
     apply_intervention,
     selected_interventions,
 )
+from .coding_tomography_observers import prepare_claude_hook_observer
 from .coding_tomography_runner import (
     materialize_workspace,
     run_subject_trial,
@@ -122,6 +123,13 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
     include_common = bool(root.get("include_common_interventions", True))
     task_filter = {str(x) for x in root.get("task_ids") or []}
     selected_tasks = [task for task in tasks if not task_filter or task["task_id"] in task_filter]
+    observability_task_ids = {
+        str(x) for x in root.get("observability_task_ids") or []
+    }
+    observability_subjects = {
+        str(x) for x in root.get("observability_subjects") or ["claude_code"]
+    }
+    observability_repeats = int(root.get("observability_repeats", 1))
 
     entries = []
     for subject in subjects:
@@ -143,6 +151,18 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
                         "repeat":repeat + 1,
                         "intervention":intervention,
                     })
+            if (
+                task["task_id"] in observability_task_ids
+                and str(subject["name"]) in observability_subjects
+            ):
+                for repeat in range(observability_repeats):
+                    entries.append({
+                        "kind":"OBSERVABILITY_AUGMENTED",
+                        "subject":subject,
+                        "task_id":task["task_id"],
+                        "repeat":repeat + 1,
+                        "intervention":None,
+                    })
 
     max_sessions = int(root.get("max_sessions", 250))
     if len(entries) > max_sessions:
@@ -158,6 +178,9 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
         "native_repeats":native_repeats,
         "intervention_repeats":intervention_repeats,
         "include_common_interventions":include_common,
+        "observability_task_ids":sorted(observability_task_ids),
+        "observability_subjects":sorted(observability_subjects),
+        "observability_repeats":observability_repeats,
         "planned_sessions":len(entries),
         "max_sessions":max_sessions,
         "entries":entries,
@@ -166,7 +189,12 @@ def build_campaign_plan(config: dict[str, Any], tasks: list[dict[str, Any]]) -> 
 
 def _trial_key(entry: dict[str, Any]) -> str:
     intervention = entry.get("intervention")
-    treatment = intervention.get("id") if isinstance(intervention, dict) else "native"
+    if isinstance(intervention, dict):
+        treatment = intervention.get("id")
+    elif entry.get("kind") == "OBSERVABILITY_AUGMENTED":
+        treatment = "observability"
+    else:
+        treatment = "native"
     return (
         f"{_slug(entry['subject']['name'])}__{_slug(entry['task_id'])}"
         f"__{_slug(treatment)}__r{int(entry['repeat']):02d}"
@@ -189,9 +217,9 @@ def _paired_intervention_results(
         subject = str(entry["subject"]["name"])
         task_id = str(entry["task_id"])
         intervention = entry.get("intervention")
-        if intervention is None:
+        if entry.get("kind") == "NATIVE_OBSERVATION":
             native[(subject,task_id)].append(summary)
-        else:
+        elif entry.get("kind") == "CAUSAL_INTERVENTION" and isinstance(intervention, dict):
             treated[(subject,task_id,str(intervention["id"]))].append(summary)
 
     results = {}
@@ -768,6 +796,7 @@ def run_coding_tomography_campaign(
 
         intervention = entry.get("intervention")
         applied = None
+        observer_files: list[str] = []
         if isinstance(intervention,dict):
             applied = apply_intervention(
                 workspace,
@@ -777,12 +806,27 @@ def run_coding_tomography_campaign(
             _git_seal(workspace,f"tomography intervention baseline {intervention['id']}")
             _write_json(evidence / "intervention.json",applied)
 
+        observer_record = None
+        if (
+            entry.get("kind") == "OBSERVABILITY_AUGMENTED"
+            and str(entry["subject"]["name"]) == "claude_code"
+        ):
+            observer_record = prepare_claude_hook_observer(
+                workspace=workspace,
+                evidence_root=evidence,
+            )
+            observer_files.append(observer_record["event_log_path"])
+            _git_seal(workspace, "tomography logging-only observer baseline")
+            _write_json(evidence / "observer-provenance.json", observer_record)
+
         summary = run_subject_trial(
             task=task,
             subject=entry["subject"],
             workspace=workspace,
             evidence_root=evidence,
             timeout_s=timeout_s,
+            observer_event_files=observer_files,
+            rollout_path_template=entry["subject"].get("rollout_path_template"),
         )
         summary.update({
             "trial_key":key,
@@ -791,6 +835,7 @@ def run_coding_tomography_campaign(
             "repeat":entry["repeat"],
             "intervention_id":intervention.get("id") if isinstance(intervention,dict) else None,
             "intervention_hypothesis":intervention.get("hypothesis") if isinstance(intervention,dict) else None,
+            "observer_mode": observer_record.get("mode") if isinstance(observer_record, dict) else None,
         })
         _write_json(evidence / "trial-summary.json",summary)
         summaries.append(summary)
