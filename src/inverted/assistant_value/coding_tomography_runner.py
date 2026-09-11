@@ -167,15 +167,20 @@ def run_check(check: dict[str, Any], *, cwd: str | Path, default_timeout_s: floa
     argv = check.get("argv")
     if not isinstance(argv, list) or not argv:
         raise ValueError("check.argv must be a non-empty argv list")
+    import sys
+    expanded = [
+        str(x).replace("{workspace}", str(Path(cwd).resolve())).replace("{python}", sys.executable)
+        for x in argv
+    ]
     result = _run_process(
-        [str(x) for x in argv],
+        expanded,
         cwd=cwd,
         timeout_s=float(check.get("timeout_s", default_timeout_s)),
     )
     return {
         "id": str(check.get("id") or "check"),
         "kind": str(check.get("kind") or "oracle"),
-        "argv": [str(x) for x in argv],
+        "argv": expanded,
         **result,
     }
 
