@@ -179,6 +179,9 @@ def test_final_system_level_cases_have_correct_scientific_boundaries(tmp_path: P
     assert {"M05","M25","M26","M39"}.issubset(least["candidate_mechanisms"])
     assert {"M17","M18","M19","M20","M37"}.issubset(context["candidate_mechanisms"])
     assert {"M05","M27","M28","M29"}.issubset(mcp["candidate_mechanisms"])
+    assert mcp["replay_eligible"] is False
+    assert least["replay_eligible"] is True
+    assert context["replay_eligible"] is True
 
     assert isinstance(context.get("resume_spec"), dict)
     assert context["resume_spec"]["candidate_mechanisms"]
