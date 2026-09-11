@@ -1,13 +1,22 @@
 coding_tomography:
   # Every session is a real full coding-agent run. The campaign refuses to start
   # if the deterministic plan exceeds this cap.
-  max_sessions: 160
+  max_sessions: 162
 
   # Two clean native observations distinguish stable behavior from one-off
   # stochastic trajectories before causal interventions are interpreted.
   native_repeats: 2
   intervention_repeats: 2
   include_common_interventions: true
+
+  # Two extra Claude-only sessions add logging-only lifecycle hooks for rich
+  # tool/subagent/permission/context telemetry. They are excluded from native
+  # performance comparisons.
+  observability_repeats: 1
+  observability_subjects: [claude_code]
+  observability_task_ids:
+    - PUC01-false-green-generated-package
+    - PUC05-active-path-generated-generalization
 
   # Per agent-task session watchdog. A timeout is preserved as evidence.
   timeout_s: 1800
