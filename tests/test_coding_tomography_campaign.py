@@ -140,15 +140,39 @@ def test_task_specific_intervention_changes_only_declared_factor(tmp_path: Path)
     assert result["changed_paths"] == ["visible_check.py"]
 
 
-def test_multi_mechanism_factor_does_not_promote_each_mechanism_to_causal():
+def test_multi_mechanism_factor_does_not_promote_each_mechanism_to_causal(tmp_path: Path):
     tasks = [
         {"task_id":"t1","family":"f1","candidate_mechanisms":["M01","M02"]},
         {"task_id":"t2","family":"f2","candidate_mechanisms":["M01","M02"]},
     ]
-    summaries = [
-        {"task_id":"t1","kind":"NATIVE_OBSERVATION","oracle_success":False},
-        {"task_id":"t2","kind":"NATIVE_OBSERVATION","oracle_success":False},
-    ]
+    summaries = []
+    for index, task_id in enumerate(("t1", "t2"), start=1):
+        evidence = tmp_path / task_id
+        evidence.mkdir()
+        (evidence / "normalized-trajectory.jsonl").write_text(
+            json.dumps({
+                "event_type":"CONTEXT_LOAD",
+                "observable_fields":{"command":"read CLAUDE.md"},
+            }) + "\n" +
+            json.dumps({
+                "event_type":"SEARCH",
+                "observable_fields":{"command":"rg target"},
+            }) + "\n" +
+            json.dumps({
+                "event_type":"FILE_READ",
+                "observable_fields":{"path":"app.py"},
+            }) + "\n",
+            encoding="utf-8",
+        )
+        summaries.append({
+            "trial_key":f"native-{index}",
+            "task_id":task_id,
+            "subject":"s",
+            "kind":"NATIVE_OBSERVATION",
+            "oracle_success":False,
+            "evidence_root":str(evidence),
+            "metrics":{},
+        })
     paired = {
         "results":{
             "s|t1|i":{
@@ -169,9 +193,9 @@ def test_multi_mechanism_factor_does_not_promote_each_mechanism_to_causal():
     m01 = result["mechanisms"]["M01"]
     m02 = result["mechanisms"]["M02"]
 
-    assert m01["bundle_intervention_count"] == 1
-    assert m01["identifiable_intervention_count"] == 0
-    assert m01["status"] == "REPLICATED"
-    assert m02["status"] == "REPLICATED"
-    assert m01["implementation_decision"] == "UNKNOWN"
-    assert m02["implementation_decision"] == "UNKNOWN"
+    assert m01["combined"]["bundle_intervention_count"] == 1
+    assert m01["combined"]["identifiable_intervention_count"] == 0
+    assert m01["combined"]["status"] == "REPLICATED"
+    assert m02["combined"]["status"] == "REPLICATED"
+    assert m01["combined"]["implementation_decision"] == "UNKNOWN"
+    assert m02["combined"]["implementation_decision"] == "UNKNOWN"
