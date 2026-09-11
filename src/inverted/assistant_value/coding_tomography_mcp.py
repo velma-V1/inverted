@@ -19,6 +19,9 @@ import sys
 import time
 
 TOKEN = "mcp-current-2026"
+MODERN_VERSION = "2026-07-28"
+LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26")
+SERVER_INFO = {"name":"tomography-probe","version":"1.1.0"}
 
 def emit(value):
     sys.stdout.write(json.dumps(value, separators=(",", ":"), ensure_ascii=False) + "\n")
@@ -33,6 +36,19 @@ def log(value):
     with path.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps({"ts_ns":time.time_ns(), **value}, sort_keys=True) + "\n")
 
+def request_protocol(msg):
+    params = msg.get("params") or {}
+    meta = params.get("_meta") or {}
+    return meta.get("io.modelcontextprotocol/protocolVersion")
+
+def modern_result(payload):
+    result = dict(payload)
+    result.setdefault("resultType", "complete")
+    meta = dict(result.get("_meta") or {})
+    meta.setdefault("io.modelcontextprotocol/serverInfo", SERVER_INFO)
+    result["_meta"] = meta
+    return result
+
 for raw in sys.stdin:
     raw = raw.strip()
     if not raw:
@@ -42,35 +58,53 @@ for raw in sys.stdin:
     except Exception as exc:
         log({"kind":"parse_error","raw":raw,"error":f"{type(exc).__name__}: {exc}"})
         continue
-    log({"kind":"request","message":msg})
+
     method = msg.get("method")
     request_id = msg.get("id")
-    if method == "initialize" and request_id is not None:
+    protocol = request_protocol(msg)
+    modern = protocol == MODERN_VERSION or method == "server/discover"
+    log({"kind":"request","message":msg,"protocol":protocol,"modern":modern})
+
+    if method == "server/discover" and request_id is not None:
+        emit({
+            "jsonrpc":"2.0",
+            "id":request_id,
+            "result":modern_result({
+                "supportedVersions":[MODERN_VERSION, *LEGACY_VERSIONS],
+                "capabilities":{"tools":{"listChanged":False}},
+                "instructions":"Deterministic sealed tomography reference service."
+            })
+        })
+    elif method == "initialize" and request_id is not None:
+        params = msg.get("params") or {}
+        requested = str(params.get("protocolVersion") or "")
+        negotiated = requested if requested in LEGACY_VERSIONS else LEGACY_VERSIONS[0]
         emit({
             "jsonrpc":"2.0",
             "id":request_id,
             "result":{
-                "protocolVersion":"2025-06-18",
+                "protocolVersion":negotiated,
                 "capabilities":{"tools":{"listChanged":False}},
-                "serverInfo":{"name":"tomography-probe","version":"1.0.0"}
+                "serverInfo":SERVER_INFO
             }
         })
     elif method == "tools/list" and request_id is not None:
+        result = {
+            "tools":[{
+                "name":"lookup_release_rule",
+                "description":"Return the current deterministic compatibility token for the sealed tomography fixture.",
+                "inputSchema":{
+                    "type":"object",
+                    "properties":{"component":{"type":"string"}},
+                    "required":["component"],
+                    "additionalProperties":False
+                }
+            }]
+        }
         emit({
             "jsonrpc":"2.0",
             "id":request_id,
-            "result":{
-                "tools":[{
-                    "name":"lookup_release_rule",
-                    "description":"Return the current deterministic compatibility token for the sealed tomography fixture.",
-                    "inputSchema":{
-                        "type":"object",
-                        "properties":{"component":{"type":"string"}},
-                        "required":["component"],
-                        "additionalProperties":False
-                    }
-                }]
-            }
+            "result":modern_result(result) if modern else result
         })
     elif method == "tools/call" and request_id is not None:
         params = msg.get("params") or {}
@@ -84,31 +118,31 @@ for raw in sys.stdin:
             })
         else:
             component = str(args.get("component") or "")
-            result = {
+            tool_payload = {
                 "component":component,
                 "current_compatibility_token":TOKEN,
                 "authority":"tomography-local-reference-service"
             }
-            log({"kind":"tool_call","name":name,"arguments":args,"result":result})
+            log({"kind":"tool_call","name":name,"arguments":args,"result":tool_payload})
+            result = {
+                "content":[{
+                    "type":"text",
+                    "text":json.dumps(tool_payload, sort_keys=True)
+                }],
+                "isError":False
+            }
             emit({
                 "jsonrpc":"2.0",
                 "id":request_id,
-                "result":{
-                    "content":[{
-                        "type":"text",
-                        "text":json.dumps(result, sort_keys=True)
-                    }],
-                    "isError":False
-                }
+                "result":modern_result(result) if modern else result
             })
     elif request_id is not None:
         emit({
             "jsonrpc":"2.0",
             "id":request_id,
-            "result":{}
+            "error":{"code":-32601,"message":"method not found"}
         })
 '''
-
 
 def prepare_mcp_probe(
     *,
@@ -221,10 +255,21 @@ def mcp_server_readiness(event_log_path: str | Path) -> dict[str, Any]:
             if isinstance(method, str):
                 methods.append(method)
     initialized = "initialize" in methods
+    discovered = "server/discover" in methods
     tools_listed = "tools/list" in methods
+    legacy_ready = bool(initialized and tools_listed)
+    modern_ready = bool(discovered and tools_listed)
     return {
         "initialized": initialized,
+        "discovered": discovered,
         "tools_listed": tools_listed,
-        "ready": bool(initialized and tools_listed),
+        "legacy_ready": legacy_ready,
+        "modern_ready": modern_ready,
+        "ready": bool(legacy_ready or modern_ready),
+        "protocol_mode": (
+            "modern" if modern_ready
+            else "legacy" if legacy_ready
+            else "unknown"
+        ),
         "observed_methods": methods,
     }
