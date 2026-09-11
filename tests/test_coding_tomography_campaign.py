@@ -11,6 +11,7 @@ from inverted.assistant_value.coding_tomography_campaign import (
     _last_recoverable_state_atlas,
     _mechanism_results,
     _pathology_compounds_artifact,
+    _select_replay_sources,
     _strategy_reset_events,
     _stuck_loop_registry,
     _subject_version,
@@ -380,3 +381,40 @@ def test_subject_cli_preflight_reports_missing_capabilities(monkeypatch):
     assert set(claude["required_missing"]) == {
         "stream_json","verbose","resume","mcp_config"
     }
+
+
+def test_adaptive_replay_excludes_intentionally_tool_required_failures():
+    tasks = {
+        "ordinary":{
+            "task_id":"ordinary",
+            "level":"P10",
+            "replay_eligible":True,
+        },
+        "tool-required":{
+            "task_id":"tool-required",
+            "level":"P10",
+            "replay_eligible":False,
+        },
+    }
+    summaries = [
+        {
+            "trial_key":"ordinary-fail",
+            "task_id":"ordinary",
+            "subject":"codex",
+            "kind":"NATIVE_OBSERVATION",
+            "oracle_success":False,
+            "metrics":{"visible_checks_ok":True},
+        },
+        {
+            "trial_key":"tool-fail",
+            "task_id":"tool-required",
+            "subject":"codex",
+            "kind":"NATIVE_OBSERVATION",
+            "oracle_success":False,
+            "metrics":{"visible_checks_ok":True},
+        },
+    ]
+
+    selected = _select_replay_sources(summaries, tasks, 4)
+
+    assert [row["trial_key"] for row in selected] == ["ordinary-fail"]
