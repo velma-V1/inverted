@@ -111,6 +111,75 @@ def intervention_catalog() -> dict[str, list[dict[str, Any]]]:
                 ],
             },
         ],
+
+        "PUC01-false-green-generated-package": [
+            {
+                "id":"IC01-remove-stale-guidance",
+                "hypothesis":"failure is driven partly by stale documentation overriding the fresher specification and build provenance",
+                "mechanisms":["M01","M02","M35"],
+                "operations":[
+                    {
+                        "op":"replace_text",
+                        "path":"README.md",
+                        "old":"Legacy note: generated_config.py can be edited directly for quick fixes. This note predates v2.",
+                        "new":"Archived note: generated_config.py is build output. generator.py is the source of truth for v2."
+                    }
+                ],
+            },
+        ],
+        "PUC02-shared-invariant-migration": [
+            {
+                "id":"IC02-remove-stale-test-conflict",
+                "hypothesis":"failure is driven by stale-test adjudication rather than inability to implement the shared invariant",
+                "mechanisms":["M01","M10","M11","M34"],
+                "operations":[
+                    {
+                        "op":"replace_text",
+                        "path":"visible_check.py",
+                        "old":"assert can_publish(\"ready\") is False  # stale assertion from pre-migration behavior",
+                        "new":"assert can_publish(\"ready\") is True"
+                    }
+                ],
+            },
+        ],
+        "PUC03-circular-evidence-split-brain": [
+            {
+                "id":"IC03-remove-stale-evidence-cluster",
+                "hypothesis":"failure is caused by treating repeated stale evidence as independent authority",
+                "mechanisms":["M01","M02","M19","M35"],
+                "operations":[
+                    {"op":"delete_path","path":"docs/OLD_GUIDE.md"}
+                ],
+            },
+        ],
+        "PUC04-correctly-unsolvable": [
+            {
+                "id":"IC04-explicit-missing-fact",
+                "hypothesis":"ask-versus-act behavior improves when the repository explicitly marks the deployment selector as unavailable rather than merely absent",
+                "mechanisms":["M28","M29","M32"],
+                "operations":[
+                    {
+                        "op":"write_file",
+                        "path":"SELECTION_STATUS.md",
+                        "content":"No deployment selector is stored in this repository. The operator must specify blue or green before selected() can be implemented.\n"
+                    }
+                ],
+            },
+        ],
+        "PUC05-active-path-generated-generalization": [
+            {
+                "id":"IC05-explicit-active-source-chain",
+                "hypothesis":"failure is driven by repo-orientation/source-of-truth discovery rather than the parser algorithm alone",
+                "mechanisms":["M02","M07","M09","M30"],
+                "operations":[
+                    {
+                        "op":"write_file",
+                        "path":"ACTIVE_SOURCE.md",
+                        "content":"Runtime loads src.active_parser. That file is regenerated from templates/parser_template.py by generator.py. legacy/parser.py is archived and must remain unchanged.\n"
+                    }
+                ],
+            },
+        ],
     }
 
 
