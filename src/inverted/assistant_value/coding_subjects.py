@@ -328,3 +328,40 @@ def extract_observable_final_text(subject: str, raw_events: Iterable[dict[str, A
                     if text_parts:
                         candidates.append("\n".join(text_parts))
     return candidates[-1] if candidates else ""
+
+
+def extract_final_response(subject: str, raw_events: Iterable[dict[str, Any]], *, stdout: str = "") -> str:
+    normalized = str(subject).strip().lower().replace("-", "_").replace(" ", "_")
+    events = list(raw_events)
+    if normalized in {"codex","codex_cli"}:
+        messages: list[str] = []
+        for event in events:
+            item = event.get("item")
+            if isinstance(item, dict) and str(item.get("type") or "") == "agent_message":
+                text = item.get("text")
+                if text:
+                    messages.append(str(text))
+        return messages[-1] if messages else ""
+    if normalized in {"claude","claude_code"}:
+        results: list[str] = []
+        for event in events:
+            if str(event.get("type") or "") == "result":
+                for key in ("result","text","message"):
+                    value = event.get(key)
+                    if isinstance(value, str) and value:
+                        results.append(value)
+            if str(event.get("type") or "") == "assistant":
+                message = event.get("message")
+                content = message.get("content") if isinstance(message, dict) else None
+                if isinstance(content, list):
+                    visible = [
+                        str(block.get("text"))
+                        for block in content
+                        if isinstance(block, dict)
+                        and str(block.get("type") or "") == "text"
+                        and block.get("text")
+                    ]
+                    if visible:
+                        results.append("\n".join(visible))
+        return results[-1] if results else ""
+    return str(stdout).strip()
