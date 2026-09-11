@@ -452,38 +452,52 @@ def classify_mechanism_evidence(
     generalized_families: int,
     rescue_rate: float,
     regression_rate: float,
-    complexity_units: float,
+    complexity_units: float | None,
 ) -> dict[str, Any]:
+    net_effect = float(rescue_rate) - float(regression_rate)
     if observed_trials <= 0:
-        status="NOT_LOOKED_AT"
+        status = "NOT_LOOKED_AT"
     elif independent_tasks < 2:
-        status="OBSERVED"
+        status = "OBSERVED"
     elif causal_interventions <= 0:
-        status="REPLICATED"
+        status = "REPLICATED"
+    elif net_effect < 0.0:
+        status = "REJECT"
+    elif net_effect == 0.0:
+        # A matched intervention with no directional effect is evidence of a
+        # null result, not evidence that the mechanism caused capability gain.
+        status = "REPLICATED"
     elif generalized_families < 2:
-        status="CAUSAL"
-    elif rescue_rate <= regression_rate:
-        status="REJECT"
-    elif rescue_rate - regression_rate >= 0.20 and complexity_units <= 3:
-        status="HIGH_VALUE"
+        status = "CAUSAL"
+    elif (
+        net_effect >= 0.20
+        and complexity_units is not None
+        and float(complexity_units) <= 3.0
+    ):
+        status = "HIGH_VALUE"
     else:
-        status="GENERALIZED"
+        status = "GENERALIZED"
+
     clone_status = (
-        "CLONE_CANDIDATE" if status in {"HIGH_VALUE","GENERALIZED","CAUSAL"} and rescue_rate > regression_rate
-        else "MODIFY_CANDIDATE" if observed_trials > 0 and rescue_rate > 0
-        else "REJECT" if status=="REJECT"
+        "CLONE_CANDIDATE"
+        if status in {"HIGH_VALUE", "GENERALIZED", "CAUSAL"} and net_effect > 0.0
+        else "MODIFY_CANDIDATE"
+        if observed_trials > 0 and float(rescue_rate) > 0.0 and net_effect >= 0.0
+        else "REJECT"
+        if status == "REJECT"
         else "UNKNOWN"
     )
     return {
-        "status":status,
-        "implementation_decision":clone_status,
-        "observed_trials":int(observed_trials),
-        "independent_tasks":int(independent_tasks),
-        "causal_interventions":int(causal_interventions),
-        "generalized_families":int(generalized_families),
-        "rescue_rate":float(rescue_rate),
-        "regression_rate":float(regression_rate),
-        "complexity_units":float(complexity_units),
+        "status": status,
+        "implementation_decision": clone_status,
+        "observed_trials": int(observed_trials),
+        "independent_tasks": int(independent_tasks),
+        "causal_interventions": int(causal_interventions),
+        "generalized_families": int(generalized_families),
+        "rescue_rate": float(rescue_rate),
+        "regression_rate": float(regression_rate),
+        "net_effect": net_effect,
+        "complexity_units": None if complexity_units is None else float(complexity_units),
     }
 
 
