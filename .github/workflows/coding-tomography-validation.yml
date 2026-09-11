@@ -1,0 +1,63 @@
+name: coding-tomography-validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  instrument-validation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+
+      - name: Run full repository test suite
+        run: python -m pytest -q
+
+      - name: Dry-run coding-system tomography without Claude/Codex usage
+        run: >-
+          python -m inverted.assistant_value.coding_tomography_cli
+          --config configs/coding-system-tomography.yaml
+          --output-dir coding-tomography-ci
+          --run-id ci-tomography
+          --dry-run
+
+      - name: Verify dry-run scientific contracts
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path("coding-tomography-ci/coding-tomography/ci-tomography")
+          plan = json.loads((root / "campaign-plan.json").read_text(encoding="utf-8"))
+          dry = json.loads((root / "dry-run.json").read_text(encoding="utf-8"))
+          mechanisms = json.loads((root / "mechanism-registry.json").read_text(encoding="utf-8"))
+          pathologies = json.loads((root / "pathology-registry.json").read_text(encoding="utf-8"))
+          versions = json.loads((root / "subject-versions.json").read_text(encoding="utf-8"))
+
+          assert dry["dry_run"] is True
+          assert plan["planned_sessions"] > 0
+          assert plan["planned_sessions"] <= plan["max_sessions"]
+          assert plan["task_count"] >= 10
+          assert len(mechanisms["mechanisms"]) >= 40
+          assert len(pathologies["pathologies"]) >= 40
+          assert {row["name"] for row in versions} == {"claude_code", "codex"}
+
+          entries = plan["entries"]
+          native = [row for row in entries if row["kind"] == "NATIVE_OBSERVATION"]
+          causal = [row for row in entries if row["kind"] == "CAUSAL_INTERVENTION"]
+          assert native
+          assert causal
+          assert all(row["intervention"] is None for row in native)
+          assert all(isinstance(row["intervention"], dict) for row in causal)
+
+      - name: Upload tomography dry-run evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: coding-tomography-dry-run
+          path: coding-tomography-ci/coding-tomography/ci-tomography
+          if-no-files-found: error
