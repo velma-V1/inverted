@@ -107,3 +107,24 @@ def install_claude_observer(
         encoding="utf-8",
     )
     return settings_path
+
+
+def write_claude_observer_settings(
+    path: str | Path,
+    *,
+    logger_path: str | Path,
+    python_executable: str,
+) -> Path:
+    """Write passive hook settings outside the agent workspace."""
+    target = Path(path).resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    rendered = claude_hook_settings(logger_path)
+    for entries in rendered["hooks"].values():
+        for entry in entries:
+            for hook in entry.get("hooks") or []:
+                hook["command"] = str(hook["command"]).replace("{python}", f'"{python_executable}"')
+    target.write_text(
+        json.dumps(rendered, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return target
