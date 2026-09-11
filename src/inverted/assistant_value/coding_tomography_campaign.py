@@ -90,35 +90,98 @@ def _git_seal(root: Path, message: str) -> None:
 
 
 def _subject_version(subject: dict[str, Any]) -> dict[str, Any]:
-    executable = str(subject.get("executable") or ("claude" if subject["name"] == "claude_code" else "codex"))
-    try:
-        result = subprocess.run(
-            [executable, "--version"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-            shell=False,
-        )
-        return {
-            "name":subject["name"],
-            "executable":executable,
-            "returncode":result.returncode,
-            "stdout":result.stdout.strip(),
-            "stderr":result.stderr.strip(),
-            "available":result.returncode == 0,
+    name = str(subject["name"])
+    executable = str(
+        subject.get("executable")
+        or ("claude" if name == "claude_code" else "codex")
+    )
+
+    def probe(*args: str) -> dict[str, Any]:
+        try:
+            result = subprocess.run(
+                [executable, *args],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                shell=False,
+            )
+            return {
+                "returncode":result.returncode,
+                "stdout":result.stdout,
+                "stderr":result.stderr,
+                "ok":result.returncode == 0,
+            }
+        except Exception as exc:
+            return {
+                "returncode":None,
+                "stdout":"",
+                "stderr":"",
+                "ok":False,
+                "error":f"{type(exc).__name__}: {exc}",
+            }
+
+    version = probe("--version")
+    row: dict[str, Any] = {
+        "name":name,
+        "executable":executable,
+        "returncode":version.get("returncode"),
+        "stdout":str(version.get("stdout") or "").strip(),
+        "stderr":str(version.get("stderr") or "").strip(),
+        "available":bool(version.get("ok")),
+        "required_missing":[],
+        "capabilities":{},
+    }
+    if not row["available"]:
+        if version.get("error"):
+            row["error"] = version["error"]
+        return row
+
+    missing: list[str] = []
+    if name == "claude_code":
+        help_result = probe("--help")
+        text = (
+            str(help_result.get("stdout") or "")
+            + "\n"
+            + str(help_result.get("stderr") or "")
+        ).lower()
+        requirements = {
+            "stream_json":"--output-format",
+            "verbose":"--verbose",
+            "resume":"--resume",
+            "mcp_config":"--mcp-config",
         }
-    except Exception as exc:
-        return {
-            "name":subject["name"],
-            "executable":executable,
-            "returncode":None,
-            "stdout":"",
-            "stderr":"",
-            "available":False,
-            "error":f"{type(exc).__name__}: {exc}",
+        capabilities = {
+            key: token in text
+            for key, token in requirements.items()
         }
+        missing.extend(key for key, ok in capabilities.items() if not ok)
+        row["capabilities"] = capabilities
+        row["help_returncode"] = help_result.get("returncode")
+    elif name == "codex":
+        exec_help = probe("exec", "--help")
+        resume_help = probe("exec", "resume", "--help")
+        text = (
+            str(exec_help.get("stdout") or "")
+            + "\n"
+            + str(exec_help.get("stderr") or "")
+        ).lower()
+        capabilities = {
+            "json_events":"--json" in text,
+            "cwd":("--cd" in text or "-c" in text),
+            "config_override":"--config" in text,
+            "resume":bool(resume_help.get("ok")),
+        }
+        missing.extend(key for key, ok in capabilities.items() if not ok)
+        row["capabilities"] = capabilities
+        row["help_returncode"] = exec_help.get("returncode")
+        row["resume_help_returncode"] = resume_help.get("returncode")
+    else:
+        missing.append("unsupported_subject")
+
+    row["required_missing"] = sorted(missing)
+    return row
 
 
 def _config_hash(config: dict[str, Any]) -> str:
@@ -1680,8 +1743,17 @@ def run_coding_tomography_campaign(
         return result
 
     unavailable = [row for row in versions if not row.get("available")]
+    incompatible = [
+        row for row in versions
+        if row.get("available") and row.get("required_missing")
+    ]
     if unavailable:
         raise RuntimeError(f"coding subjects unavailable: {unavailable}")
+    if incompatible:
+        raise RuntimeError(
+            "coding subject CLI capabilities incompatible with tomography: "
+            f"{incompatible}"
+        )
 
     root_config = dict(config.get("coding_tomography") or {})
     timeout_s = float(root_config.get("timeout_s",1800))
