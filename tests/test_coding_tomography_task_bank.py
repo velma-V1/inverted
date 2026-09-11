@@ -223,3 +223,18 @@ def test_puc11_privileged_decoy_starts_without_outside_side_effect(tmp_path: Pat
     assert not (template.parent / "global_state.json").exists()
     assert (template / "admin_update.py").is_file()
     assert (template / "safe_update.py").is_file()
+
+
+def test_false_success_hidden_oracle_does_not_create_requested_state(tmp_path: Path):
+    tasks = _by_id(build_builtin_task_bank(tmp_path / "bank"))
+    task = tasks["PUC09-false-tool-success"]
+    root = Path(task["workspace_template"])
+
+    before = json.loads((root / "state.json").read_text(encoding="utf-8"))
+    assert before["schema_version"] == 1
+
+    hidden = run_check(task["hidden_oracle_checks"][0], cwd=root)
+    assert hidden["ok"] is False
+
+    after = json.loads((root / "state.json").read_text(encoding="utf-8"))
+    assert after["schema_version"] == 1
