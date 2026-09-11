@@ -17,31 +17,53 @@ from inverted.assistant_value.coding_tomography_interventions import (
 from inverted.assistant_value.coding_tomography_tasks import build_builtin_task_bank
 
 
-def _config(max_sessions: int = 162):
+def _config(max_sessions: int = 160):
     return {
         "coding_tomography":{
             "max_sessions":max_sessions,
             "native_repeats":2,
-            "intervention_repeats":2,
+            "intervention_repeats":1,
             "include_common_interventions":True,
+            "common_intervention_task_ids":[
+                "PU01-false-green",
+                "PU31-generalization",
+                "PUC01-false-green-generated-package",
+                "PUC03-circular-evidence-split-brain",
+                "PUC04-correctly-unsolvable",
+                "PUC05-active-path-generated-generalization",
+                "PUC06-parallel-opportunity",
+                "PUC08-transient-retry",
+            ],
             "observability_repeats":1,
-            "observability_subjects":["claude_code"],
+            "observability_subjects":["claude_code","codex"],
             "observability_task_ids":[
                 "PUC01-false-green-generated-package",
-                "PUC05-active-path-generated-generalization",
+                "PUC04-correctly-unsolvable",
+                "PUC06-parallel-opportunity",
+                "PUC08-transient-retry",
             ],
             "timeout_s":30,
             "task_ids":[
                 "PU01-false-green",
+                "PU08-generated-decoy",
                 "PU09-stale-test",
+                "PU10-wrong-fixture",
+                "PU25-packaging",
+                "PU27-negative-space",
                 "PU29-underengineering",
                 "PU31-generalization",
                 "PU37-misattribution",
+                "PU39-evidence-composition",
                 "PUC01-false-green-generated-package",
                 "PUC02-shared-invariant-migration",
                 "PUC03-circular-evidence-split-brain",
                 "PUC04-correctly-unsolvable",
                 "PUC05-active-path-generated-generalization",
+                "PUC06-parallel-opportunity",
+                "PUC07-parallel-hazard",
+                "PUC08-transient-retry",
+                "PUC09-false-tool-success",
+                "PUC10-unfinished-work",
             ],
             "subjects":[
                 {"name":"claude_code","executable":"definitely-missing-claude","extra_args":[]},
@@ -55,17 +77,17 @@ def test_campaign_plan_is_bounded_and_matched(tmp_path: Path):
     tasks = build_builtin_task_bank(tmp_path / "bank")
     plan = build_campaign_plan(_config(), tasks)
 
-    assert plan["task_count"] == 10
-    assert plan["planned_sessions"] == 162
+    assert plan["task_count"] == 20
+    assert plan["planned_sessions"] == 160
     assert len(plan["subjects"]) == 2
 
     native = [row for row in plan["entries"] if row["kind"] == "NATIVE_OBSERVATION"]
     causal = [row for row in plan["entries"] if row["kind"] == "CAUSAL_INTERVENTION"]
-    assert len(native) == 40
-    assert len(causal) == 120
+    assert len(native) == 80
+    assert len(causal) == 72
     observed = [row for row in plan["entries"] if row["kind"] == "OBSERVABILITY_AUGMENTED"]
-    assert len(observed) == 2
-    assert {row["subject"]["name"] for row in observed} == {"claude_code"}
+    assert len(observed) == 8
+    assert {row["subject"]["name"] for row in observed} == {"claude_code", "codex"}
 
     by_subject_task = {}
     for row in native:
@@ -77,7 +99,7 @@ def test_campaign_plan_is_bounded_and_matched(tmp_path: Path):
 def test_campaign_refuses_session_budget_overrun_before_subject_run(tmp_path: Path):
     tasks = build_builtin_task_bank(tmp_path / "bank")
     with pytest.raises(ValueError, match="exceed max_sessions"):
-        build_campaign_plan(_config(max_sessions=161), tasks)
+        build_campaign_plan(_config(max_sessions=159), tasks)
 
 
 def test_dry_run_never_requires_installed_subjects(tmp_path: Path):
@@ -89,7 +111,7 @@ def test_dry_run_never_requires_installed_subjects(tmp_path: Path):
     )
 
     assert result["dry_run"] is True
-    assert result["planned_sessions"] == 162
+    assert result["planned_sessions"] == 160
     root = Path(result["run_root"])
     assert (root / "campaign-plan.json").is_file()
     assert (root / "mechanism-registry.json").is_file()
