@@ -17,6 +17,7 @@ from .coding_subjects import (
     extract_observable_final_text,
     extract_subject_session_id,
     parse_jsonl_stream,
+    resume_command_for_subject,
     sanitize_environment_snapshot,
     subject_command_provenance,
 )
@@ -270,13 +271,23 @@ def run_subject_trial(
     _write_json(root / "workspace-before.json", pre_manifest)
     _write_json(root / "git-before.json", pre_git)
 
-    command = command_for_subject(
-        str(subject["name"]),
-        prompt=str(task["prompt"]),
-        cwd=workspace_path,
-        executable=subject.get("executable"),
-        extra_args=subject.get("extra_args") or (),
-    )
+    if resume_session_id:
+        command = resume_command_for_subject(
+            str(subject["name"]),
+            session_id=str(resume_session_id),
+            prompt=str(task["prompt"]),
+            cwd=workspace_path,
+            executable=subject.get("executable"),
+            extra_args=subject.get("extra_args") or (),
+        )
+    else:
+        command = command_for_subject(
+            str(subject["name"]),
+            prompt=str(task["prompt"]),
+            cwd=workspace_path,
+            executable=subject.get("executable"),
+            extra_args=subject.get("extra_args") or (),
+        )
     _write_json(root / "subject-command.json", subject_command_provenance(command))
     _write_json(root / "environment-shape.json", sanitize_environment_snapshot())
 
@@ -542,6 +553,7 @@ def run_subject_trial(
         "task_id":task.get("task_id") or task.get("case_id"),
         "subject":subject.get("name"),
         "subject_command":asdict(command),
+        "resume_session_id":str(resume_session_id) if resume_session_id else None,
         "oracle_success":oracle_success,
         "visible_checks_ok":visible_ok,
         "hidden_oracle_ok":hidden_ok,
