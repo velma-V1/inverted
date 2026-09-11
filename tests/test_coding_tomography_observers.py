@@ -7,7 +7,9 @@ import sys
 
 from inverted.assistant_value.coding_tomography_observers import (
     CLAUDE_OBSERVER_EVENTS,
+    codex_rollout_observable_events,
     load_rollout_jsonl,
+    locate_codex_rollout_by_thread_id,
     prepare_claude_hook_observer,
     resolve_rollout_path,
 )
@@ -104,3 +106,36 @@ def test_rollout_loader_preserves_unparseable_rows(tmp_path: Path):
     assert rows[0]["type"] == "thread.started"
     assert rows[1]["type"] == "rollout_unparsed"
     assert rows[1]["raw_text"] == "not-json"
+
+
+def test_exact_thread_rollout_locator_never_scans_by_content(tmp_path: Path):
+    sessions = tmp_path / "sessions" / "2026" / "09"
+    sessions.mkdir(parents=True)
+    exact = sessions / "rollout-thread-abc.jsonl"
+    decoy = sessions / "unrelated.jsonl"
+    exact.write_text('{"type":"session_meta"}\n', encoding="utf-8")
+    decoy.write_text('{"thread_id":"thread-abc","secret":"content-decoy"}\n', encoding="utf-8")
+
+    located = locate_codex_rollout_by_thread_id("thread-abc", codex_home=tmp_path)
+
+    assert located["status"] == "FOUND"
+    assert Path(located["path"]) == exact.resolve()
+    assert str(decoy.resolve()) not in located["candidates"]
+    assert "exact emitted thread_id" in located["selection_rule"]
+
+
+def test_codex_rollout_projection_keeps_summary_and_tool_events():
+    rows = [
+        {"type":"event_msg","payload":{"type":"agent_reasoning","text":"Verify package surface."}},
+        {"type":"response_item","payload":{"type":"local_shell_call","name":"exec_command","command":"pytest -q"}},
+        {"type":"response_item","payload":{"type":"reasoning","summary":[{"text":"Check diff before stopping."}]}},
+    ]
+
+    projected = codex_rollout_observable_events(rows)
+
+    assert [row["type"] for row in projected] == [
+        "reasoning_summary",
+        "command_execution",
+        "reasoning_summary",
+    ]
+    assert projected[0]["summary"] == "Verify package surface."
