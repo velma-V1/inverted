@@ -201,3 +201,30 @@ def mcp_tool_was_called(event_log_path: str | Path) -> bool:
         if row.get("kind") == "tool_call" and row.get("name") == MCP_TOOL_NAME:
             return True
     return False
+
+
+def mcp_server_readiness(event_log_path: str | Path) -> dict[str, Any]:
+    path = Path(event_log_path)
+    methods: list[str] = []
+    if path.is_file():
+        for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not raw.strip():
+                continue
+            try:
+                row = json.loads(raw)
+            except Exception:
+                continue
+            if row.get("kind") != "request":
+                continue
+            message = row.get("message") or {}
+            method = message.get("method")
+            if isinstance(method, str):
+                methods.append(method)
+    initialized = "initialize" in methods
+    tools_listed = "tools/list" in methods
+    return {
+        "initialized": initialized,
+        "tools_listed": tools_listed,
+        "ready": bool(initialized and tools_listed),
+        "observed_methods": methods,
+    }
