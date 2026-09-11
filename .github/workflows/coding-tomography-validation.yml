@@ -40,20 +40,45 @@ jobs:
           versions = json.loads((root / "subject-versions.json").read_text(encoding="utf-8"))
 
           assert dry["dry_run"] is True
-          assert plan["planned_sessions"] > 0
-          assert plan["planned_sessions"] <= plan["max_sessions"]
-          assert plan["task_count"] >= 10
-          assert len(mechanisms["mechanisms"]) >= 40
-          assert len(pathologies["pathologies"]) >= 40
+          assert plan["task_count"] == 20
+          assert plan["scheduled_sessions"] == 154
+          assert plan["replay_reserve_slots"] == 6
+          assert plan["planned_sessions"] == 160
+          assert plan["planned_sessions"] == plan["max_sessions"]
+          assert len(mechanisms["mechanisms"]) == 40
+          assert len(pathologies["pathologies"]) == 40
           assert {row["name"] for row in versions} == {"claude_code", "codex"}
+
+          bank = json.loads(
+              (root / "_sealed_task_bank" / "task-bank.json").read_text(encoding="utf-8")
+          )
+          assert bank["task_count"] == 23
+          bank_ids = {row["task_id"] for row in bank["tasks"]}
+          assert len(bank_ids) == 23
+          assert set(plan["task_ids"]).issubset(bank_ids)
 
           entries = plan["entries"]
           native = [row for row in entries if row["kind"] == "NATIVE_OBSERVATION"]
           causal = [row for row in entries if row["kind"] == "CAUSAL_INTERVENTION"]
-          assert native
-          assert causal
+          observed = [row for row in entries if row["kind"] == "OBSERVABILITY_AUGMENTED"]
+          resume_fresh = [row for row in entries if row["kind"] == "RESUME_FRESH_CONTROL"]
+          resume_continue = [row for row in entries if row["kind"] == "RESUME_CONTINUE"]
+          mcp = [row for row in entries if row["kind"] == "MCP_TREATMENT"]
+
+          assert len(native) == 80
+          assert len(causal) == 62
+          assert len(observed) == 2
+          assert len(resume_fresh) == 4
+          assert len(resume_continue) == 4
+          assert len(mcp) == 2
           assert all(row["intervention"] is None for row in native)
           assert all(isinstance(row["intervention"], dict) for row in causal)
+          assert {row["task_id"] for row in mcp} == {"PUC13-mcp-reference-escalation"}
+          assert set(plan["resume_task_ids"]) == {
+              "PUC10-unfinished-work",
+              "PUC12-context-pressure-authority",
+          }
+          assert set(plan["mcp_task_ids"]) == {"PUC13-mcp-reference-escalation"}
 
       - name: Upload tomography dry-run evidence
         uses: actions/upload-artifact@v4
