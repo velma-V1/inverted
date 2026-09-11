@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from inverted.assistant_value.coding_tomography_campaign import (
+    _mechanism_results,
     build_campaign_plan,
     run_coding_tomography_campaign,
 )
@@ -137,3 +138,40 @@ def test_task_specific_intervention_changes_only_declared_factor(tmp_path: Path)
     assert "== 80" in before
     assert "== 90" in after
     assert result["changed_paths"] == ["visible_check.py"]
+
+
+def test_multi_mechanism_factor_does_not_promote_each_mechanism_to_causal():
+    tasks = [
+        {"task_id":"t1","family":"f1","candidate_mechanisms":["M01","M02"]},
+        {"task_id":"t2","family":"f2","candidate_mechanisms":["M01","M02"]},
+    ]
+    summaries = [
+        {"task_id":"t1","kind":"NATIVE_OBSERVATION","oracle_success":False},
+        {"task_id":"t2","kind":"NATIVE_OBSERVATION","oracle_success":False},
+    ]
+    paired = {
+        "results":{
+            "s|t1|i":{
+                "subject":"s",
+                "task_id":"t1",
+                "intervention_id":"i",
+                "mechanisms":["M01","M02"],
+                "success_delta":1.0,
+                "elapsed_s_delta":0.0,
+                "event_count_delta":0.0,
+                "verification_after_last_edit_baseline":0.0,
+                "verification_after_last_edit_treatment":1.0,
+            }
+        }
+    }
+
+    result = _mechanism_results(tasks, summaries, paired)
+    m01 = result["mechanisms"]["M01"]
+    m02 = result["mechanisms"]["M02"]
+
+    assert m01["bundle_intervention_count"] == 1
+    assert m01["identifiable_intervention_count"] == 0
+    assert m01["status"] == "REPLICATED"
+    assert m02["status"] == "REPLICATED"
+    assert m01["implementation_decision"] == "UNKNOWN"
+    assert m02["implementation_decision"] == "UNKNOWN"
