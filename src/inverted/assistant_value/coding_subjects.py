@@ -204,3 +204,88 @@ def subject_command_provenance(command: SubjectCommand) -> dict[str, Any]:
         "evidence_channel": command.evidence_channel,
         "shell_rendering_for_humans_only": " ".join(shlex.quote(x) for x in command.argv),
     }
+
+
+def expand_observable_subject_event(subject: str, raw_event: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expand one native record into observable semantic events.
+
+    This deliberately ignores non-exposed hidden reasoning. If a subject emits a
+    safe reasoning *summary* field, that summary may be retained as an observable
+    summary event. Raw source records remain preserved separately by the runner.
+    """
+    normalized = str(subject).strip().lower().replace("-", "_").replace(" ", "_")
+    out: list[dict[str, Any]] = []
+
+    if normalized in {"codex", "codex_cli"}:
+        item = raw_event.get("item")
+        if isinstance(item, dict):
+            item_type = str(item.get("type") or "").lower()
+            if item_type == "reasoning":
+                summary = item.get("text") or item.get("summary")
+                if summary:
+                    out.append({"type":"reasoning_summary","summary":summary})
+                return out or [raw_event]
+            if item_type in {"command_execution","file_change","mcp_tool_call","web_search","todo_list","agent_message"}:
+                out.append(raw_event)
+                return out
+            if item_type in {"collab_tool_call","collab_agent_tool_call"}:
+                tool = str(item.get("tool") or item.get("name") or "").lower()
+                if "spawn" in tool:
+                    out.append({"type":"collab_spawn","item":item})
+                else:
+                    out.append(raw_event)
+                return out
+        return [raw_event]
+
+    if normalized in {"claude", "claude_code"}:
+        event_type = str(raw_event.get("type") or "").lower()
+        if event_type in {"system","init"}:
+            return [{"type":"session_started","source_event":raw_event}]
+        if event_type in {"result","final"}:
+            return [{"type":"agent_message","source_event":raw_event},{"type":"stop","source_event":raw_event}]
+        if event_type == "assistant":
+            message = raw_event.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            if isinstance(content, list):
+                tool_map = {
+                    "bash":"command_execution",
+                    "read":"file_read",
+                    "write":"write",
+                    "edit":"edit",
+                    "multiedit":"edit",
+                    "grep":"search",
+                    "glob":"search",
+                    "websearch":"web",
+                    "webfetch":"web",
+                    "task":"subagent_start",
+                    "agent":"subagent_start",
+                }
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = str(block.get("type") or "").lower()
+                    if block_type == "tool_use":
+                        name = str(block.get("name") or "")
+                        mapped = tool_map.get(name.lower(), "unknown")
+                        out.append({
+                            "type":mapped,
+                            "tool_name":name,
+                            "tool_use_id":block.get("id"),
+                            "input":block.get("input"),
+                        })
+                    elif block_type in {"reasoning_summary","summary"}:
+                        out.append({
+                            "type":"reasoning_summary",
+                            "summary":block.get("text") or block.get("summary"),
+                        })
+            return out or [raw_event]
+        return [raw_event]
+
+    return [raw_event]
+
+
+def expand_observable_subject_stream(subject: str, raw_events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    expanded: list[dict[str, Any]] = []
+    for event in raw_events:
+        expanded.extend(expand_observable_subject_event(subject, event))
+    return expanded
