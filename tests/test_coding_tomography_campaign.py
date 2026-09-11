@@ -171,7 +171,7 @@ def test_multi_mechanism_factor_does_not_promote_each_mechanism_to_causal(tmp_pa
     for index, task_id in enumerate(("t1", "t2"), start=1):
         evidence = tmp_path / task_id
         evidence.mkdir()
-        (evidence / "normalized-trajectory.jsonl").write_text(
+        (evidence / "normalized-native-trajectory.jsonl").write_text(
             json.dumps({
                 "event_type":"CONTEXT_LOAD",
                 "observable_fields":{"command":"read CLAUDE.md"},
