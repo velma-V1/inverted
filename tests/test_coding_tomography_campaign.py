@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 
 from inverted.assistant_value.coding_tomography_campaign import (
+    _context_failure_atlas,
+    _frontier_failure_replay_queue,
+    _last_recoverable_state_atlas,
     _mechanism_results,
+    _pathology_compounds_artifact,
+    _strategy_reset_events,
+    _stuck_loop_registry,
     build_campaign_plan,
     run_coding_tomography_campaign,
 )
@@ -235,3 +241,87 @@ def test_multi_mechanism_factor_does_not_promote_each_mechanism_to_causal(tmp_pa
     assert m02["combined"]["status"] == "REPLICATED"
     assert m01["combined"]["implementation_decision"] == "UNKNOWN"
     assert m02["combined"]["implementation_decision"] == "UNKNOWN"
+
+
+def test_promised_frontier_artifact_builders_emit_evidence_linked_outputs(tmp_path: Path):
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    (evidence / "normalized-native-trajectory.jsonl").write_text(
+        "\n".join([
+            json.dumps({
+                "sequence":1,
+                "event_type":"TOOL_ERROR",
+                "raw_ref":"r1",
+                "observable_fields":{"exit_code":1},
+            }),
+            json.dumps({
+                "sequence":2,
+                "event_type":"PLAN_UPDATE",
+                "raw_ref":"r2",
+                "observable_fields":{"status":"replanned"},
+            }),
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    (evidence / "failure-replay.json").write_text(
+        json.dumps({
+            "replay_id":"REPLAY-abc",
+            "trajectory_hash":"hash-1",
+            "last_recoverable_state":{
+                "status":"KNOWN",
+                "sequence":2,
+                "raw_ref":"r2",
+            },
+        }),
+        encoding="utf-8",
+    )
+    summary = {
+        "trial_key":"trial-1",
+        "task_id":"task-p10",
+        "subject":"codex",
+        "kind":"NATIVE_OBSERVATION",
+        "oracle_success":False,
+        "evidence_root":str(evidence),
+        "observer_mode":None,
+        "metrics":{
+            "stuck_loop_count":1,
+            "stuck_loops":[
+                {
+                    "start_sequence":1,
+                    "end_sequence":4,
+                    "pattern":["COMMAND","TEST"],
+                    "repeats":2,
+                    "width":2,
+                }
+            ],
+            "context_compaction_count":1,
+            "session_id":"session-1",
+            "response_oracle_ok":True,
+        },
+    }
+    task = {
+        "task_id":"task-p10",
+        "family":"context",
+        "level":"P10",
+        "pathology_ids":["PU-34","PU-38"],
+        "candidate_mechanisms":["M17","M18","M19","M20","M37"],
+    }
+
+    compounds = _pathology_compounds_artifact()
+    recoverable = _last_recoverable_state_atlas([summary])
+    resets = _strategy_reset_events([summary])
+    loops = _stuck_loop_registry([summary])
+    context = _context_failure_atlas([task],[summary])
+    queue = _frontier_failure_replay_queue([task],[summary])
+
+    assert compounds["compounds"]
+    assert all(row["ablation_plan"] for row in compounds["compounds"])
+    assert recoverable["known_count"] == 1
+    assert recoverable["failure_trials"][0]["replay_id"] == "REPLAY-abc"
+    assert resets[0]["event_type"] == "PLAN_UPDATE"
+    assert resets[0]["evidence_status"] == "OBSERVED_RESET_SIGNAL_AFTER_FAILURE"
+    assert loops["trial_count"] == 1
+    assert context["failure_count"] == 1
+    assert queue["count"] == 1
+    assert queue["queue"][0]["level"] == "P10"
+    assert queue["queue"][0]["replay_id"] == "REPLAY-abc"
