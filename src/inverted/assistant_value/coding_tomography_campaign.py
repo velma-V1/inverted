@@ -42,6 +42,16 @@ def _write_json(path: Path, value: Any) -> None:
     )
 
 
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for row in rows:
+            handle.write(
+                json.dumps(row, sort_keys=True, ensure_ascii=False, default=str)
+                + "\n"
+            )
+
+
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -1341,6 +1351,205 @@ def _observability_coverage(summaries: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _pathology_compounds_artifact() -> dict[str, Any]:
+    registry = pathology_registry()
+    compounds = list(registry.get("compounds") or [])
+    rows = []
+    for compound in compounds:
+        components = list(compound.get("components") or [])
+        rows.append({
+            **compound,
+            "component_count":len(components),
+            "ablation_plan":[
+                {
+                    "ablation_id":f"{compound['id']}-A{index + 1:02d}",
+                    "removed_component":component,
+                    "active_components":[x for x in components if x != component],
+                }
+                for index, component in enumerate(components)
+            ],
+        })
+    return {
+        "schema_version":1,
+        "compounds":rows,
+        "rule":"Compound difficulty never licenses component-level causal attribution without ablation evidence.",
+    }
+
+
+def _last_recoverable_state_atlas(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = []
+    for summary in summaries:
+        replay_path = Path(summary["evidence_root"]) / "failure-replay.json"
+        if not replay_path.is_file():
+            continue
+        replay = _read_json(replay_path)
+        rows.append({
+            "trial_key":summary.get("trial_key"),
+            "task_id":summary.get("task_id"),
+            "subject":summary.get("subject"),
+            "kind":summary.get("kind"),
+            "oracle_success":summary.get("oracle_success"),
+            "replay_id":replay.get("replay_id"),
+            "last_recoverable_state":replay.get("last_recoverable_state"),
+            "trajectory_hash":replay.get("trajectory_hash"),
+        })
+    known = [
+        row for row in rows
+        if isinstance(row.get("last_recoverable_state"), dict)
+        and row["last_recoverable_state"].get("status") == "KNOWN"
+    ]
+    return {
+        "schema_version":1,
+        "failure_trials":rows,
+        "known_count":len(known),
+        "unknown_or_none_count":len(rows) - len(known),
+        "rule":"Recoverability is reported only from deterministic oracle markers; absent markers remain UNKNOWN.",
+    }
+
+
+def _strategy_reset_events(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Observable reset signals only; never infer private strategy changes."""
+    rows: list[dict[str, Any]] = []
+    reset_types = {"REVERT","RESUME","CHECKPOINT","PLAN_UPDATE"}
+    failure_types = {"TOOL_ERROR","TEST"}
+    for summary in summaries:
+        events = _read_jsonl(
+            Path(summary["evidence_root"]) / "normalized-native-trajectory.jsonl"
+        )
+        recent_failure = False
+        for event in events:
+            event_type = str(event.get("event_type") or "")
+            if event_type == "TOOL_ERROR":
+                recent_failure = True
+            elif event_type == "TEST":
+                fields = dict(event.get("observable_fields") or {})
+                exit_code = fields.get("exit_code")
+                if isinstance(exit_code, int) and exit_code != 0:
+                    recent_failure = True
+            if event_type in reset_types and recent_failure:
+                rows.append({
+                    "trial_key":summary.get("trial_key"),
+                    "task_id":summary.get("task_id"),
+                    "subject":summary.get("subject"),
+                    "kind":summary.get("kind"),
+                    "sequence":event.get("sequence"),
+                    "event_type":event_type,
+                    "raw_ref":event.get("raw_ref"),
+                    "observable_fields":event.get("observable_fields"),
+                    "evidence_status":"OBSERVED_RESET_SIGNAL_AFTER_FAILURE",
+                })
+                recent_failure = False
+    return rows
+
+
+def _stuck_loop_registry(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = []
+    for summary in summaries:
+        metrics = dict(summary.get("metrics") or {})
+        loops = list(metrics.get("stuck_loops") or [])
+        if not loops:
+            continue
+        rows.append({
+            "trial_key":summary.get("trial_key"),
+            "task_id":summary.get("task_id"),
+            "subject":summary.get("subject"),
+            "kind":summary.get("kind"),
+            "oracle_success":summary.get("oracle_success"),
+            "loop_count":len(loops),
+            "loops":loops,
+        })
+    return {
+        "schema_version":1,
+        "trials_with_stuck_loops":rows,
+        "trial_count":len(rows),
+        "rule":"Loops are repeated observable action signatures; they are not claims about hidden intent.",
+    }
+
+
+def _context_failure_atlas(
+    tasks: list[dict[str, Any]],
+    summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    context_mechanisms = {"M17","M18","M19","M20","M37"}
+    task_map = {str(task["task_id"]):task for task in tasks}
+    rows = []
+    for summary in summaries:
+        task = task_map.get(str(summary.get("task_id")))
+        if not task:
+            continue
+        relevant = sorted(
+            context_mechanisms.intersection(task.get("candidate_mechanisms") or [])
+        )
+        if not relevant:
+            continue
+        metrics = dict(summary.get("metrics") or {})
+        rows.append({
+            "trial_key":summary.get("trial_key"),
+            "task_id":summary.get("task_id"),
+            "subject":summary.get("subject"),
+            "kind":summary.get("kind"),
+            "candidate_context_mechanisms":relevant,
+            "oracle_success":bool(summary.get("oracle_success")),
+            "context_compaction_count":int(metrics.get("context_compaction_count",0)),
+            "session_id_present":bool(metrics.get("session_id")),
+            "observer_mode":summary.get("observer_mode"),
+            "response_oracle_ok":metrics.get("response_oracle_ok"),
+        })
+    failures = [row for row in rows if not row["oracle_success"]]
+    return {
+        "schema_version":1,
+        "trials":rows,
+        "failure_trials":failures,
+        "failure_count":len(failures),
+        "claim_boundary":"Association with a context-sensitive task is not causal proof; matched resume/observability interventions provide the causal layer.",
+    }
+
+
+def _frontier_failure_replay_queue(
+    tasks: list[dict[str, Any]],
+    summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    task_map = {str(task["task_id"]):task for task in tasks}
+    rows = []
+    for summary in summaries:
+        if bool(summary.get("oracle_success")):
+            continue
+        task = task_map.get(str(summary.get("task_id")))
+        if not task:
+            continue
+        level = str(task.get("level") or "")
+        if level not in {"P9","P10"}:
+            continue
+        replay_path = Path(summary["evidence_root"]) / "failure-replay.json"
+        replay = _read_json(replay_path) if replay_path.is_file() else {}
+        priority = 0
+        if level == "P10":
+            priority += 100
+        priority += 10 * len(task.get("pathology_ids") or [])
+        metrics = dict(summary.get("metrics") or {})
+        priority += min(9, int(metrics.get("stuck_loop_count",0)) * 3)
+        rows.append({
+            "priority":priority,
+            "trial_key":summary.get("trial_key"),
+            "task_id":summary.get("task_id"),
+            "subject":summary.get("subject"),
+            "kind":summary.get("kind"),
+            "level":level,
+            "pathology_ids":list(task.get("pathology_ids") or []),
+            "candidate_mechanisms":list(task.get("candidate_mechanisms") or []),
+            "replay_id":replay.get("replay_id"),
+            "trajectory_hash":replay.get("trajectory_hash"),
+            "evidence_root":summary.get("evidence_root"),
+        })
+    rows.sort(key=lambda row: (-int(row["priority"]), str(row["task_id"]), str(row["subject"])))
+    return {
+        "schema_version":1,
+        "queue":rows,
+        "count":len(rows),
+        "rule":"Queue ordering is deterministic engineering triage, not a model-capability verdict.",
+    }
+
+
 def _failure_registry(summaries: list[dict[str, Any]]) -> dict[str, Any]:
     rows = []
     for summary in summaries:
@@ -1642,6 +1851,12 @@ def run_coding_tomography_campaign(
     divergence = _cross_subject_divergence(run_root,summaries)
     known_unknown = _known_unknown(mechanisms)
     blueprint,rejects,next_experiments = _blueprint_and_rejects(mechanisms)
+    pathology_compounds = _pathology_compounds_artifact()
+    recoverable_atlas = _last_recoverable_state_atlas(summaries)
+    strategy_resets = _strategy_reset_events(summaries)
+    stuck_loops = _stuck_loop_registry(summaries)
+    context_failures = _context_failure_atlas(tasks, summaries)
+    frontier_replay_queue = _frontier_failure_replay_queue(tasks, summaries)
 
     normalized_rows = _normalized_trajectory_rows(summaries)
     _write_jsonl(run_root / "normalized-trajectories.jsonl", normalized_rows)
@@ -1661,6 +1876,12 @@ def run_coding_tomography_campaign(
     _write_json(run_root / "failure-replay-effectiveness.json",replay_effectiveness)
     _write_json(run_root / "causal-factor-registry.json", _causal_factor_registry(causal_evidence))
     _write_json(run_root / "pathology-ablation-results.json", _pathology_ablation_results(tasks, paired))
+    _write_json(run_root / "pathology-compounds.json", pathology_compounds)
+    _write_json(run_root / "last-recoverable-state-atlas.json", recoverable_atlas)
+    _write_jsonl(run_root / "strategy-reset-events.jsonl", strategy_resets)
+    _write_json(run_root / "stuck-loop-registry.json", stuck_loops)
+    _write_json(run_root / "context-failure-atlas.json", context_failures)
+    _write_json(run_root / "frontier-failure-replay-queue.json", frontier_replay_queue)
     _write_json(run_root / "mechanism-value-per-cost.json",mechanisms)
     _write_json(run_root / "mechanism-bundle-value.json",bundles)
     _write_json(run_root / "mechanism-interaction-graph.json", _mechanism_interaction_graph(tasks, summaries, causal_evidence))
