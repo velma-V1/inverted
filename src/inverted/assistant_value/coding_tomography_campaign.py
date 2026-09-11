@@ -330,32 +330,41 @@ def _mechanism_results(
         ]
         signal_tasks = {str(row["task_id"]) for row in signaled}
 
-        affected = [
+        bundle_affected = [
             row for row in paired
             if mid in (row.get("mechanisms") or [])
             and (subject is None or str(row.get("subject")) == subject)
         ]
-        independent_interventions = {
+        identifiable = [
+            row for row in bundle_affected
+            if list(row.get("mechanisms") or []) == [mid]
+            or (
+                str(row.get("primary_mechanism") or "") == mid
+                and bool(row.get("mechanism_isolation_confirmed"))
+            )
+        ]
+        independent_identifiable = {
             (str(row.get("task_id")), str(row.get("intervention_id")))
-            for row in affected
+            for row in identifiable
         }
+
         positive = [
-            row for row in affected
+            row for row in identifiable
             if float(row.get("success_delta", 0.0)) > 0.0
         ]
         negative = [
-            row for row in affected
+            row for row in identifiable
             if float(row.get("success_delta", 0.0)) < 0.0
         ]
         rescue_rate = (
-            sum(max(0.0, float(row.get("success_delta", 0.0))) for row in affected)
-            / len(affected)
-            if affected else 0.0
+            sum(max(0.0, float(row.get("success_delta", 0.0))) for row in identifiable)
+            / len(identifiable)
+            if identifiable else 0.0
         )
         regression_rate = (
-            sum(max(0.0, -float(row.get("success_delta", 0.0))) for row in affected)
-            / len(affected)
-            if affected else 0.0
+            sum(max(0.0, -float(row.get("success_delta", 0.0))) for row in identifiable)
+            / len(identifiable)
+            if identifiable else 0.0
         )
         positive_families = {
             str(task_map.get(row["task_id"], {}).get("family"))
@@ -366,17 +375,17 @@ def _mechanism_results(
             opportunity_trials=len(opportunities),
             observed_trials=len(signaled),
             independent_tasks=len(signal_tasks),
-            causal_interventions=len(independent_interventions),
+            causal_interventions=len(independent_identifiable),
             generalized_families=len(positive_families),
             rescue_rate=rescue_rate,
             regression_rate=regression_rate,
             complexity_units=None,
         )
 
-        def mean(name: str) -> float | None:
+        def mean(rows: list[dict[str, Any]], name: str) -> float | None:
             values = [
                 float(row[name])
-                for row in affected
+                for row in rows
                 if isinstance(row.get(name), (int, float))
                 and not isinstance(row.get(name), bool)
             ]
@@ -386,10 +395,14 @@ def _mechanism_results(
             sum(
                 float(row.get("verification_after_last_edit_treatment", 0.0))
                 - float(row.get("verification_after_last_edit_baseline", 0.0))
-                for row in affected
-            ) / len(affected)
-            if affected else None
+                for row in identifiable
+            ) / len(identifiable)
+            if identifiable else None
         )
+        bundle_directional = [
+            row for row in bundle_affected
+            if float(row.get("success_delta", 0.0)) != 0.0
+        ]
         return {
             **evidence,
             "subject": subject or "combined",
@@ -397,16 +410,34 @@ def _mechanism_results(
                 str(row["task_id"]) for row in opportunities
             }),
             "observed_signal_task_ids": sorted(signal_tasks),
-            "intervention_task_ids": sorted({
-                str(row.get("task_id")) for row in affected
+            "bundle_intervention_task_ids": sorted({
+                str(row.get("task_id")) for row in bundle_affected
             }),
-            "independent_intervention_units": len(independent_interventions),
-            "positive_interventions": len(positive),
-            "negative_interventions": len(negative),
-            "measured_mean_elapsed_delta_s": mean("elapsed_s_delta"),
-            "measured_mean_event_count_delta": mean("event_count_delta"),
+            "bundle_intervention_count": len({
+                (str(row.get("task_id")), str(row.get("intervention_id")))
+                for row in bundle_affected
+            }),
+            "bundle_directional_intervention_count": len(bundle_directional),
+            "bundle_mean_success_delta": (
+                sum(float(row.get("success_delta", 0.0)) for row in bundle_affected)
+                / len(bundle_affected)
+                if bundle_affected else None
+            ),
+            "identifiable_intervention_task_ids": sorted({
+                str(row.get("task_id")) for row in identifiable
+            }),
+            "identifiable_intervention_count": len(independent_identifiable),
+            "positive_identifiable_interventions": len(positive),
+            "negative_identifiable_interventions": len(negative),
+            "measured_mean_elapsed_delta_s": mean(identifiable, "elapsed_s_delta"),
+            "measured_mean_event_count_delta": mean(identifiable, "event_count_delta"),
             "measured_verification_after_last_edit_delta": verification_delta,
             "inverted_implementation_complexity": "UNKNOWN_UNTIL_IMPLEMENTATION_PROTOTYPE",
+            "attribution_rule": (
+                "Multi-mechanism interventions contribute bundle evidence only. "
+                "Individual causal promotion requires a single-mechanism or explicitly "
+                "validated isolated intervention."
+            ),
         }
 
     by_mechanism: dict[str, dict[str, Any]] = {}
@@ -436,21 +467,106 @@ def _mechanism_results(
         elif negative_subjects and not positive_subjects:
             source_pattern = "SHARED_OR_SOURCE_SPECIFIC_NEGATIVE"
         else:
-            source_pattern = "NO_DIRECTIONAL_SIGNAL"
+            source_pattern = "NO_IDENTIFIABLE_DIRECTIONAL_SIGNAL"
 
         by_mechanism[mid] = {
             "mechanism_id": mid,
             "mechanism_name": mechanism["name"],
             **combined,
+            "combined": combined,
             "by_subject": by_subject,
             "source_pattern": source_pattern,
             "subject_net_effects": subject_net,
         }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "subjects": subjects,
         "mechanisms": by_mechanism,
+        "causal_attribution_rule": (
+            "Bundle-level interventions are not decomposed into individual mechanism "
+            "causal claims without an isolating intervention."
+        ),
     }
+
+
+def _bundle_results(
+    tasks: list[dict[str, Any]],
+    intervention_results: dict[str, Any],
+) -> dict[str, Any]:
+    task_map = {task["task_id"]: task for task in tasks}
+    grouped: dict[tuple[str, tuple[str, ...]], list[dict[str, Any]]] = defaultdict(list)
+    for row in (intervention_results.get("results") or {}).values():
+        mechanisms = tuple(sorted(set(str(x) for x in (row.get("mechanisms") or []))))
+        if not mechanisms:
+            continue
+        factor = str(row.get("intervention_id") or "unknown")
+        grouped[(factor, mechanisms)].append(row)
+
+    bundles = {}
+    for (factor, mechanisms), rows in sorted(grouped.items()):
+        positive = [row for row in rows if float(row.get("success_delta", 0.0)) > 0]
+        negative = [row for row in rows if float(row.get("success_delta", 0.0)) < 0]
+        subjects = sorted({str(row.get("subject")) for row in rows})
+        task_ids = sorted({str(row.get("task_id")) for row in rows})
+        families = sorted({
+            str(task_map.get(str(row.get("task_id")), {}).get("family"))
+            for row in rows
+            if task_map.get(str(row.get("task_id")))
+        })
+        mean_delta = sum(float(row.get("success_delta", 0.0)) for row in rows) / len(rows)
+        positive_tasks = {
+            str(row.get("task_id"))
+            for row in positive
+        }
+        negative_tasks = {
+            str(row.get("task_id"))
+            for row in negative
+        }
+        replicated = len(task_ids) >= 2 or len(subjects) >= 2
+        generalized = len(families) >= 2 and len(positive_tasks) >= 2
+        if mean_delta > 0 and generalized:
+            status = "GENERALIZED_BUNDLE_GAIN"
+            decision = "CLONE_BUNDLE_CANDIDATE"
+        elif mean_delta > 0 and replicated:
+            status = "REPLICATED_BUNDLE_GAIN"
+            decision = "MODIFY_OR_CONFIRM_BUNDLE"
+        elif mean_delta < 0 and replicated:
+            status = "REPLICATED_BUNDLE_HARM"
+            decision = "REJECT_BUNDLE"
+        elif mean_delta != 0:
+            status = "DIRECTIONAL_BUNDLE_SIGNAL"
+            decision = "CONFIRM_BUNDLE"
+        else:
+            status = "BUNDLE_NULL_OR_MIXED"
+            decision = "UNKNOWN"
+        bundle_id = "BUNDLE-" + hashlib.sha256(
+            json.dumps(
+                {"factor": factor, "mechanisms": mechanisms},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()[:12]
+        bundles[bundle_id] = {
+            "bundle_id": bundle_id,
+            "factor": factor,
+            "mechanisms": list(mechanisms),
+            "subjects": subjects,
+            "task_ids": task_ids,
+            "families": families,
+            "n": len(rows),
+            "positive_rows": len(positive),
+            "negative_rows": len(negative),
+            "positive_task_ids": sorted(positive_tasks),
+            "negative_task_ids": sorted(negative_tasks),
+            "mean_success_delta": mean_delta,
+            "status": status,
+            "implementation_decision": decision,
+            "claim_boundary": (
+                "Causal claim applies to the intervention bundle as a whole, not "
+                "to each listed mechanism individually."
+            ),
+        }
+    return {"schema_version": 1, "bundles": bundles}
 
 
 def _behavior_atlas(summaries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1011,6 +1127,7 @@ def run_coding_tomography_campaign(
     behavior = _behavior_atlas(summaries)
     paired = _paired_intervention_results(plan,summaries)
     mechanisms = _mechanism_results(tasks,summaries,paired)
+    bundles = _bundle_results(tasks, paired)
     failures = _failure_registry(summaries)
     divergence = _cross_subject_divergence(run_root,summaries)
     known_unknown = _known_unknown(mechanisms)
@@ -1032,6 +1149,7 @@ def run_coding_tomography_campaign(
     _write_json(run_root / "causal-factor-registry.json", _causal_factor_registry(paired))
     _write_json(run_root / "pathology-ablation-results.json", _pathology_ablation_results(tasks, paired))
     _write_json(run_root / "mechanism-value-per-cost.json",mechanisms)
+    _write_json(run_root / "mechanism-bundle-value.json",bundles)
     _write_json(run_root / "mechanism-interaction-graph.json", _mechanism_interaction_graph(tasks, summaries, paired))
     _write_json(run_root / "behavioral-inference-registry.json", _behavioral_inference_registry(mechanisms))
     _write_json(run_root / "observability-coverage.json", _observability_coverage(summaries))
