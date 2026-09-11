@@ -13,6 +13,7 @@ from inverted.assistant_value.coding_tomography_campaign import (
     _pathology_compounds_artifact,
     _strategy_reset_events,
     _stuck_loop_registry,
+    _subject_version,
     build_campaign_plan,
     run_coding_tomography_campaign,
 )
@@ -325,3 +326,57 @@ def test_promised_frontier_artifact_builders_emit_evidence_linked_outputs(tmp_pa
     assert queue["count"] == 1
     assert queue["queue"][0]["level"] == "P10"
     assert queue["queue"][0]["replay_id"] == "REPLAY-abc"
+
+
+def test_subject_cli_preflight_requires_tomography_surfaces(monkeypatch):
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode=returncode
+            self.stdout=stdout
+            self.stderr=stderr
+
+    def fake_run(argv, **kwargs):
+        if argv[-1] == "--version":
+            return Result(stdout="1.2.3")
+        if argv[0] == "claude":
+            return Result(stdout="--output-format --verbose --resume --mcp-config")
+        if argv[:3] == ["codex","exec","resume"]:
+            return Result(stdout="resume help")
+        if argv[:2] == ["codex","exec"]:
+            return Result(stdout="--json -C, --cd --config")
+        raise AssertionError(argv)
+
+    import inverted.assistant_value.coding_tomography_campaign as campaign
+    monkeypatch.setattr(campaign.subprocess, "run", fake_run)
+
+    claude = _subject_version({"name":"claude_code","executable":"claude"})
+    codex = _subject_version({"name":"codex","executable":"codex"})
+
+    assert claude["available"] is True
+    assert claude["required_missing"] == []
+    assert all(claude["capabilities"].values())
+    assert codex["available"] is True
+    assert codex["required_missing"] == []
+    assert all(codex["capabilities"].values())
+
+
+def test_subject_cli_preflight_reports_missing_capabilities(monkeypatch):
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode=returncode
+            self.stdout=stdout
+            self.stderr=stderr
+
+    def fake_run(argv, **kwargs):
+        if argv[-1] == "--version":
+            return Result(stdout="old")
+        return Result(stdout="minimal help")
+
+    import inverted.assistant_value.coding_tomography_campaign as campaign
+    monkeypatch.setattr(campaign.subprocess, "run", fake_run)
+
+    claude = _subject_version({"name":"claude_code","executable":"claude"})
+    assert claude["available"] is True
+    assert set(claude["required_missing"]) == {
+        "stream_json","verbose","resume","mcp_config"
+    }
