@@ -74,6 +74,93 @@ def build_codex_command(
     )
 
 
+def build_claude_code_resume_command(
+    *,
+    session_id: str,
+    prompt: str,
+    cwd: str | Path,
+    executable: str = "claude",
+    extra_args: Iterable[str] = (),
+) -> SubjectCommand:
+    argv = (
+        str(executable),
+        "-p",
+        "--resume",
+        str(session_id),
+        str(prompt),
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        *tuple(str(x) for x in extra_args),
+    )
+    return SubjectCommand(
+        subject="claude_code",
+        argv=argv,
+        cwd=str(Path(cwd)),
+        output_mode="stream-json",
+        evidence_channel="resume",
+    )
+
+
+def build_codex_resume_command(
+    *,
+    session_id: str,
+    prompt: str,
+    cwd: str | Path,
+    executable: str = "codex",
+    extra_args: Iterable[str] = (),
+) -> SubjectCommand:
+    # resume is the codex-exec subcommand. --json and -C are global
+    # exec arguments and remain active for the resumed turn.
+    argv = (
+        str(executable),
+        "exec",
+        "--json",
+        "-C",
+        str(Path(cwd)),
+        *tuple(str(x) for x in extra_args),
+        "resume",
+        str(session_id),
+        str(prompt),
+    )
+    return SubjectCommand(
+        subject="codex",
+        argv=argv,
+        cwd=str(Path(cwd)),
+        output_mode="jsonl",
+        evidence_channel="resume",
+    )
+
+
+def resume_command_for_subject(
+    subject: str,
+    *,
+    session_id: str,
+    prompt: str,
+    cwd: str | Path,
+    executable: str | None = None,
+    extra_args: Iterable[str] = (),
+) -> SubjectCommand:
+    normalized = str(subject).strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in {"claude", "claude_code"}:
+        return build_claude_code_resume_command(
+            session_id=session_id,
+            prompt=prompt,
+            cwd=cwd,
+            executable=executable or "claude",
+            extra_args=extra_args,
+        )
+    if normalized in {"codex", "codex_cli"}:
+        return build_codex_resume_command(
+            session_id=session_id,
+            prompt=prompt,
+            cwd=cwd,
+            executable=executable or "codex",
+            extra_args=extra_args,
+        )
+    raise ValueError(f"unsupported coding subject: {subject}")
+
+
 def command_for_subject(
     subject: str,
     *,
