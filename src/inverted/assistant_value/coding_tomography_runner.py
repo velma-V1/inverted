@@ -150,6 +150,31 @@ def _summarize_resource_samples(
         "read_bytes": max((int(row.get("read_bytes") or 0) for row in measured), default=None),
         "write_bytes": max((int(row.get("write_bytes") or 0) for row in measured), default=None),
     }
+    observed_processes: dict[tuple[int, str], dict[str, Any]] = {}
+    for sample in samples:
+        observed_at = float(sample.get("t") or 0.0)
+        for process in sample.get("processes") or []:
+            pid = int(process.get("pid") or 0)
+            name = str(process.get("name") or "unknown")
+            key = (pid, name)
+            row = observed_processes.setdefault(
+                key,
+                {
+                    "pid": pid,
+                    "ppid": process.get("ppid"),
+                    "name": name,
+                    "scope": process.get("scope"),
+                    "first_seen_s": observed_at,
+                    "last_seen_s": observed_at,
+                },
+            )
+            row["last_seen_s"] = observed_at
+    result["process_graph"] = list(observed_processes.values())
+    result["resource_scope"] = (
+        "SUBJECT_TREE_PLUS_NAMED_EXTERNAL"
+        if any(row.get("scope") == "named_external" for row in observed_processes.values())
+        else "SUBJECT_PROCESS_TREE"
+    )
     if not gpu_samples:
         result["gpu"] = {
             "status": "NOT_SAMPLED",
@@ -187,6 +212,7 @@ def _run_process(
     measure_resources: bool = False,
     sample_gpu: bool = False,
     sample_interval_s: float = 0.5,
+    external_process_names: Iterable[str] = (),
 ) -> dict[str, Any]:
     started = time.monotonic()
     if not measure_resources:
@@ -276,19 +302,44 @@ def _run_process(
             if root_process is not None:
                 try:
                     family = [root_process, *root_process.children(recursive=True)]
+                    tree_pids = {child.pid for child in family}
+                    external_names = {
+                        str(value).lower() for value in external_process_names if str(value).strip()
+                    }
+                    if external_names:
+                        for candidate in psutil.process_iter(["pid", "name"]):
+                            try:
+                                if candidate.pid in tree_pids:
+                                    continue
+                                if str(candidate.info.get("name") or "").lower() in external_names:
+                                    family.append(candidate)
+                            except Exception:
+                                continue
                     rss = 0
                     cpu = 0.0
                     read_bytes = 0
                     write_bytes = 0
+                    process_rows = []
                     for child in family:
                         try:
                             with child.oneshot():
+                                name = child.name()
                                 rss += int(child.memory_info().rss)
                                 times = child.cpu_times()
                                 cpu += float(times.user) + float(times.system)
                                 io = child.io_counters()
                                 read_bytes += int(getattr(io, "read_bytes", 0))
                                 write_bytes += int(getattr(io, "write_bytes", 0))
+                                process_rows.append({
+                                    "pid": int(child.pid),
+                                    "ppid": int(child.ppid()),
+                                    "name": str(name),
+                                    "scope": (
+                                        "subject_tree"
+                                        if child.pid in tree_pids
+                                        else "named_external"
+                                    ),
+                                })
                         except Exception:
                             continue
                     row.update({
@@ -296,6 +347,7 @@ def _run_process(
                         "cpu_seconds": cpu,
                         "read_bytes": read_bytes,
                         "write_bytes": write_bytes,
+                        "processes": process_rows,
                     })
                 except Exception:
                     pass
@@ -529,6 +581,7 @@ def run_subject_trial(
             and subject.get("gpu_sampling", False)
         ),
         sample_interval_s=float(subject.get("resource_sample_interval_s", 0.5)),
+        external_process_names=subject.get("resource_process_names") or (),
     )
     (root / "subject-stdout.txt").write_text(str(run["stdout"]), encoding="utf-8")
     (root / "subject-stderr.txt").write_text(str(run["stderr"]), encoding="utf-8")

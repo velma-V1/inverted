@@ -862,6 +862,11 @@ Shadow output is labeled `SYNTHETIC_INFERENCE`, is non-authoritative, cannot
 change the primary score, and has separate compute accounting. Failure or absence
 of the observer never invalidates a subject trial.
 
+The observer input also receives deterministic event counts, event transitions,
+and existing trajectory metrics. Low-confidence, high-surprise, unexplained, or
+observer-unavailable cases are written to a selective escalation queue. The
+campaign does not automatically call a larger or paid model for those cases.
+
 ### Provider quota terminal condition
 
 Subscription usage exhaustion is not a model failure, harness failure, or oracle
@@ -885,6 +890,8 @@ declare subscription exhaustion.
 Each subject trial records:
 - wall-clock subject time;
 - sampled subject-process-tree CPU time, RSS, and process I/O;
+- a sanitized process graph containing PID/PPID/process name only, with optional
+  named external local-model processes such as Ollama when explicitly configured;
 - optional host-global NVIDIA VRAM/utilization/power/temperature sampling for
   isolated local-model trials;
 - integrated best-effort GPU watt-hours when local GPU sampling is enabled;

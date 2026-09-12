@@ -36,6 +36,7 @@ from .coding_tomography_research import (
     aggregate_compute_cost,
     all_quota_limited_exhausted,
     build_exposure_index,
+    build_shadow_escalation_queue,
     campaign_completion_record,
     quota_limited_subject_names,
     research_contract,
@@ -2121,6 +2122,16 @@ def run_coding_tomography_campaign(
         "may_change_primary_score": False,
         "rows": shadow_rows,
     })
+    escalation_artifact = build_shadow_escalation_queue(
+        shadow_rows,
+        confidence_threshold=float(
+            shadow_cfg.get("escalation_confidence_threshold", 0.65)
+        ),
+    )
+    _write_json(
+        run_root / "shadow-observer-escalation-queue.json",
+        escalation_artifact,
+    )
 
     compute_summary = aggregate_compute_cost(
         summaries,

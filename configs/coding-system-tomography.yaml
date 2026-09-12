@@ -17,6 +17,7 @@ coding_tomography:
     timeout_s: 180
     max_events: 180
     temperature: 0
+    escalation_confidence_threshold: 0.65
 
   # Two untouched native observations per subject/task establish stability.
   native_repeats: 2
@@ -101,6 +102,8 @@ coding_tomography:
       # compute_scope=local, model_backend=<local model>, and optionally:
       # environment_overrides:
       #   ANTHROPIC_BASE_URL: http://model-gateway:8000
+      # When Ollama runs on the same host, local conditions may also set:
+      # resource_process_names: [ollama.exe, ollama]
       gateway_event_files: []
 
     - name: codex
@@ -116,4 +119,5 @@ coding_tomography:
       gpu_sampling: false
       # Routed/local model-provider args may be supplied through extra_args;
       # gateway_event_files can preserve the exact request/response translation.
+      # Same-host Ollama conditions may set resource_process_names too.
       gateway_event_files: []

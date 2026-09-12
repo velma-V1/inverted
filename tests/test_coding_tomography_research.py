@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from inverted.assistant_value.coding_tomography_runner import finalize_trial_evidence
+from inverted.assistant_value.coding_tomography_runner import (
+    _summarize_resource_samples,
+    finalize_trial_evidence,
+)
 from inverted.assistant_value.coding_tomography_research import (
     all_quota_limited_exhausted,
+    build_shadow_escalation_queue,
     build_shadow_observer_payload,
     campaign_completion_record,
     capture_instruction_surfaces,
@@ -196,3 +200,105 @@ def test_condition_id_is_independent_from_harness_adapter_and_quota_provider():
     assert identity["model_backend"] == "gpt-oss:20b"
     assert quota["status"] == "NOT_QUOTA_LIMITED"
     assert quota["quota_provider"] == "claude_code"
+
+
+def test_resource_summary_preserves_sanitized_process_graph():
+    summary = _summarize_resource_samples(
+        [
+            {
+                "t": 0.5,
+                "rss_bytes": 100,
+                "cpu_seconds": 1.0,
+                "read_bytes": 10,
+                "write_bytes": 2,
+                "processes": [
+                    {"pid": 10, "ppid": 1, "name": "claude.exe", "scope": "subject_tree"},
+                ],
+            },
+            {
+                "t": 1.5,
+                "rss_bytes": 300,
+                "cpu_seconds": 2.0,
+                "read_bytes": 40,
+                "write_bytes": 9,
+                "processes": [
+                    {"pid": 10, "ppid": 1, "name": "claude.exe", "scope": "subject_tree"},
+                    {"pid": 20, "ppid": 2, "name": "ollama.exe", "scope": "named_external"},
+                ],
+            },
+        ],
+        [],
+    )
+    assert summary["resource_scope"] == "SUBJECT_TREE_PLUS_NAMED_EXTERNAL"
+    assert summary["peak_rss_bytes"] == 300
+    assert {(row["pid"], row["name"]) for row in summary["process_graph"]} == {
+        (10, "claude.exe"),
+        (20, "ollama.exe"),
+    }
+
+
+def test_shadow_escalation_queue_selects_only_uncertain_or_surprising_cases():
+    artifact = build_shadow_escalation_queue(
+        [
+            {
+                "trial_key": "routine",
+                "status": "SUCCESS",
+                "model": "gpt-oss:20b",
+                "annotation": {
+                    "confidence": 0.91,
+                    "high_surprise_decisions": [],
+                    "unexplained_decisions": [],
+                },
+            },
+            {
+                "trial_key": "uncertain",
+                "status": "SUCCESS",
+                "model": "gpt-oss:20b",
+                "annotation": {
+                    "confidence": 0.40,
+                    "high_surprise_decisions": [],
+                    "unexplained_decisions": [],
+                },
+            },
+            {
+                "trial_key": "surprise",
+                "status": "SUCCESS",
+                "model": "gpt-oss:20b",
+                "annotation": {
+                    "confidence": 0.90,
+                    "high_surprise_decisions": [{"event": "E17"}],
+                    "unexplained_decisions": [],
+                },
+            },
+        ],
+        confidence_threshold=0.65,
+    )
+    assert artifact["automatic_strong_model_calls"] is False
+    assert [row["trial_key"] for row in artifact["queue"]] == ["uncertain", "surprise"]
+
+
+def test_shadow_payload_includes_deterministic_event_features(tmp_path: Path):
+    (tmp_path / "normalized-native-trajectory.jsonl").write_text(
+        "\n".join([
+            json.dumps({"sequence": 1, "event_type": "FILE_READ"}),
+            json.dumps({"sequence": 2, "event_type": "TEST"}),
+            json.dumps({"sequence": 3, "event_type": "FILE_READ"}),
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "trajectory-metrics.json").write_text(
+        json.dumps({"event_count": 3}),
+        encoding="utf-8",
+    )
+    payload = build_shadow_observer_payload(
+        trial_root=tmp_path,
+        task_prompt="inspect",
+        subject={"name": "codex"},
+    )
+    features = payload["deterministic_features"]
+    assert features["event_type_counts"] == {"FILE_READ": 2, "TEST": 1}
+    assert features["transition_counts"] == {
+        "FILE_READ->TEST": 1,
+        "TEST->FILE_READ": 1,
+    }
+    assert features["trajectory_metrics"]["event_count"] == 3

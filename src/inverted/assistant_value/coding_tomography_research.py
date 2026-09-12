@@ -268,6 +268,8 @@ def build_compute_cost(
             "write_bytes": resources.get("write_bytes"),
             "resource_sample_count": resources.get("sample_count", 0),
             "measurement_status": resources.get("measurement_status", "UNKNOWN"),
+            "resource_scope": resources.get("resource_scope"),
+            "process_graph": resources.get("process_graph") or [],
         },
         "gpu_compute": {
             "status": gpu.get("status", "NOT_SAMPLED"),
@@ -354,6 +356,7 @@ def research_contract(config: dict[str, Any]) -> dict[str, Any]:
             "COMPUTE_COST",
             "POST_CAMPAIGN_SHADOW_OBSERVER",
             "GATEWAY_EVIDENCE",
+            "SHADOW_OBSERVER_ESCALATION_QUEUE",
         ],
         "shadow_observer": {
             "enabled": bool(observer.get("enabled", False)),
@@ -397,11 +400,25 @@ def build_shadow_observer_payload(
         p = root / name
         return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
     final_path = root / "observable-final-response.txt"
+    event_counts: dict[str, int] = defaultdict(int)
+    transition_counts: dict[str, int] = defaultdict(int)
+    previous_type = None
+    for event in trajectory:
+        event_type = str(event.get("event_type") or "UNKNOWN")
+        event_counts[event_type] += 1
+        if previous_type is not None:
+            transition_counts[previous_type + "->" + event_type] += 1
+        previous_type = event_type
     return {
         "evidence_class": "SYNTHETIC_INFERENCE_INPUT",
         "task_prompt": task_prompt,
         "identity": model_harness_identity(subject),
         "native_trajectory": trajectory,
+        "deterministic_features": {
+            "event_type_counts": dict(event_counts),
+            "transition_counts": dict(transition_counts),
+            "trajectory_metrics": load_json("trajectory-metrics.json"),
+        },
         "workspace_diff": load_json("workspace-diff.json"),
         "channel_coverage": load_json("channel-coverage.json"),
         "instruction_surfaces": load_json("model-visible-instruction-surfaces.json"),
@@ -524,6 +541,46 @@ def run_shadow_observer(
     evidence_path.write_text(json.dumps(row, indent=2, sort_keys=True, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
     cost_path.write_text(json.dumps(cost, indent=2, sort_keys=True, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
     return {**row, "evidence_path": str(evidence_path), "compute_cost_path": str(cost_path)}
+
+
+def build_shadow_escalation_queue(
+    rows: Iterable[dict[str, Any]],
+    *,
+    confidence_threshold: float = 0.65,
+) -> dict[str, Any]:
+    queue = []
+    for row in rows:
+        annotation = row.get("annotation") if isinstance(row.get("annotation"), dict) else {}
+        confidence = annotation.get("confidence")
+        low_confidence = (
+            not isinstance(confidence, (int, float))
+            or isinstance(confidence, bool)
+            or float(confidence) < float(confidence_threshold)
+        )
+        surprising = bool(annotation.get("high_surprise_decisions"))
+        unexplained = bool(annotation.get("unexplained_decisions"))
+        unavailable = row.get("status") != "SUCCESS"
+        if not (low_confidence or surprising or unexplained or unavailable):
+            continue
+        queue.append({
+            "trial_key": row.get("trial_key"),
+            "observer_model": row.get("model"),
+            "observer_status": row.get("status"),
+            "confidence": confidence,
+            "low_confidence": low_confidence,
+            "high_surprise": surprising,
+            "unexplained_decisions": unexplained,
+            "observer_unavailable": unavailable,
+            "evidence_path": row.get("evidence_path"),
+            "recommended_action": "SELECTIVE_STRONG_MODEL_OR_REPLAY_REVIEW",
+        })
+    return {
+        "schema_version": 1,
+        "confidence_threshold": float(confidence_threshold),
+        "automatic_strong_model_calls": False,
+        "queue": queue,
+        "count": len(queue),
+    }
 
 
 def aggregate_compute_cost(
