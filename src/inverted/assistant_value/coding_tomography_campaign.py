@@ -27,6 +27,7 @@ from .coding_tomography_mcp import (
 )
 from .coding_tomography_observers import prepare_claude_hook_observer
 from .coding_tomography_runner import (
+    finalize_trial_evidence,
     materialize_workspace,
     run_subject_trial,
     sha256_file,
@@ -739,6 +740,7 @@ def _run_replay_reserve(
             "source_trial_key":source.get("trial_key"),
         })
         _write_json(evidence / "trial-summary.json", summary)
+        finalize_trial_evidence(evidence)
         if summary.get("trial_status") == "PROVIDER_QUOTA_EXHAUSTED":
             quota_exhausted_subjects.add(str(source.get("subject")))
             quota_terminal_rows.append(summary)
@@ -1940,6 +1942,7 @@ def run_coding_tomography_campaign(
             "source_trial_key": source.get("trial_key") if isinstance(source, dict) else None,
         })
         _write_json(evidence / "trial-summary.json",summary)
+        finalize_trial_evidence(evidence)
 
         if summary.get("trial_status") == "PROVIDER_QUOTA_EXHAUSTED":
             provider_status[subject_name] = "QUOTA_EXHAUSTED"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from inverted.assistant_value.coding_tomography_runner import finalize_trial_evidence
 from inverted.assistant_value.coding_tomography_research import (
     all_quota_limited_exhausted,
     build_shadow_observer_payload,
@@ -140,3 +141,18 @@ def test_research_contract_is_additive_and_observer_non_authoritative():
     assert contract["scoring_changed"] is False
     assert contract["shadow_observer"]["authoritative"] is False
     assert contract["shadow_observer"]["may_change_primary_score"] is False
+
+
+def test_trial_evidence_manifest_refreshes_after_campaign_metadata_change(tmp_path: Path):
+    summary = tmp_path / "trial-summary.json"
+    summary.write_text('{"phase":"runner"}\n', encoding="utf-8")
+    finalize_trial_evidence(tmp_path)
+    first = json.loads((tmp_path / "SHA256SUMS.json").read_text(encoding="utf-8"))
+    first_hash = next(row["sha256"] for row in first["artifacts"] if row["path"] == "trial-summary.json")
+
+    summary.write_text('{"phase":"campaign"}\n', encoding="utf-8")
+    finalize_trial_evidence(tmp_path)
+    second = json.loads((tmp_path / "SHA256SUMS.json").read_text(encoding="utf-8"))
+    second_hash = next(row["sha256"] for row in second["artifacts"] if row["path"] == "trial-summary.json")
+
+    assert first_hash != second_hash

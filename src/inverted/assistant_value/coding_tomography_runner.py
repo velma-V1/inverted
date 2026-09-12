@@ -451,6 +451,11 @@ def _hash_packet(root: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def finalize_trial_evidence(root: str | Path) -> list[dict[str, Any]]:
+    """Refresh the trial evidence manifest after campaign-level metadata is written."""
+    return _hash_packet(Path(root))
+
+
 def run_subject_trial(
     *,
     task: dict[str, Any],
