@@ -1,0 +1,123 @@
+coding_tomography:
+  # Hard physical-agent-call ceiling. Static work schedules 154 sessions and
+  # reserves up to 6 adaptive exact-failure replays. Unused replay slots do not
+  # launch filler calls.
+  max_sessions: 160
+
+  # Additive research instrumentation. These settings do not change the task
+  # bank, scoring, causal interventions, or 160-session subject-call ceiling.
+  # The observer runs only after subject work so it cannot steer or contaminate
+  # the primary agent trajectory.
+  shadow_observer:
+    enabled: true
+    mode: post_campaign
+    provider: ollama
+    model: gpt-oss:20b
+    base_url: http://127.0.0.1:11434
+    timeout_s: 180
+    max_events: 180
+    temperature: 0
+    escalation_confidence_threshold: 0.65
+
+  # Two untouched native observations per subject/task establish stability.
+  native_repeats: 2
+  intervention_repeats: 1
+  include_common_interventions: true
+
+  # Common factors are sampled on six representative families instead of every
+  # task, preserving calls for mechanism-specific probes.
+  common_intervention_task_ids:
+    - PU01-false-green
+    - PUC01-false-green-generated-package
+    - PUC03-circular-evidence-split-brain
+    - PUC05-active-path-generated-generalization
+    - PUC06-parallel-opportunity
+    - PUC08-transient-retry
+
+  # Logging-only Claude lifecycle hooks on the two cases where richer lifecycle
+  # evidence is most valuable. These sessions are excluded from native
+  # performance comparisons.
+  observability_repeats: 1
+  observability_subjects: [claude_code]
+  observability_task_ids:
+    - PUC06-parallel-opportunity
+    - PUC12-context-pressure-authority
+
+  # Matched phase-two tests: exact same post-phase-one repository state, then
+  # fresh session versus resumed session.
+  resume_task_ids:
+    - PUC10-unfinished-work
+    - PUC12-context-pressure-authority
+
+  # Native runs on this task are the no-service baseline. One treatment per
+  # subject exposes a deterministic local stdio MCP reference service.
+  mcp_task_ids:
+    - PUC13-mcp-reference-escalation
+
+  # After scheduled work, retry up to six failed untouched native trials from
+  # their exact original initial state using only prior observable failure
+  # evidence. Hidden-oracle contents are never put into replay prompts.
+  replay_reserve_slots: 6
+
+  timeout_s: 1800
+
+  # 20 information-dense executable tasks. Three older simple fixtures were
+  # removed from the default allocation because their mechanisms are covered
+  # more strongly by compound/pathology cases.
+  task_ids:
+    - PU01-false-green
+    - PU09-stale-test
+    - PU27-negative-space
+    - PU29-underengineering
+    - PU31-generalization
+    - PU37-misattribution
+    - PU39-evidence-composition
+    - PUC01-false-green-generated-package
+    - PUC02-shared-invariant-migration
+    - PUC03-circular-evidence-split-brain
+    - PUC04-correctly-unsolvable
+    - PUC05-active-path-generated-generalization
+    - PUC06-parallel-opportunity
+    - PUC07-parallel-hazard
+    - PUC08-transient-retry
+    - PUC09-false-tool-success
+    - PUC10-unfinished-work
+    - PUC11-least-privilege-tool-choice
+    - PUC12-context-pressure-authority
+    - PUC13-mcp-reference-escalation
+
+  subjects:
+    - name: claude_code
+      adapter: claude_code
+      quota_provider: claude_code
+      executable: claude
+      extra_args: []
+      harness: claude_code
+      model_backend: native_claude_subscription
+      provider_mode: subscription
+      compute_scope: remote
+      quota_limited: true
+      gpu_sampling: false
+      # For routed/local harness experiments, set quota_limited=false,
+      # compute_scope=local, model_backend=<local model>, and optionally:
+      # environment_overrides:
+      #   ANTHROPIC_BASE_URL: http://model-gateway:8000
+      # When Ollama runs on the same host, local conditions may also set:
+      # resource_process_names: [ollama.exe, ollama]
+      gateway_event_files: []
+
+    - name: codex
+      adapter: codex
+      quota_provider: codex
+      executable: codex
+      extra_args: []
+      harness: codex
+      model_backend: native_openai_subscription
+      provider_mode: subscription
+      compute_scope: remote
+      quota_limited: true
+      gpu_sampling: false
+      # Routed/local model-provider args may be supplied through extra_args;
+      # gateway_event_files can preserve the exact request/response translation.
+      # Same-host Ollama conditions may set resource_process_names too.
+      gateway_event_files: []

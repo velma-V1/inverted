@@ -1,0 +1,96 @@
+name: coding-tomography-validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  instrument-validation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[test]"
+
+      - name: Run full repository test suite
+        run: python -m pytest -q
+
+      - name: Dry-run coding-system tomography without Claude/Codex usage
+        run: >-
+          python -m inverted.assistant_value.coding_tomography_cli
+          --config configs/coding-system-tomography.yaml
+          --output-dir coding-tomography-ci
+          --run-id ci-tomography
+          --dry-run
+
+      - name: Verify dry-run scientific contracts
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path("coding-tomography-ci/coding-tomography/ci-tomography")
+          plan = json.loads((root / "campaign-plan.json").read_text(encoding="utf-8"))
+          dry = json.loads((root / "dry-run.json").read_text(encoding="utf-8"))
+          mechanisms = json.loads((root / "mechanism-registry.json").read_text(encoding="utf-8"))
+          pathologies = json.loads((root / "pathology-registry.json").read_text(encoding="utf-8"))
+          versions = json.loads((root / "subject-versions.json").read_text(encoding="utf-8"))
+          research = json.loads((root / "research-contract.json").read_text(encoding="utf-8"))
+
+          assert dry["dry_run"] is True
+          assert plan["task_count"] == 20
+          assert plan["scheduled_sessions"] == 154
+          assert plan["replay_reserve_slots"] == 6
+          assert plan["planned_sessions"] == 160
+          assert plan["planned_sessions"] == plan["max_sessions"]
+          assert len(mechanisms["mechanisms"]) == 40
+          assert len(pathologies["pathologies"]) == 40
+          assert {row["name"] for row in versions} == {"claude_code", "codex"}
+          assert research["primary_test_changed"] is False
+          assert research["subject_schedule_changed"] is False
+          assert research["scoring_changed"] is False
+          assert research["shadow_observer"]["authoritative"] is False
+          assert research["shadow_observer"]["may_change_primary_score"] is False
+          assert "COMPUTE_COST" in research["additive_layers"]
+          assert "PROVIDER_QUOTA_TERMINATION" in research["additive_layers"]
+
+          bank = json.loads(
+              (root / "_sealed_task_bank" / "task-bank.json").read_text(encoding="utf-8")
+          )
+          assert bank["task_count"] == 23
+          bank_ids = {row["task_id"] for row in bank["tasks"]}
+          assert len(bank_ids) == 23
+          assert set(plan["task_ids"]).issubset(bank_ids)
+
+          entries = plan["entries"]
+          native = [row for row in entries if row["kind"] == "NATIVE_OBSERVATION"]
+          causal = [row for row in entries if row["kind"] == "CAUSAL_INTERVENTION"]
+          observed = [row for row in entries if row["kind"] == "OBSERVABILITY_AUGMENTED"]
+          resume_fresh = [row for row in entries if row["kind"] == "RESUME_FRESH_CONTROL"]
+          resume_continue = [row for row in entries if row["kind"] == "RESUME_CONTINUE"]
+          mcp = [row for row in entries if row["kind"] == "MCP_TREATMENT"]
+
+          assert len(native) == 80
+          assert len(causal) == 62
+          assert len(observed) == 2
+          assert len(resume_fresh) == 4
+          assert len(resume_continue) == 4
+          assert len(mcp) == 2
+          assert all(row["intervention"] is None for row in native)
+          assert all(isinstance(row["intervention"], dict) for row in causal)
+          assert {row["task_id"] for row in mcp} == {"PUC13-mcp-reference-escalation"}
+          assert set(plan["resume_task_ids"]) == {
+              "PUC10-unfinished-work",
+              "PUC12-context-pressure-authority",
+          }
+          assert set(plan["mcp_task_ids"]) == {"PUC13-mcp-reference-escalation"}
+
+      - name: Upload tomography dry-run evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: coding-tomography-dry-run
+          path: coding-tomography-ci/coding-tomography/ci-tomography
+          if-no-files-found: error
