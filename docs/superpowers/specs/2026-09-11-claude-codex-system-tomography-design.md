@@ -835,6 +835,13 @@ same-model/different-harness and same-harness/different-model experiments withou
 conflating the two effects. Native Claude Code and native Codex remain distinct
 from routed local-model conditions.
 
+Experimental condition IDs are separate from CLI protocol adapters. For example,
+`claude_code_native` and `claude_code_gptoss` may both use the
+`claude_code` adapter while retaining different model-backend, compute-scope,
+quota, and gateway provenance. This prevents trial-key collisions and makes
+model x harness factorial runs directly representable without changing the
+primary native configuration.
+
 ### Passive exposure boundary
 
 The trial preserves native JSON events, explicitly exposed reasoning summaries,

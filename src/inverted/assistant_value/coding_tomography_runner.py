@@ -482,9 +482,12 @@ def run_subject_trial(
     _write_json(root / "workspace-before.json", pre_manifest)
     _write_json(root / "git-before.json", pre_git)
 
+    subject_adapter = str(
+        subject.get("adapter") or subject.get("harness") or subject["name"]
+    )
     if resume_session_id:
         command = resume_command_for_subject(
-            str(subject["name"]),
+            subject_adapter,
             session_id=str(resume_session_id),
             prompt=str(task["prompt"]),
             cwd=workspace_path,
@@ -493,7 +496,7 @@ def run_subject_trial(
         )
     else:
         command = command_for_subject(
-            str(subject["name"]),
+            subject_adapter,
             prompt=str(task["prompt"]),
             cwd=workspace_path,
             executable=subject.get("executable"),

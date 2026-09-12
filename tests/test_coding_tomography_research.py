@@ -171,3 +171,28 @@ def test_real_provider_quota_wording_is_recognized():
     )
     assert claude["status"] == "PROVIDER_QUOTA_EXHAUSTED"
     assert codex["status"] == "PROVIDER_QUOTA_EXHAUSTED"
+
+
+def test_condition_id_is_independent_from_harness_adapter_and_quota_provider():
+    routed = {
+        "name": "claude_code_gptoss",
+        "adapter": "claude_code",
+        "harness": "claude_code",
+        "model_backend": "gpt-oss:20b",
+        "provider_mode": "local_gateway",
+        "compute_scope": "local",
+        "quota_limited": False,
+        "quota_provider": "claude_code",
+    }
+    identity = model_harness_identity(routed)
+    quota = classify_provider_quota_exhaustion(
+        routed,
+        stdout="You've hit your session limit · resets 1:30pm",
+        stderr="",
+    )
+    assert identity["subject"] == "claude_code_gptoss"
+    assert identity["adapter"] == "claude_code"
+    assert identity["harness"] == "claude_code"
+    assert identity["model_backend"] == "gpt-oss:20b"
+    assert quota["status"] == "NOT_QUOTA_LIMITED"
+    assert quota["quota_provider"] == "claude_code"

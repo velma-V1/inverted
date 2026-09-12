@@ -87,6 +87,8 @@ coding_tomography:
 
   subjects:
     - name: claude_code
+      adapter: claude_code
+      quota_provider: claude_code
       executable: claude
       extra_args: []
       harness: claude_code
@@ -102,6 +104,8 @@ coding_tomography:
       gateway_event_files: []
 
     - name: codex
+      adapter: codex
+      quota_provider: codex
       executable: codex
       extra_args: []
       harness: codex

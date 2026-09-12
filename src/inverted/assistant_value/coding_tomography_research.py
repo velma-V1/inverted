@@ -35,13 +35,15 @@ _QUOTA_PATTERNS: dict[str, tuple[str, ...]] = {
 
 def model_harness_identity(subject: dict[str, Any]) -> dict[str, Any]:
     name = str(subject.get("name") or "unknown")
+    adapter = str(subject.get("adapter") or subject.get("harness") or name)
     return {
         "subject": name,
-        "harness": str(subject.get("harness") or name),
+        "adapter": adapter,
+        "harness": str(subject.get("harness") or adapter),
         "model_backend": str(subject.get("model_backend") or "native_unspecified"),
         "provider_mode": str(subject.get("provider_mode") or "native"),
         "compute_scope": str(subject.get("compute_scope") or "remote"),
-        "quota_limited": bool(subject.get("quota_limited", name in {"claude_code", "codex"})),
+        "quota_limited": bool(subject.get("quota_limited", adapter in {"claude_code", "codex"})),
         "gateway": str(subject.get("gateway") or "NONE"),
     }
 
@@ -73,10 +75,17 @@ def classify_provider_quota_exhaustion(
     if isinstance(subject, dict):
         identity = model_harness_identity(subject)
         name = str(identity["subject"])
+        provider_key = str(
+            subject.get("quota_provider")
+            or subject.get("adapter")
+            or identity.get("harness")
+            or name
+        )
         quota_limited = bool(identity["quota_limited"])
         extra_patterns = tuple(str(x) for x in subject.get("quota_patterns") or ())
     else:
         name = str(subject)
+        provider_key = name
         quota_limited = name in {"claude_code", "codex"}
         extra_patterns = ()
     if not quota_limited:
@@ -84,6 +93,7 @@ def classify_provider_quota_exhaustion(
             "schema_version": 1,
             "status": "NOT_QUOTA_LIMITED",
             "subject": name,
+            "quota_provider": provider_key,
             "matched_pattern": None,
             "evidence_sha256": None,
         }
@@ -93,7 +103,7 @@ def classify_provider_quota_exhaustion(
         for row in raw_events
     )
     haystack = (str(stderr) + "\n" + str(stdout) + "\n" + event_text)[-500_000:]
-    patterns = tuple(_QUOTA_PATTERNS.get(name, ())) + extra_patterns
+    patterns = tuple(_QUOTA_PATTERNS.get(provider_key, ())) + extra_patterns
     matched = None
     for pattern in patterns:
         if re.search(pattern, haystack, re.IGNORECASE | re.DOTALL):
@@ -104,6 +114,7 @@ def classify_provider_quota_exhaustion(
         "schema_version": 1,
         "status": "PROVIDER_QUOTA_EXHAUSTED" if matched else "AVAILABLE_OR_OTHER_ERROR",
         "subject": name,
+        "quota_provider": provider_key,
         "matched_pattern": matched,
         "evidence_sha256": digest,
         "generic_rate_limit_alone_is_terminal": False,

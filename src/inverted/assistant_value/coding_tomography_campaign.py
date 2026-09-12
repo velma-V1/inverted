@@ -101,9 +101,10 @@ def _git_seal(root: Path, message: str) -> None:
 
 def _subject_version(subject: dict[str, Any]) -> dict[str, Any]:
     name = str(subject["name"])
+    adapter = str(subject.get("adapter") or subject.get("harness") or name)
     executable = str(
         subject.get("executable")
-        or ("claude" if name == "claude_code" else "codex")
+        or ("claude" if adapter == "claude_code" else "codex")
     )
 
     def probe(*args: str) -> dict[str, Any]:
@@ -135,6 +136,7 @@ def _subject_version(subject: dict[str, Any]) -> dict[str, Any]:
     version = probe("--version")
     row: dict[str, Any] = {
         "name":name,
+        "adapter":adapter,
         "executable":executable,
         "returncode":version.get("returncode"),
         "stdout":str(version.get("stdout") or "").strip(),
@@ -149,7 +151,7 @@ def _subject_version(subject: dict[str, Any]) -> dict[str, Any]:
         return row
 
     missing: list[str] = []
-    if name == "claude_code":
+    if adapter == "claude_code":
         help_result = probe("--help")
         text = (
             str(help_result.get("stdout") or "")
@@ -169,7 +171,7 @@ def _subject_version(subject: dict[str, Any]) -> dict[str, Any]:
         missing.extend(key for key, ok in capabilities.items() if not ok)
         row["capabilities"] = capabilities
         row["help_returncode"] = help_result.get("returncode")
-    elif name == "codex":
+    elif adapter == "codex":
         exec_help = probe("exec", "--help")
         resume_help = probe("exec", "resume", "--help")
         text = (
@@ -1871,7 +1873,11 @@ def run_coding_tomography_campaign(
             mcp_probe = prepare_mcp_probe(
                 workspace=workspace,
                 evidence_root=evidence,
-                subject=str(entry["subject"]["name"]),
+                subject=str(
+                    entry["subject"].get("adapter")
+                    or entry["subject"].get("harness")
+                    or entry["subject"]["name"]
+                ),
             )
             trial_subject["extra_args"] = (
                 list(trial_subject.get("extra_args") or [])
@@ -1886,7 +1892,11 @@ def run_coding_tomography_campaign(
             applied = apply_intervention(
                 workspace,
                 intervention,
-                subject=str(entry["subject"]["name"]),
+                subject=str(
+                    entry["subject"].get("adapter")
+                    or entry["subject"].get("harness")
+                    or entry["subject"]["name"]
+                ),
             )
             _git_seal(workspace,f"tomography intervention baseline {intervention['id']}")
             _write_json(evidence / "intervention.json",applied)
@@ -1894,7 +1904,11 @@ def run_coding_tomography_campaign(
         observer_record = None
         if (
             entry.get("kind") == "OBSERVABILITY_AUGMENTED"
-            and str(entry["subject"]["name"]) == "claude_code"
+            and str(
+                entry["subject"].get("adapter")
+                or entry["subject"].get("harness")
+                or entry["subject"]["name"]
+            ) == "claude_code"
         ):
             observer_record = prepare_claude_hook_observer(
                 workspace=workspace,
@@ -1914,7 +1928,11 @@ def run_coding_tomography_campaign(
             rollout_path_template=entry["subject"].get("rollout_path_template"),
             auto_codex_rollout_lookup=(
                 entry.get("kind") == "OBSERVABILITY_AUGMENTED"
-                and str(entry["subject"]["name"]) == "codex"
+                and str(
+                    entry["subject"].get("adapter")
+                    or entry["subject"].get("harness")
+                    or entry["subject"]["name"]
+                ) == "codex"
             ),
             resume_session_id=resume_session_id,
             gateway_event_files=trial_subject.get("gateway_event_files") or (),
