@@ -29,9 +29,9 @@ _SENSITIVE_FIELD_FRAGMENTS = (
     "set_cookie",
 )
 _SECRET_TEXT_PATTERNS = (
-    re.compile(r"(?i)\\bBearer\\s+[A-Za-z0-9._~+\\/=-]{12,}"),
-    re.compile(r"(?i)\\bBasic\\s+[A-Za-z0-9+\\/=]{12,}"),
-    re.compile(r"(?i)\\b(?:sk-ant|sk-proj|sk|ghp|github_pat)[-_][A-Za-z0-9_-]{10,}"),
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}"),
+    re.compile(r"(?i)\bBasic\s+[A-Za-z0-9+/=]{12,}"),
+    re.compile(r"(?i)\b(?:sk-ant|sk-proj|sk|ghp|github_pat)[-_][A-Za-z0-9_-]{10,}"),
 )
 
 
