@@ -4,6 +4,20 @@ coding_tomography:
   # launch filler calls.
   max_sessions: 160
 
+  # Additive research instrumentation. These settings do not change the task
+  # bank, scoring, causal interventions, or 160-session subject-call ceiling.
+  # The observer runs only after subject work so it cannot steer or contaminate
+  # the primary agent trajectory.
+  shadow_observer:
+    enabled: true
+    mode: post_campaign
+    provider: ollama
+    model: gpt-oss:20b
+    base_url: http://127.0.0.1:11434
+    timeout_s: 180
+    max_events: 180
+    temperature: 0
+
   # Two untouched native observations per subject/task establish stability.
   native_repeats: 2
   intervention_repeats: 1
@@ -75,7 +89,27 @@ coding_tomography:
     - name: claude_code
       executable: claude
       extra_args: []
+      harness: claude_code
+      model_backend: native_claude_subscription
+      provider_mode: subscription
+      compute_scope: remote
+      quota_limited: true
+      gpu_sampling: false
+      # For routed/local harness experiments, set quota_limited=false,
+      # compute_scope=local, model_backend=<local model>, and optionally:
+      # environment_overrides:
+      #   ANTHROPIC_BASE_URL: http://model-gateway:8000
+      gateway_event_files: []
 
     - name: codex
       executable: codex
       extra_args: []
+      harness: codex
+      model_backend: native_openai_subscription
+      provider_mode: subscription
+      compute_scope: remote
+      quota_limited: true
+      gpu_sampling: false
+      # Routed/local model-provider args may be supplied through extra_args;
+      # gateway_event_files can preserve the exact request/response translation.
+      gateway_event_files: []

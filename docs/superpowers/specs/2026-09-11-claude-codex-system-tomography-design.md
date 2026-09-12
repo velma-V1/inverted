@@ -819,3 +819,89 @@ and prioritize the highest-value observable Claude Code/Codex mechanisms in
 Inverted, while clearly identifying what remains unknown.
 
 It does **not** claim byte-for-byte or proprietary-internal equivalence.
+
+
+## Additive exposure, model, quota, and compute extension — 2026-09-12
+
+This extension does not change the frozen task bank, scoring oracles, causal
+interventions, native repetition count, or the 160-session physical subject-call
+ceiling. It adds measurement around the existing experiment.
+
+### Model and harness provenance
+
+Every trial records the harness, model backend, provider mode, compute scope,
+quota policy, and optional gateway evidence separately. This permits later
+same-model/different-harness and same-harness/different-model experiments without
+conflating the two effects. Native Claude Code and native Codex remain distinct
+from routed local-model conditions.
+
+### Passive exposure boundary
+
+The trial preserves native JSON events, explicitly exposed reasoning summaries,
+user-owned rollout/hook evidence, repository instruction surfaces, gateway logs
+when supplied, environment shape without secret values, git/filesystem state,
+and process/resource telemetry. Hidden chain-of-thought, secret system prompts,
+credentials, and private provider implementation remain outside the claim
+boundary.
+
+### Shadow observer
+
+A local shadow observer may run after primary subject work is complete. The
+default observer is `gpt-oss:20b` through Ollama. It receives only observable
+trajectory evidence, model-visible repository instructions, workspace deltas,
+and the observable final response. Hidden-oracle material is explicitly excluded.
+
+Shadow output is labeled `SYNTHETIC_INFERENCE`, is non-authoritative, cannot
+change the primary score, and has separate compute accounting. Failure or absence
+of the observer never invalidates a subject trial.
+
+### Provider quota terminal condition
+
+Subscription usage exhaustion is not a model failure, harness failure, or oracle
+failure. A quota-terminal trial is unscored. Future trials for that quota-limited
+subject are deferred. The other provider continues until its own included usage
+is exhausted or its scheduled work completes.
+
+When all quota-limited native providers are exhausted, the campaign finalizes
+available evidence and exits successfully with:
+
+`COMPLETE — PROVIDER USAGE EXHAUSTED`
+
+Scientific coverage remains `PARTIAL` when quota prevented planned evidence
+from being collected. The unexecuted scheduled queue is preserved separately.
+
+Generic transient HTTP/rate-limit errors are not sufficient by themselves to
+declare subscription exhaustion.
+
+### Compute-cost contract
+
+Each subject trial records:
+- wall-clock subject time;
+- sampled subject-process-tree CPU time, RSS, and process I/O;
+- optional host-global NVIDIA VRAM/utilization/power/temperature sampling for
+  isolated local-model trials;
+- integrated best-effort GPU watt-hours when local GPU sampling is enabled;
+- exposed input/output/cache token usage where the provider emits it;
+- workspace mutation count;
+- model/harness/backend identity.
+
+For native Anthropic/OpenAI cloud trials, provider-side GPU/RAM/energy/internal
+inference compute is explicitly `UNOBSERVABLE` rather than estimated.
+
+Shadow-observer compute is stored separately and never added to subject
+performance metrics.
+
+### Routed/local backend support
+
+Subject configuration may provide non-secret environment routing values,
+provider-specific extra CLI arguments, and gateway event-log paths. This permits
+Claude Code or Codex harness experiments with a local compatibility gateway while
+preserving the exact condition label. A routed GPT-OSS run is never labeled as
+native Claude or native OpenAI.
+
+### Container/MCP boundary
+
+Execution-boundary metadata records whether the campaign is running inside a
+container and which MCP/container environment-variable names are present, without
+copying secret values. Docker/MCP isolation is therefore observable evidence,
+not an implicit assumption.

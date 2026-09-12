@@ -31,6 +31,15 @@ from .coding_tomography_runner import (
     run_subject_trial,
     sha256_file,
 )
+from .coding_tomography_research import (
+    aggregate_compute_cost,
+    all_quota_limited_exhausted,
+    build_exposure_index,
+    campaign_completion_record,
+    quota_limited_subject_names,
+    research_contract,
+    run_shadow_observer,
+)
 from .coding_tomography_tasks import build_builtin_task_bank
 
 
@@ -684,8 +693,12 @@ def _run_replay_reserve(
     subject_map = {str(row["name"]):row for row in subjects}
     replay_rows: list[dict[str, Any]] = []
     effects: dict[str, Any] = {}
+    quota_terminal_rows: list[dict[str, Any]] = []
+    quota_exhausted_subjects: set[str] = set()
 
     for offset, source in enumerate(selected, start=1):
+        if str(source.get("subject")) in quota_exhausted_subjects:
+            continue
         task = task_map[str(source["task_id"])]
         subject = deepcopy(subject_map[str(source["subject"])])
         key = (
@@ -726,6 +739,10 @@ def _run_replay_reserve(
             "source_trial_key":source.get("trial_key"),
         })
         _write_json(evidence / "trial-summary.json", summary)
+        if summary.get("trial_status") == "PROVIDER_QUOTA_EXHAUSTED":
+            quota_exhausted_subjects.add(str(source.get("subject")))
+            quota_terminal_rows.append(summary)
+            continue
         replay_rows.append(summary)
 
         source_before = _read_json(Path(source["evidence_root"]) / "workspace-before.json")
@@ -781,6 +798,8 @@ def _run_replay_reserve(
         "results":effects,
         "selection_rule":"failed native trials; prioritize P10 and visible-green false-success; distinct tasks first",
         "hidden_oracle_content_in_replay_prompt":False,
+        "quota_exhausted_subjects":sorted(quota_exhausted_subjects),
+        "quota_terminal_trials":quota_terminal_rows,
     }
 
 
@@ -1733,6 +1752,7 @@ def run_coding_tomography_campaign(
     _write_json(run_root / "campaign-plan.json",plan)
     _write_json(run_root / "mechanism-registry.json",mechanism_registry())
     _write_json(run_root / "pathology-registry.json",pathology_registry())
+    _write_json(run_root / "research-contract.json", research_contract(config))
 
     versions = [_subject_version(subject) for subject in plan["subjects"]]
     _write_json(run_root / "subject-versions.json",versions)
@@ -1766,8 +1786,24 @@ def run_coding_tomography_campaign(
     root_config = dict(config.get("coding_tomography") or {})
     timeout_s = float(root_config.get("timeout_s",1800))
     summaries: list[dict[str, Any]] = []
+    quota_trials: list[dict[str, Any]] = []
+    deferred_entries: list[dict[str, Any]] = []
+    quota_subjects = quota_limited_subject_names(plan["subjects"])
+    provider_status = {
+        str(subject["name"]): (
+            "AVAILABLE" if str(subject["name"]) in quota_subjects else "NOT_QUOTA_LIMITED"
+        )
+        for subject in plan["subjects"]
+    }
+    terminated_for_all_provider_quota = False
 
-    for ordinal, entry in enumerate(plan["entries"],start=1):
+    for entry_index, entry in enumerate(plan["entries"]):
+        ordinal = entry_index + 1
+        subject_name = str(entry["subject"]["name"])
+        if provider_status.get(subject_name) == "QUOTA_EXHAUSTED":
+            deferred_entries.append(entry)
+            continue
+
         task = task_map[entry["task_id"]]
         key = _trial_key(entry)
         workspace = run_root / "workspaces" / key
@@ -1777,6 +1813,7 @@ def run_coding_tomography_campaign(
         trial_task = task
         trial_subject = deepcopy(entry["subject"])
         mcp_probe = None
+        source = None
 
         if kind in {"RESUME_FRESH_CONTROL", "RESUME_CONTINUE"}:
             source = next(
@@ -1790,7 +1827,12 @@ def run_coding_tomography_campaign(
                 None,
             )
             if source is None:
-                raise RuntimeError(f"resume source trial missing for {entry['subject']['name']} {task['task_id']}")
+                raise RuntimeError(
+                    "resume source trial missing for "
+                    + str(entry["subject"]["name"])
+                    + " "
+                    + str(task["task_id"])
+                )
             source_workspace = run_root / "workspaces" / source["trial_key"]
             if kind == "RESUME_FRESH_CONTROL":
                 materialize_workspace(source_workspace, workspace)
@@ -1798,7 +1840,7 @@ def run_coding_tomography_campaign(
                 workspace = source_workspace
                 resume_session_id = str((source.get("metrics") or {}).get("session_id") or "")
                 if not resume_session_id:
-                    raise RuntimeError(f"source session id missing for resume trial {source['trial_key']}")
+                    raise RuntimeError("source session id missing for resume trial " + str(source["trial_key"]))
 
             resume_spec = dict(task.get("resume_spec") or {})
             mutation = {
@@ -1873,8 +1915,9 @@ def run_coding_tomography_campaign(
                 and str(entry["subject"]["name"]) == "codex"
             ),
             resume_session_id=resume_session_id,
+            gateway_event_files=trial_subject.get("gateway_event_files") or (),
         )
-        if mcp_probe is not None:
+        if mcp_probe is not None and summary.get("trial_status") != "PROVIDER_QUOTA_EXHAUSTED":
             readiness = mcp_server_readiness(mcp_probe["event_log_path"])
             mcp_result = {
                 **readiness,
@@ -1894,27 +1937,185 @@ def run_coding_tomography_campaign(
             "intervention_id":intervention.get("id") if isinstance(intervention,dict) else None,
             "intervention_hypothesis":intervention.get("hypothesis") if isinstance(intervention,dict) else None,
             "observer_mode": observer_record.get("mode") if isinstance(observer_record, dict) else None,
-            "source_trial_key": source.get("trial_key") if kind in {"RESUME_FRESH_CONTROL","RESUME_CONTINUE"} else None,
+            "source_trial_key": source.get("trial_key") if isinstance(source, dict) else None,
         })
         _write_json(evidence / "trial-summary.json",summary)
+
+        if summary.get("trial_status") == "PROVIDER_QUOTA_EXHAUSTED":
+            provider_status[subject_name] = "QUOTA_EXHAUSTED"
+            quota_trials.append(summary)
+            deferred_entries.append(entry)
+            _write_json(run_root / "provider-usage-status.json", {
+                "schema_version": 1,
+                "provider_status": provider_status,
+                "quota_terminal_trials": [
+                    {
+                        "trial_key": row.get("trial_key"),
+                        "task_id": row.get("task_id"),
+                        "subject": row.get("subject"),
+                        "evidence_root": row.get("evidence_root"),
+                    }
+                    for row in quota_trials
+                ],
+            })
+            if all_quota_limited_exhausted(provider_status, plan["subjects"]):
+                deferred_entries.extend(plan["entries"][entry_index + 1:])
+                terminated_for_all_provider_quota = True
+                break
+            continue
+
         summaries.append(summary)
         _write_json(run_root / "progress.json",{
-            "completed":ordinal,
-            "total":plan["planned_sessions"],
+            "completed_scored":len(summaries),
+            "attempted_through_ordinal":ordinal,
+            "total_planned_subject_sessions":plan["planned_sessions"],
             "last_trial_key":key,
+            "provider_status":provider_status,
         })
 
-    replay_rows, replay_effectiveness = _run_replay_reserve(
-        summaries=summaries,
-        task_map=task_map,
-        subjects=plan["subjects"],
-        run_root=run_root,
-        timeout_s=timeout_s,
-        slots=int(plan.get("replay_reserve_slots", 0)),
-        ordinal_start=len(summaries),
-        planned_total=int(plan["planned_sessions"]),
+    def safe_queue_entry(entry: dict[str, Any]) -> dict[str, Any]:
+        intervention = entry.get("intervention")
+        return {
+            "trial_key": _trial_key(entry),
+            "kind": entry.get("kind"),
+            "task_id": entry.get("task_id"),
+            "repeat": entry.get("repeat"),
+            "subject": (entry.get("subject") or {}).get("name"),
+            "intervention_id": (
+                intervention.get("id") if isinstance(intervention, dict) else None
+            ),
+        }
+
+    deduped_remaining = []
+    seen_remaining: set[str] = set()
+    for entry in deferred_entries:
+        row = safe_queue_entry(entry)
+        if row["trial_key"] in seen_remaining:
+            continue
+        seen_remaining.add(row["trial_key"])
+        deduped_remaining.append(row)
+    _write_json(run_root / "remaining-scheduled-queue.json", {
+        "schema_version": 1,
+        "entries": deduped_remaining,
+        "count": len(deduped_remaining),
+        "secret_values_recorded": False,
+    })
+    _write_json(run_root / "remaining-native-queue.json", {
+        "schema_version": 1,
+        "entries": deduped_remaining,
+        "count": len(deduped_remaining),
+        "compatibility_alias": "remaining-scheduled-queue.json",
+    })
+    _write_json(run_root / "quota-terminal-trials.json", {
+        "schema_version": 1,
+        "trials": quota_trials,
+    })
+    _write_json(run_root / "provider-usage-status.json", {
+        "schema_version": 1,
+        "provider_status": provider_status,
+        "all_quota_limited_exhausted": all_quota_limited_exhausted(
+            provider_status, plan["subjects"]
+        ),
+        "quota_terminal_trial_count": len(quota_trials),
+    })
+
+    if terminated_for_all_provider_quota:
+        replay_rows = []
+        replay_effectiveness = {
+            "schema_version": 1,
+            "reserved_slots": int(plan.get("replay_reserve_slots", 0)),
+            "used_slots": 0,
+            "unused_slots": int(plan.get("replay_reserve_slots", 0)),
+            "results": {},
+            "status": "SKIPPED_PROVIDER_USAGE_EXHAUSTED",
+            "hidden_oracle_content_in_replay_prompt": False,
+        }
+    else:
+        active_subjects = [
+            subject for subject in plan["subjects"]
+            if provider_status.get(str(subject["name"])) != "QUOTA_EXHAUSTED"
+        ]
+        active_names = {str(subject["name"]) for subject in active_subjects}
+        replay_source_summaries = [
+            row for row in summaries
+            if str(row.get("subject")) in active_names
+        ]
+        replay_rows, replay_effectiveness = _run_replay_reserve(
+            summaries=replay_source_summaries,
+            task_map=task_map,
+            subjects=active_subjects,
+            run_root=run_root,
+            timeout_s=timeout_s,
+            slots=int(plan.get("replay_reserve_slots", 0)),
+            ordinal_start=len(summaries),
+            planned_total=int(plan["planned_sessions"]),
+        )
+        summaries.extend(replay_rows)
+        for exhausted_subject in replay_effectiveness.get("quota_exhausted_subjects") or []:
+            provider_status[str(exhausted_subject)] = "QUOTA_EXHAUSTED"
+        for quota_row in replay_effectiveness.get("quota_terminal_trials") or []:
+            quota_trials.append(quota_row)
+
+    _write_json(run_root / "trial-index.json",{"schema_version":1,"trials":summaries})
+    _write_json(run_root / "quota-terminal-trials.json", {
+        "schema_version": 1,
+        "trials": quota_trials,
+    })
+    _write_json(run_root / "provider-usage-status.json", {
+        "schema_version": 1,
+        "provider_status": provider_status,
+        "all_quota_limited_exhausted": all_quota_limited_exhausted(
+            provider_status, plan["subjects"]
+        ),
+        "quota_terminal_trial_count": len(quota_trials),
+        "replay_quota_exhausted_subjects": (
+            replay_effectiveness.get("quota_exhausted_subjects") or []
+        ),
+    })
+
+    shadow_cfg = dict(root_config.get("shadow_observer") or {})
+    shadow_rows: list[dict[str, Any]] = []
+    if bool(shadow_cfg.get("enabled", False)):
+        subject_map = {str(row["name"]): row for row in plan["subjects"]}
+        shadow_root = run_root / "shadow-observer"
+        for summary in summaries:
+            subject = subject_map.get(str(summary.get("subject"))) or {
+                "name": summary.get("subject")
+            }
+            task = task_map.get(str(summary.get("task_id"))) or {}
+            shadow_rows.append(
+                run_shadow_observer(
+                    trial_root=summary["evidence_root"],
+                    output_root=shadow_root,
+                    trial_key=str(summary["trial_key"]),
+                    task_prompt=str(task.get("prompt") or ""),
+                    subject=subject,
+                    config=shadow_cfg,
+                )
+            )
+    _write_json(run_root / "shadow-observer-index.json", {
+        "schema_version": 1,
+        "mode": str(shadow_cfg.get("mode") or "post_campaign"),
+        "authoritative": False,
+        "may_change_primary_score": False,
+        "rows": shadow_rows,
+    })
+
+    compute_summary = aggregate_compute_cost(
+        summaries,
+        shadow_observer_rows=shadow_rows,
     )
-    summaries.extend(replay_rows)
+    _write_json(run_root / "compute-cost-summary.json", compute_summary)
+    _write_json(run_root / "model-harness-matrix.json", {
+        "schema_version": 1,
+        "groups": compute_summary.get("groups") or {},
+        "rule": (
+            "Compare same model across harnesses for harness effect and different models under the same "
+            "harness for model effect; model-harness interaction remains a separate effect."
+        ),
+    })
+    _write_json(run_root / "research-exposure-index.json", build_exposure_index(summaries))
+
 
     _write_json(run_root / "trial-index.json",{"schema_version":1,"trials":summaries})
     behavior = _behavior_atlas(summaries)
@@ -1994,13 +2195,34 @@ def run_coding_tomography_campaign(
     ]
     _write_json(run_root / "SHA256SUMS.json",{"artifacts":hashes})
 
+    completion = campaign_completion_record(
+        planned_sessions=int(plan["planned_sessions"]),
+        completed_scored_sessions=len(summaries),
+        provider_status=provider_status,
+        remaining_entries=deduped_remaining,
+        quota_terminal_trials=len(quota_trials),
+        all_quota_exhausted=all_quota_limited_exhausted(
+            provider_status, plan["subjects"]
+        ),
+    )
+    _write_json(run_root / "campaign-status.json", completion)
+
     result = {
-        "schema_version":1,
+        "schema_version":2,
         "run_id":run_id,
         "dry_run":False,
         "run_root":str(run_root),
+        "campaign_status":completion["campaign_status"],
+        "status_text":completion["status_text"],
+        "completion_reason":completion["completion_reason"],
+        "scientific_coverage":completion["scientific_coverage"],
         "planned_sessions":plan["planned_sessions"],
         "completed_sessions":len(summaries),
+        "quota_terminal_trials":len(quota_trials),
+        "remaining_scheduled_sessions":len(deduped_remaining),
+        "compute_cost_summary":str(run_root / "compute-cost-summary.json"),
+        "shadow_observer_index":str(run_root / "shadow-observer-index.json"),
+        "research_exposure_index":str(run_root / "research-exposure-index.json"),
         "native_behavior_atlas":str(run_root / "native-behavior-atlas.json"),
         "causal_intervention_results":str(run_root / "causal-intervention-results.json"),
         "clone_blueprint":str(run_root / "inverted-clone-blueprint.json"),

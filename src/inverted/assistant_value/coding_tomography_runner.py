@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import threading
 import time
 from typing import Any, Iterable
 
@@ -31,6 +32,14 @@ from .coding_tomography_observers import (
     load_rollout_jsonl,
     locate_codex_rollout_by_thread_id,
     resolve_rollout_path,
+)
+from .coding_tomography_research import (
+    build_compute_cost,
+    build_exposure_manifest,
+    capture_instruction_surfaces,
+    classify_provider_quota_exhaustion,
+    load_external_event_files,
+    model_harness_identity,
 )
 
 
@@ -90,45 +99,154 @@ def manifest_diff(before: dict[str, Any], after: dict[str, Any]) -> dict[str, An
     }
 
 
+def _nvidia_snapshot() -> dict[str, float] | None:
+    try:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=power.draw,memory.used,utilization.gpu,temperature.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=2,
+            shell=False,
+        )
+    except Exception:
+        return None
+    if completed.returncode != 0:
+        return None
+    rows = []
+    for raw in completed.stdout.splitlines():
+        values = [value.strip() for value in raw.split(",")]
+        if len(values) != 4:
+            continue
+        try:
+            rows.append(tuple(float(value) for value in values))
+        except ValueError:
+            continue
+    if not rows:
+        return None
+    return {
+        "power_w": sum(row[0] for row in rows),
+        "vram_mib": sum(row[1] for row in rows),
+        "utilization_percent": max(row[2] for row in rows),
+        "temperature_c": max(row[3] for row in rows),
+    }
+
+
+def _summarize_resource_samples(
+    samples: list[dict[str, Any]],
+    gpu_samples: list[dict[str, float]],
+) -> dict[str, Any]:
+    measured = [row for row in samples if row.get("rss_bytes") is not None]
+    result: dict[str, Any] = {
+        "measurement_status": "MEASURED" if measured else "PARTIAL_OR_UNAVAILABLE",
+        "sample_count": len(samples),
+        "cpu_seconds": max((float(row.get("cpu_seconds") or 0.0) for row in measured), default=None),
+        "peak_rss_bytes": max((int(row.get("rss_bytes") or 0) for row in measured), default=None),
+        "read_bytes": max((int(row.get("read_bytes") or 0) for row in measured), default=None),
+        "write_bytes": max((int(row.get("write_bytes") or 0) for row in measured), default=None),
+    }
+    if not gpu_samples:
+        result["gpu"] = {
+            "status": "NOT_SAMPLED",
+            "scope": "HOST_NVIDIA_GLOBAL",
+            "sample_count": 0,
+        }
+        return result
+    watt_hours = 0.0
+    for left, right in zip(gpu_samples, gpu_samples[1:]):
+        dt = max(0.0, float(right["t"]) - float(left["t"]))
+        watt_hours += ((float(left["power_w"]) + float(right["power_w"])) / 2.0) * dt / 3600.0
+    result["gpu"] = {
+        "status": "MEASURED_BEST_EFFORT",
+        "scope": "HOST_NVIDIA_GLOBAL",
+        "sample_count": len(gpu_samples),
+        "peak_vram_mib": max(float(row["vram_mib"]) for row in gpu_samples),
+        "peak_utilization_percent": max(float(row["utilization_percent"]) for row in gpu_samples),
+        "peak_power_w": max(float(row["power_w"]) for row in gpu_samples),
+        "peak_temperature_c": max(float(row["temperature_c"]) for row in gpu_samples),
+        "watt_hours": watt_hours,
+        "boundary": (
+            "Host-global GPU sampling is valid for isolated local-model trials; concurrent GPU workloads "
+            "must be treated as contamination."
+        ),
+    }
+    return result
+
+
 def _run_process(
     argv: Iterable[str],
     *,
     cwd: str | Path,
     timeout_s: float,
     env: dict[str, str] | None = None,
+    measure_resources: bool = False,
+    sample_gpu: bool = False,
+    sample_interval_s: float = 0.5,
 ) -> dict[str, Any]:
     started = time.monotonic()
+    if not measure_resources:
+        try:
+            completed = subprocess.run(
+                [str(x) for x in argv],
+                cwd=str(cwd),
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=float(timeout_s),
+                shell=False,
+            )
+            return {
+                "ok": completed.returncode == 0,
+                "returncode": completed.returncode,
+                "stdout": completed.stdout,
+                "stderr": completed.stderr,
+                "timeout": False,
+                "error": None,
+                "elapsed_s": time.monotonic() - started,
+                "resources": {"measurement_status": "DISABLED", "sample_count": 0},
+            }
+        except subprocess.TimeoutExpired as exc:
+            return {
+                "ok": False,
+                "returncode": None,
+                "stdout": exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or ""),
+                "stderr": exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or ""),
+                "timeout": True,
+                "error": "TIMEOUT",
+                "elapsed_s": time.monotonic() - started,
+                "resources": {"measurement_status": "DISABLED", "sample_count": 0},
+            }
+        except FileNotFoundError as exc:
+            return {
+                "ok": False,
+                "returncode": None,
+                "stdout": "",
+                "stderr": "",
+                "timeout": False,
+                "error": "EXECUTABLE_NOT_FOUND: " + str(exc),
+                "elapsed_s": time.monotonic() - started,
+                "resources": {"measurement_status": "DISABLED", "sample_count": 0},
+            }
+
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             [str(x) for x in argv],
             cwd=str(cwd),
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=float(timeout_s),
             shell=False,
         )
-        return {
-            "ok": completed.returncode == 0,
-            "returncode": completed.returncode,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
-            "timeout": False,
-            "error": None,
-            "elapsed_s": time.monotonic() - started,
-        }
-    except subprocess.TimeoutExpired as exc:
-        return {
-            "ok": False,
-            "returncode": None,
-            "stdout": exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or ""),
-            "stderr": exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or ""),
-            "timeout": True,
-            "error": "TIMEOUT",
-            "elapsed_s": time.monotonic() - started,
-        }
     except FileNotFoundError as exc:
         return {
             "ok": False,
@@ -136,9 +254,92 @@ def _run_process(
             "stdout": "",
             "stderr": "",
             "timeout": False,
-            "error": f"EXECUTABLE_NOT_FOUND: {exc}",
+            "error": "EXECUTABLE_NOT_FOUND: " + str(exc),
             "elapsed_s": time.monotonic() - started,
+            "resources": {"measurement_status": "UNAVAILABLE", "sample_count": 0},
         }
+
+    stop = threading.Event()
+    samples: list[dict[str, Any]] = []
+    gpu_samples: list[dict[str, float]] = []
+
+    def sample() -> None:
+        try:
+            import psutil
+            root_process = psutil.Process(process.pid)
+        except Exception:
+            root_process = None
+        last_gpu = -10.0
+        while not stop.wait(max(0.1, float(sample_interval_s))):
+            now = time.monotonic() - started
+            row: dict[str, Any] = {"t": now}
+            if root_process is not None:
+                try:
+                    family = [root_process, *root_process.children(recursive=True)]
+                    rss = 0
+                    cpu = 0.0
+                    read_bytes = 0
+                    write_bytes = 0
+                    for child in family:
+                        try:
+                            with child.oneshot():
+                                rss += int(child.memory_info().rss)
+                                times = child.cpu_times()
+                                cpu += float(times.user) + float(times.system)
+                                io = child.io_counters()
+                                read_bytes += int(getattr(io, "read_bytes", 0))
+                                write_bytes += int(getattr(io, "write_bytes", 0))
+                        except Exception:
+                            continue
+                    row.update({
+                        "rss_bytes": rss,
+                        "cpu_seconds": cpu,
+                        "read_bytes": read_bytes,
+                        "write_bytes": write_bytes,
+                    })
+                except Exception:
+                    pass
+            samples.append(row)
+            if sample_gpu and now - last_gpu >= 1.0:
+                gpu = _nvidia_snapshot()
+                last_gpu = now
+                if gpu is not None:
+                    gpu_samples.append({"t": now, **gpu})
+
+    thread = threading.Thread(target=sample, name="tomography-resource-sampler", daemon=True)
+    thread.start()
+    timed_out = False
+    try:
+        stdout, stderr = process.communicate(timeout=float(timeout_s))
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        try:
+            import psutil
+            parent = psutil.Process(process.pid)
+            for child in parent.children(recursive=True):
+                try:
+                    child.kill()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        process.kill()
+        stdout, stderr = process.communicate()
+    finally:
+        stop.set()
+        thread.join(timeout=3.0)
+
+    resources = _summarize_resource_samples(samples, gpu_samples)
+    return {
+        "ok": process.returncode == 0 and not timed_out,
+        "returncode": process.returncode,
+        "stdout": stdout or "",
+        "stderr": stderr or "",
+        "timeout": timed_out,
+        "error": "TIMEOUT" if timed_out else None,
+        "elapsed_s": time.monotonic() - started,
+        "resources": resources,
+    }
 
 
 def git_snapshot(root: str | Path) -> dict[str, Any]:
@@ -260,11 +461,16 @@ def run_subject_trial(
     observer_event_files: Iterable[str | Path] = (),
     rollout_path_template: str | None = None,
     auto_codex_rollout_lookup: bool = False,
+    resume_session_id: str | None = None,
+    gateway_event_files: Iterable[str | Path] = (),
 ) -> dict[str, Any]:
     """Run one clean coding-agent session and preserve all observable evidence."""
     root = Path(evidence_root)
     root.mkdir(parents=True, exist_ok=True)
     workspace_path = Path(workspace).resolve()
+
+    instruction_surfaces = capture_instruction_surfaces(workspace_path)
+    _write_json(root / "model-visible-instruction-surfaces.json", instruction_surfaces)
 
     pre_manifest = workspace_manifest(workspace_path)
     pre_git = git_snapshot(workspace_path)
@@ -294,8 +500,28 @@ def run_subject_trial(
     env = os.environ.copy()
     for key, value in command.environment_overrides.items():
         env[str(key)] = str(value)
+    runtime_overrides = dict(subject.get("environment_overrides") or {})
+    for key, value in runtime_overrides.items():
+        env[str(key)] = str(value)
+    _write_json(root / "subject-runtime-routing.json", {
+        "identity": model_harness_identity(subject),
+        "environment_override_names": sorted(str(key) for key in runtime_overrides),
+        "gateway_event_file_count": len(tuple(gateway_event_files)),
+        "secret_values_recorded": False,
+    })
 
-    run = _run_process(command.argv, cwd=workspace_path, timeout_s=timeout_s, env=env)
+    run = _run_process(
+        command.argv,
+        cwd=workspace_path,
+        timeout_s=timeout_s,
+        env=env,
+        measure_resources=True,
+        sample_gpu=bool(
+            str(subject.get("compute_scope") or "remote") == "local"
+            and subject.get("gpu_sampling", False)
+        ),
+        sample_interval_s=float(subject.get("resource_sample_interval_s", 0.5)),
+    )
     (root / "subject-stdout.txt").write_text(str(run["stdout"]), encoding="utf-8")
     (root / "subject-stderr.txt").write_text(str(run["stderr"]), encoding="utf-8")
     _write_json(
@@ -309,6 +535,15 @@ def run_subject_trial(
 
     raw_events = [row["event"] for row in parsed["events"]]
     session_id = extract_subject_session_id(command.subject, parsed["events"])
+    quota_status = classify_provider_quota_exhaustion(
+        subject,
+        stdout=str(run["stdout"]),
+        stderr=str(run["stderr"]),
+        raw_events=raw_events,
+    )
+    _write_json(root / "provider-quota-status.json", quota_status)
+    gateway_rows = load_external_event_files(gateway_event_files)
+    _write_jsonl(root / "gateway-events.jsonl", gateway_rows)
     observer_rows: list[dict[str, Any]] = []
 
     rollout_path = resolve_rollout_path(
@@ -439,6 +674,59 @@ def run_subject_trial(
     _write_json(root / "workspace-diff.json", change_map)
     _write_json(root / "git-after.json", post_git)
 
+    compute_cost = build_compute_cost(
+        subject=subject,
+        run=run,
+        raw_events=raw_events,
+        change_map=change_map,
+    )
+    _write_json(root / "compute-cost.json", compute_cost)
+
+    if quota_status.get("status") == "PROVIDER_QUOTA_EXHAUSTED":
+        exposure = build_exposure_manifest(
+            subject=subject,
+            quota_status=quota_status,
+            compute_cost=compute_cost,
+            native_event_count=len(raw_events),
+            observer_event_count=len(observer_rows),
+            gateway_event_count=len(gateway_rows),
+            instruction_surface_count=len(instruction_surfaces.get("surfaces") or []),
+        )
+        _write_json(root / "exposure-manifest.json", exposure)
+        metrics = {
+            "subject_exit_ok": bool(run["ok"]),
+            "subject_timeout": bool(run["timeout"]),
+            "subject_elapsed_s": float(run["elapsed_s"]),
+            "session_id": session_id,
+            "native_event_count": len(raw_events),
+            "observer_event_count": len(observer_rows),
+            "quota_terminal": True,
+        }
+        summary = {
+            "schema_version": 1,
+            "task_id": task.get("task_id") or task.get("case_id"),
+            "subject": subject.get("name"),
+            "subject_command": asdict(command),
+            "resume_session_id": str(resume_session_id) if resume_session_id else None,
+            "scored": False,
+            "trial_status": "PROVIDER_QUOTA_EXHAUSTED",
+            "oracle_success": None,
+            "visible_checks_ok": None,
+            "hidden_oracle_ok": None,
+            "preservation_ok": None,
+            "response_oracle_ok": None,
+            "metrics": metrics,
+            "workspace_diff": change_map,
+            "channel_coverage": channel_coverage,
+            "provider_quota_status": quota_status,
+            "model_harness": model_harness_identity(subject),
+            "failure_replay_id": None,
+            "evidence_root": str(root),
+        }
+        _write_json(root / "trial-summary.json", summary)
+        _hash_packet(root)
+        return summary
+
     visible_results = [
         run_check(check, cwd=workspace_path)
         for check in (task.get("visible_checks") or [])
@@ -548,12 +836,27 @@ def run_subject_trial(
         )
         _write_json(root / "failure-replay.json", replay)
 
+    exposure = build_exposure_manifest(
+        subject=subject,
+        quota_status=quota_status,
+        compute_cost=compute_cost,
+        native_event_count=len(raw_events),
+        observer_event_count=len(observer_rows),
+        gateway_event_count=len(gateway_rows),
+        instruction_surface_count=len(instruction_surfaces.get("surfaces") or []),
+    )
+    _write_json(root / "exposure-manifest.json", exposure)
+
     summary = {
         "schema_version":1,
         "task_id":task.get("task_id") or task.get("case_id"),
         "subject":subject.get("name"),
         "subject_command":asdict(command),
         "resume_session_id":str(resume_session_id) if resume_session_id else None,
+        "scored": True,
+        "trial_status": "SCORED",
+        "model_harness": model_harness_identity(subject),
+        "provider_quota_status": quota_status,
         "oracle_success":oracle_success,
         "visible_checks_ok":visible_ok,
         "hidden_oracle_ok":hidden_ok,

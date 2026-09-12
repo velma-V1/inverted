@@ -38,6 +38,7 @@ jobs:
           mechanisms = json.loads((root / "mechanism-registry.json").read_text(encoding="utf-8"))
           pathologies = json.loads((root / "pathology-registry.json").read_text(encoding="utf-8"))
           versions = json.loads((root / "subject-versions.json").read_text(encoding="utf-8"))
+          research = json.loads((root / "research-contract.json").read_text(encoding="utf-8"))
 
           assert dry["dry_run"] is True
           assert plan["task_count"] == 20
@@ -48,6 +49,13 @@ jobs:
           assert len(mechanisms["mechanisms"]) == 40
           assert len(pathologies["pathologies"]) == 40
           assert {row["name"] for row in versions} == {"claude_code", "codex"}
+          assert research["primary_test_changed"] is False
+          assert research["subject_schedule_changed"] is False
+          assert research["scoring_changed"] is False
+          assert research["shadow_observer"]["authoritative"] is False
+          assert research["shadow_observer"]["may_change_primary_score"] is False
+          assert "COMPUTE_COST" in research["additive_layers"]
+          assert "PROVIDER_QUOTA_TERMINATION" in research["additive_layers"]
 
           bank = json.loads(
               (root / "_sealed_task_bank" / "task-bank.json").read_text(encoding="utf-8")
