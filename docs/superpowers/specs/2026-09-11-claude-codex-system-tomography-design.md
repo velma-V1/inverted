@@ -913,6 +913,13 @@ Claude Code or Codex harness experiments with a local compatibility gateway whil
 preserving the exact condition label. A routed GPT-OSS run is never labeled as
 native Claude or native OpenAI.
 
+Gateway evidence is sanitized before persistence. Credential-bearing fields such
+as Authorization, API keys, cookies, access/refresh tokens, passwords, and client
+secrets are recursively replaced with `<REDACTED_SECRET>`; bearer/basic/key
+material embedded in free text is redacted as well. Source paths, structural
+metadata, non-secret headers, usage counters, and event shape remain available
+for analysis.
+
 ### Container/MCP boundary
 
 Execution-boundary metadata records whether the campaign is running inside a

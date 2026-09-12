@@ -12,6 +12,55 @@ from typing import Any, Iterable
 import httpx
 
 
+_SENSITIVE_FIELD_FRAGMENTS = (
+    "authorization",
+    "proxy_authorization",
+    "api_key",
+    "apikey",
+    "x_api_key",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "password",
+    "passwd",
+    "credential",
+    "client_secret",
+    "cookie",
+    "set_cookie",
+)
+_SECRET_TEXT_PATTERNS = (
+    re.compile(r"(?i)\\bBearer\\s+[A-Za-z0-9._~+\\/=-]{12,}"),
+    re.compile(r"(?i)\\bBasic\\s+[A-Za-z0-9+\\/=]{12,}"),
+    re.compile(r"(?i)\\b(?:sk-ant|sk-proj|sk|ghp|github_pat)[-_][A-Za-z0-9_-]{10,}"),
+)
+
+
+def _redact_sensitive_text(value: str) -> str:
+    text = str(value)
+    for pattern in _SECRET_TEXT_PATTERNS:
+        text = pattern.sub("<REDACTED_SECRET>", text)
+    return text
+
+
+def _sanitize_research_evidence(value: Any) -> Any:
+    if isinstance(value, dict):
+        clean: dict[str, Any] = {}
+        for key, child in value.items():
+            normalized = str(key).lower().replace("-", "_")
+            if any(fragment in normalized for fragment in _SENSITIVE_FIELD_FRAGMENTS):
+                clean[str(key)] = "<REDACTED_SECRET>"
+            else:
+                clean[str(key)] = _sanitize_research_evidence(child)
+        return clean
+    if isinstance(value, list):
+        return [_sanitize_research_evidence(child) for child in value]
+    if isinstance(value, tuple):
+        return [_sanitize_research_evidence(child) for child in value]
+    if isinstance(value, str):
+        return _redact_sensitive_text(value)
+    return value
+
+
 _QUOTA_PATTERNS: dict[str, tuple[str, ...]] = {
     "claude_code": (
         r"you(?:'|’)ve hit your (?:usage |session |weekly )?limit",
@@ -204,7 +253,7 @@ def capture_instruction_surfaces(workspace: str | Path) -> dict[str, Any]:
     for path in sorted(set(candidates)):
         relative = path.relative_to(root).as_posix()
         data = path.read_bytes()
-        text = data.decode("utf-8", errors="replace")
+        text = _redact_sensitive_text(data.decode("utf-8", errors="replace"))
         encoded = text.encode("utf-8")
         remaining = max(0, 262_144 - total_text_bytes)
         retained = encoded[:remaining].decode("utf-8", errors="ignore") if remaining else ""
@@ -236,10 +285,13 @@ def load_external_event_files(paths: Iterable[str | Path]) -> list[dict[str, Any
             try:
                 value = json.loads(raw)
             except Exception:
-                value = {"type": "gateway_unparsed", "raw_text": raw}
+                value = {
+                    "type": "gateway_unparsed",
+                    "raw_text": _redact_sensitive_text(raw),
+                }
             if not isinstance(value, dict):
                 value = {"type": "gateway_non_object", "value": value}
-            value = dict(value)
+            value = _sanitize_research_evidence(dict(value))
             value.setdefault("source_path", str(path))
             value.setdefault("line_number", line_number)
             rows.append(value)

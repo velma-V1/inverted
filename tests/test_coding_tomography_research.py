@@ -15,6 +15,7 @@ from inverted.assistant_value.coding_tomography_research import (
     capture_instruction_surfaces,
     classify_provider_quota_exhaustion,
     extract_observed_usage,
+    load_external_event_files,
     model_harness_identity,
     quota_limited_subject_names,
     research_contract,
@@ -302,3 +303,59 @@ def test_shadow_payload_includes_deterministic_event_features(tmp_path: Path):
         "TEST->FILE_READ": 1,
     }
     assert features["trajectory_metrics"]["event_count"] == 3
+
+
+
+def test_gateway_evidence_recursively_redacts_credentials_and_secret_text(tmp_path: Path):
+    path = tmp_path / "gateway.jsonl"
+    path.write_text(
+        "\n".join([
+            json.dumps({
+                "type": "request",
+                "headers": {
+                    "Authorization": "Bearer abcdefghijklmnopqrstuvwxyz",
+                    "X-API-Key": "super-secret-api-key",
+                    "Content-Type": "application/json",
+                },
+                "body": {
+                    "access_token": "secret-access-token",
+                    "message": "using sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+                    "usage": {"input_tokens": 12},
+                },
+            }),
+            "raw request Authorization: Bearer zyxwvutsrqponmlkjihgfedcba",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+
+    rows = load_external_event_files([path])
+    serialized = json.dumps(rows, sort_keys=True)
+
+    assert "abcdefghijklmnopqrstuvwxyz" not in serialized
+    assert "super-secret-api-key" not in serialized
+    assert "secret-access-token" not in serialized
+    assert "zyxwvutsrqponmlkjihgfedcba" not in serialized
+    assert "sk-proj-" not in serialized
+    assert rows[0]["headers"]["Authorization"] == "<REDACTED_SECRET>"
+    assert rows[0]["headers"]["X-API-Key"] == "<REDACTED_SECRET>"
+    assert rows[0]["body"]["access_token"] == "<REDACTED_SECRET>"
+    assert rows[0]["headers"]["Content-Type"] == "application/json"
+    assert rows[0]["body"]["usage"]["input_tokens"] == 12
+    assert rows[1]["raw_text"].count("<REDACTED_SECRET>") == 1
+
+
+def test_instruction_surface_text_redacts_embedded_secret_but_keeps_source_hash(tmp_path: Path):
+    secret = "sk-ant-abcdefghijklmnopqrstuvwxyz123456"
+    path = tmp_path / "CLAUDE.md"
+    path.write_text(
+        "Use the local gateway. Example credential: " + secret + "\n",
+        encoding="utf-8",
+    )
+
+    capture = capture_instruction_surfaces(tmp_path)
+    row = capture["surfaces"][0]
+
+    assert secret not in row["text"]
+    assert "<REDACTED_SECRET>" in row["text"]
+    assert len(row["sha256"]) == 64
+    assert row["bytes"] == path.stat().st_size
