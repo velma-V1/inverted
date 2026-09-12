@@ -14,13 +14,16 @@ import httpx
 
 _QUOTA_PATTERNS: dict[str, tuple[str, ...]] = {
     "claude_code": (
-        r"you(?:'|’)ve hit your (?:usage )?limit",
+        r"you(?:'|’)ve hit your (?:usage |session |weekly )?limit",
+        r"you(?:'|’)ve hit your monthly spend limit",
         r"usage limit (?:has been )?reached",
         r"limit reached.{0,120}reset",
         r"out of (?:included )?usage",
         r"usage exhausted",
     ),
     "codex": (
+        r"you(?:'|’)ve hit your usage limit",
+        r"usage[_ ]limit[_ ]reached",
         r"usage limit (?:has been )?reached",
         r"limit reached.{0,120}(?:reset|try again)",
         r"insufficient_quota",

@@ -156,3 +156,18 @@ def test_trial_evidence_manifest_refreshes_after_campaign_metadata_change(tmp_pa
     second_hash = next(row["sha256"] for row in second["artifacts"] if row["path"] == "trial-summary.json")
 
     assert first_hash != second_hash
+
+
+def test_real_provider_quota_wording_is_recognized():
+    claude = classify_provider_quota_exhaustion(
+        {"name": "claude_code", "quota_limited": True},
+        stdout="You've hit your session limit · resets 1:30pm",
+        stderr="",
+    )
+    codex = classify_provider_quota_exhaustion(
+        {"name": "codex", "quota_limited": True},
+        stdout="",
+        stderr="HTTP 429 - usage_limit_reached\nplan_type: plus",
+    )
+    assert claude["status"] == "PROVIDER_QUOTA_EXHAUSTED"
+    assert codex["status"] == "PROVIDER_QUOTA_EXHAUSTED"
